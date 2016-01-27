@@ -71,9 +71,46 @@ h2
   echo("<input type='hidden' name='user' value='$raw_user' />");
 
   echo("<p>\n<table>\n<tr>\n");
-  $i=0;
 
-  $sql_result = $nodebt->query("SELECT fname, uname FROM user WHERE uname <> '$user'");
+  //TODO: simplify
+  $sql_result = $nodebt->query("
+    SELECT DISTINCT user.id, user.fname, user.uname FROM user INNER JOIN
+    (
+      SELECT DISTINCT payment.user AS userid
+      FROM payment
+      INNER JOIN contribution
+        ON contribution.payment = payment.id AND
+        (
+          payment.receiver = (SELECT id FROM user WHERE uname = '$user') OR
+          contribution.user = (SELECT id FROM user WHERE uname = '$user')
+        ) AND
+        payment.user <> NULL
+      UNION
+      SELECT DISTINCT payment.receiver AS userid
+      FROM payment
+      INNER JOIN contribution
+        ON contribution.payment = payment.id AND
+        (
+          payment.user = (SELECT id FROM user WHERE uname = '$user') OR
+          contribution.user = (SELECT id FROM user WHERE uname = '$user')
+        ) AND
+        payment.receiver <> NULL
+      UNION
+      SELECT DISTINCT other.user AS userid
+      FROM contribution
+      INNER JOIN contribution AS other
+        ON contribution.payment = other.payment AND
+        other.user <> (SELECT id FROM user WHERE uname = '$user')
+      INNER JOIN payment
+        ON contribution.payment = payment.id
+      AND
+      (
+        contribution.user = (SELECT id FROM user WHERE uname = '$user') OR
+        payment.user = (SELECT id FROM user WHERE uname = '$user') OR
+        payment.receiver = (SELECT id FROM user WHERE uname = '$user')
+      )
+    ) AS temp ON user.id = temp.userid
+  ");
   if(!$sql_result)
   {
     die($nodebt->error);
@@ -82,6 +119,8 @@ h2
   $column_description = array("Date", "Description", "Montant&nbsp;($)", "$full_user");
   $column_id =   array("date", "description", "total", "current");
 
+  $i=0;
+  $first_pass=true;
   $query_select = "";
   $query_join = "";
   $query_where = "";
@@ -104,8 +143,9 @@ h2
       $query_join   .= "\n    LEFT JOIN contribution AS contrib$i ON contrib$i.payment = contribution.payment
       AND contrib$i.user = (SELECT id FROM user WHERE uname = '$row[uname]')";
 
-      if($i == 1)
+      if($first_pass)
       {
+        $first_pass = false;
         $query_where .= " AND\n    (\n      ";
       }
       else

@@ -1,3 +1,10 @@
+<?php
+  include_once('./functions.php');
+  $nodebt = db_connect();
+  $user = get_string('user');
+  $raw_user = get_raw_string('user');
+  $full_user = get_name("$user", $nodebt);
+?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="fr" lang="fr">
 <head>
@@ -6,7 +13,16 @@
 <style>
 body
 {
-  background-image: url("images/billets.jpg");
+<?php
+  if($user == "crocke")
+  {
+    echo("  background-image: url('http://cache.desktopnexus.com/cropped-wallpapers/1626/1626746-1280x1024-%5bDesktopNexus.com%5d.jpg?st=6GPtDDErqyZwyclAGq4yCg&e=1454536992');");
+  }
+  else
+  {
+    echo("  background-image: url('images/billets.jpg');");
+  }
+?>
   background-position: center top;
 }
 
@@ -47,17 +63,11 @@ h2
 </head>
 <body>
 <?php
-  include_once('./functions.php');
-  $nodebt = db_connect();
-
   echo("<form method='get'>\n");
 
   echo("<h1>Bons comptes</h1>\n");
 
   echo("<h2>Actions&nbsp;:</h2>\n");
-  $user = get_string('user');
-  $raw_user = get_raw_string('user');
-  $full_user = get_name("$user", $nodebt);
 
   echo("<p><a href='./insert.php?user=$raw_user'>\n");
   echo("Je viens d'effectuer un paiement, d'autres devraient contribuer\n</a><br />\n");
@@ -65,6 +75,41 @@ h2
   echo("Je viens de rembourser quelqu'un\n</a><br />\n");
   echo("<a href='./insert.php?receiver=$raw_user'>\n");
   echo("Je viens de recevoir de l'argent, d'autres devraient être remboursés\n</a></p>\n");
+
+  print_table("Vous doit de l'argent&nbsp;:", $nodebt, "
+    SELECT * FROM
+    (
+      SELECT fname, uname, ROUND(SUM(debt),2) AS debt
+      FROM money_summary
+      WHERE viewer_uname = '$user'
+      AND user IS NOT NULL
+      GROUP BY user
+      ORDER BY debt DESC, fname
+    ) debt
+    WHERE debt > 0
+    ",
+    array("Personne", "Dette&nbsp;($)"),
+    array("fname", "debt"),
+    array("fname" => "uname")
+  );
+
+  print_table("Vous lui devez de l'argent&nbsp;:", $nodebt, "
+    SELECT * FROM
+    (
+      SELECT fname, uname, ROUND(-SUM(debt),2) AS debt
+      FROM money_summary
+      WHERE viewer_uname = '$user'
+      AND user IS NOT NULL
+      GROUP BY user
+      ORDER BY debt DESC, fname
+    ) debt
+    WHERE debt > 0
+    ",
+    array("Personne", "Dette&nbsp;($)"),
+    array("fname", "debt"),
+    array("fname" => "uname")
+  );
+
 
   echo("<h2>Affichage&nbsp;:</h2>\n");
 

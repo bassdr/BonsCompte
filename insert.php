@@ -167,11 +167,23 @@
           $split_money_in += $nb_parts[$index];
         }
 
-        if($calc_money[$index] == 0 && $money_format != 'parts')
+        if(!isset($calc_money[$index]))
         {
-          $split_money_in++;
+          $calc_money[$index] = 0;
         }
-        $sum_money += $calc_money[$index];
+
+        if($money_format != 'parts')
+        {
+          if($calc_money[$index] == 0)
+          {
+            $split_money_in++;
+          }
+          $sum_money += $calc_money[$index];
+        }
+        else
+        {
+          $sum_money = 0;
+        }
       }
 
       if($calc_total_money != $sum_money)
@@ -195,9 +207,13 @@
         {
           $calc_contrib_num++;
           if($user == 'NULL')
+          {
             $calc_contrib[$index] = $receiver;
+          }
           else
+          {
             $calc_contrib[$index] = $user;
+          }
           $calc_money[$index] = $calc_total_money - $sum_money;
         }
       }

@@ -1,38 +1,118 @@
-use axum::{
-    routing::get,
-    Json, Router
-};
-use serde::{Deserialize, Serialize};
-use mongodb::{Client, options::ClientOptions};
-use std::env;
-use std::net::SocketAddr;
+mod auth;
+mod config;
+mod db;
+mod error;
+mod models;
+mod routes;
+mod services;
 
-#[derive(Serialize, Deserialize)]
-struct Test {
-    msg: String,
+use axum::{
+    extract::FromRef,
+    http::Method,
+    middleware,
+    routing::get,
+    Router,
+};
+use sqlx::SqlitePool;
+use std::net::SocketAddr;
+use tower_http::cors::{Any, CorsLayer};
+use tower_http::trace::TraceLayer;
+
+use auth::middleware::JwtSecret;
+use config::Config;
+
+#[derive(Clone)]
+pub struct AppState {
+    pub pool: SqlitePool,
+    pub jwt_secret: String,
+}
+
+impl FromRef<AppState> for SqlitePool {
+    fn from_ref(state: &AppState) -> Self {
+        state.pool.clone()
+    }
+}
+
+impl FromRef<AppState> for String {
+    fn from_ref(state: &AppState) -> Self {
+        state.jwt_secret.clone()
+    }
+}
+
+/// Middleware to inject JWT secret into request extensions
+async fn inject_jwt_secret(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    mut request: axum::http::Request<axum::body::Body>,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    request.extensions_mut().insert(JwtSecret(state.jwt_secret.clone()));
+    next.run(request).await
 }
 
 #[tokio::main]
 async fn main() {
-    println!("Intitialize tracing...");
-    tracing_subscriber::fmt::init();
+    // Initialize tracing
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info,bonscompte_backend=debug".into()),
+        )
+        .init();
 
-    println!("Initialize MongoDB...");
-    dotenvy::dotenv().ok();
-    let mongo_uri = env::var("MONGO_URI").unwrap_or_else(|_| "mongodb://mongo:27017/bonscompte".to_string());
-    let client_options = ClientOptions::parse(&mongo_uri)
+    // Load configuration
+    let config = Config::from_env();
+    tracing::info!("Starting BonsCompte backend...");
+
+    // Initialize database
+    let pool = db::init_pool(&config.database_url)
         .await
-        .expect("Failed to parse Mongo URI");
-    let _client = Client::with_options(client_options)
-        .expect("Failed to initialize Mongo client");
-    println!("Connected to MongoDB at {}", mongo_uri);
+        .expect("Failed to create database pool");
 
+    // Run migrations
+    db::run_migrations(&pool)
+        .await
+        .expect("Failed to run migrations");
+
+    tracing::info!("Connected to SQLite at {}", config.database_url);
+
+    // Create app state
+    let state = AppState {
+        pool,
+        jwt_secret: config.jwt_secret,
+    };
+
+    // CORS configuration
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+        .allow_headers(Any);
+
+    // Build router
     let app = Router::new()
-        .route("/", get(|| async { "BonsCompte Rust API running" }))
-        .route("/test", get(|| async { Json(Test { msg: "Hello from Rust API!".to_string() }) }));
+        // Health check
+        .route("/health", get(|| async { "OK" }))
+        // Public routes (auth)
+        .nest("/auth", routes::auth::router())
+        // Protected routes (with JWT middleware)
+        .nest(
+            "/api",
+            Router::new()
+                .nest("/users", routes::users::router())
+                .nest("/payments", routes::payments::router())
+                .nest("/debts", routes::debts::router())
+                .layer(middleware::from_fn_with_state(state.clone(), inject_jwt_secret)),
+        )
+        // Global middleware
+        .layer(TraceLayer::new_for_http())
+        .layer(cors)
+        .with_state(state);
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 8000));
-    println!("Server running on http://{}", addr);
+    // Start server
+    let addr: SocketAddr = format!("{}:{}", config.host, config.port)
+        .parse()
+        .expect("Invalid address");
+
+    tracing::info!("Server running on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();

@@ -1,0 +1,51 @@
+services:
+  # Backend Rust (Axum) with SQLite
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: bonscompte-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: sqlite:///data/bonscompte.db
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      RUST_LOG: info,bonscompte_backend=debug
+      HOST: 0.0.0.0
+      PORT: 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - sqlite_data:/data
+    networks:
+      - bonscompte-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend SvelteKit
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: bonscompte-frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_BASE: http://localhost:8000
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - bonscompte-network
+
+networks:
+  bonscompte-network:
+    driver: bridge
+
+volumes:
+  sqlite_data:
+    driver: local

@@ -1,275 +1,231 @@
 <script lang="ts">
-    import { getUsers, getPayments, createPayment, deletePayment, type CreatePaymentInput } from "$lib/api";
-    import { auth } from "$lib/auth";
+    import { getProjects, createProject, joinProject, type ProjectWithRole } from "$lib/api";
+    import { goto } from "$app/navigation";
 
-    interface User {
-        id: number;
-        username: string;
-        display_name: string | null;
-    }
-
-    interface Contribution {
-        user_id: number;
-        amount: number;
-        weight: number;
-    }
-
-    interface Payment {
-        id: number;
-        payer_id: number | null;
-        amount: number;
-        description: string;
-        payment_date: string;
-        contributions: Contribution[];
-    }
-
-    // Data
-    let users: User[] = $state([]);
-    let payments: Payment[] = $state([]);
+    let projects: ProjectWithRole[] = $state([]);
     let loading = $state(true);
     let error = $state('');
 
-    // Form state
-    let amount = $state('');
-    let description = $state('');
-    let payerId = $state<number | null>(null);
-    let submitting = $state(false);
+    // Create project form
+    let showCreateForm = $state(false);
+    let newProjectName = $state('');
+    let newProjectDescription = $state('');
+    let creating = $state(false);
 
-    // Contribution weights per user
-    let weights: Record<number, number> = $state({});
-    let included: Record<number, boolean> = $state({});
+    // Join project form
+    let showJoinForm = $state(false);
+    let inviteCode = $state('');
+    let joining = $state(false);
 
-    // Computed shares
-    let shares = $derived.by(() => {
-        if (!amount || parseFloat(amount) <= 0) return {} as Record<number, number>;
-
-        const total = parseFloat(amount);
-        const activeUsers = users.filter(u => included[u.id] !== false);
-        const totalWeight = activeUsers.reduce((sum, u) => sum + (weights[u.id] ?? 1), 0);
-
-        if (totalWeight === 0) return {} as Record<number, number>;
-
-        const result: Record<number, number> = {};
-        for (const u of users) {
-            if (included[u.id] === false) {
-                result[u.id] = 0;
-            } else {
-                const w = weights[u.id] ?? 1;
-                result[u.id] = Math.round((total * w / totalWeight) * 100) / 100;
-            }
-        }
-        return result;
-    });
-
-    async function loadData() {
+    async function loadProjects() {
         loading = true;
         error = '';
         try {
-            [users, payments] = await Promise.all([getUsers(), getPayments()]);
-            // Initialize weights and included
-            for (const u of users) {
-                if (weights[u.id] === undefined) weights[u.id] = 1;
-                if (included[u.id] === undefined) included[u.id] = true;
-            }
-            // Default payer to current user
-            if (payerId === null && $auth.user) {
-                const currentUser = users.find(u => u.username === $auth.user?.username);
-                if (currentUser) payerId = currentUser.id;
-            }
+            projects = await getProjects();
         } catch (e) {
-            error = e instanceof Error ? e.message : 'Failed to load data';
+            error = e instanceof Error ? e.message : 'Failed to load projects';
         } finally {
             loading = false;
         }
     }
 
-    async function handleSubmit(e: Event) {
+    async function handleCreate(e: Event) {
         e.preventDefault();
-        if (!amount || parseFloat(amount) <= 0) return;
+        if (!newProjectName.trim()) return;
 
-        submitting = true;
+        creating = true;
         error = '';
 
         try {
-            const contributions = users
-                .filter(u => included[u.id] !== false)
-                .map(u => ({
-                    user_id: u.id,
-                    weight: weights[u.id] ?? 1
-                }));
-
-            const payload: CreatePaymentInput = {
-                payer_id: payerId,
-                amount: parseFloat(amount),
-                description,
-                contributions
-            };
-
-            await createPayment(payload);
+            const project = await createProject({
+                name: newProjectName.trim(),
+                description: newProjectDescription.trim() || undefined
+            });
 
             // Reset form
-            amount = '';
-            description = '';
+            newProjectName = '';
+            newProjectDescription = '';
+            showCreateForm = false;
 
-            // Reload data
-            await loadData();
+            // Go to new project
+            goto(`/projects/${project.id}`);
         } catch (e) {
-            error = e instanceof Error ? e.message : 'Failed to create payment';
+            error = e instanceof Error ? e.message : 'Failed to create project';
         } finally {
-            submitting = false;
+            creating = false;
         }
     }
 
-    async function handleDelete(id: number) {
-        if (!confirm('Delete this payment?')) return;
+    async function handleJoin(e: Event) {
+        e.preventDefault();
+        if (!inviteCode.trim()) return;
+
+        joining = true;
+        error = '';
 
         try {
-            await deletePayment(id);
-            await loadData();
+            const project = await joinProject(inviteCode.trim());
+
+            // Reset form
+            inviteCode = '';
+            showJoinForm = false;
+
+            // Go to joined project
+            goto(`/projects/${project.id}`);
         } catch (e) {
-            error = e instanceof Error ? e.message : 'Failed to delete payment';
+            error = e instanceof Error ? e.message : 'Failed to join project';
+        } finally {
+            joining = false;
         }
     }
 
-    function getUserName(id: number | null): string {
-        if (id === null) return 'External';
-        const user = users.find(u => u.id === id);
-        return user?.display_name || user?.username || 'Unknown';
-    }
-
-    function formatDate(dateStr: string): string {
-        return new Date(dateStr).toLocaleDateString();
+    function getRoleBadge(role: string): string {
+        switch (role) {
+            case 'admin': return 'Admin';
+            case 'editor': return 'Editor';
+            case 'reader': return 'Reader';
+            default: return role;
+        }
     }
 
     $effect(() => {
-        loadData();
+        loadProjects();
     });
 </script>
 
-<h1>Shared Ledger</h1>
+<h1>My Projects</h1>
 
 {#if error}
     <div class="error">{error}</div>
 {/if}
 
-{#if loading}
-    <p>Loading...</p>
-{:else}
-    <section class="card">
-        <h2>Add Payment</h2>
+<div class="actions">
+    <button class="btn-primary" onclick={() => showCreateForm = !showCreateForm}>
+        {showCreateForm ? 'Cancel' : '+ New Project'}
+    </button>
+    <button class="btn-secondary" onclick={() => showJoinForm = !showJoinForm}>
+        {showJoinForm ? 'Cancel' : 'Join Project'}
+    </button>
+</div>
 
-        <form onsubmit={handleSubmit}>
-            <div class="form-row">
-                <div class="field">
-                    <label for="payer">Paid by</label>
-                    <select id="payer" bind:value={payerId}>
-                        {#each users as u}
-                            <option value={u.id}>{u.display_name || u.username}</option>
-                        {/each}
-                    </select>
-                </div>
-
-                <div class="field">
-                    <label for="amount">Amount</label>
-                    <input
-                        id="amount"
-                        type="number"
-                        bind:value={amount}
-                        min="0.01"
-                        step="0.01"
-                        required
-                    />
-                </div>
-            </div>
-
+{#if showCreateForm}
+    <div class="card form-card">
+        <h2>Create New Project</h2>
+        <form onsubmit={handleCreate}>
             <div class="field">
-                <label for="description">Description</label>
+                <label for="name">Project Name</label>
                 <input
-                    id="description"
+                    id="name"
                     type="text"
-                    bind:value={description}
-                    placeholder="What was this for?"
+                    bind:value={newProjectName}
+                    placeholder="e.g., Summer Vacation 2025"
                     required
                 />
             </div>
-
-            <h3>Split between</h3>
-            <table class="split-table">
-                <thead>
-                    <tr>
-                        <th>Member</th>
-                        <th>Include</th>
-                        <th>Weight</th>
-                        <th>Share</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {#each users as u}
-                        <tr>
-                            <td>{u.display_name || u.username}</td>
-                            <td>
-                                <input
-                                    type="checkbox"
-                                    bind:checked={included[u.id]}
-                                />
-                            </td>
-                            <td>
-                                <input
-                                    type="number"
-                                    bind:value={weights[u.id]}
-                                    min="0"
-                                    step="0.5"
-                                    disabled={!included[u.id]}
-                                />
-                            </td>
-                            <td class="share">${shares[u.id]?.toFixed(2) ?? '0.00'}</td>
-                        </tr>
-                    {/each}
-                </tbody>
-            </table>
-
-            <button type="submit" disabled={submitting}>
-                {submitting ? 'Adding...' : 'Add Payment'}
+            <div class="field">
+                <label for="description">Description (optional)</label>
+                <input
+                    id="description"
+                    type="text"
+                    bind:value={newProjectDescription}
+                    placeholder="What's this project about?"
+                />
+            </div>
+            <button type="submit" disabled={creating}>
+                {creating ? 'Creating...' : 'Create Project'}
             </button>
         </form>
-    </section>
+    </div>
+{/if}
 
-    <section class="card">
-        <h2>Recent Payments</h2>
+{#if showJoinForm}
+    <div class="card form-card">
+        <h2>Join a Project</h2>
+        <form onsubmit={handleJoin}>
+            <div class="field">
+                <label for="code">Invite Code</label>
+                <input
+                    id="code"
+                    type="text"
+                    bind:value={inviteCode}
+                    placeholder="Enter the invite code"
+                    required
+                />
+            </div>
+            <button type="submit" disabled={joining}>
+                {joining ? 'Joining...' : 'Join Project'}
+            </button>
+        </form>
+    </div>
+{/if}
 
-        {#if payments.length === 0}
-            <p class="empty">No payments yet.</p>
-        {:else}
-            <ul class="payments-list">
-                {#each payments as p}
-                    <li>
-                        <div class="payment-header">
-                            <strong>{p.description}</strong>
-                            <span class="amount">${p.amount.toFixed(2)}</span>
-                        </div>
-                        <div class="payment-meta">
-                            Paid by {getUserName(p.payer_id)} on {formatDate(p.payment_date)}
-                        </div>
-                        <div class="payment-splits">
-                            {#each p.contributions as c}
-                                <span class="chip">
-                                    {getUserName(c.user_id)}: ${c.amount.toFixed(2)}
-                                </span>
-                            {/each}
-                        </div>
-                        <button class="delete-btn" onclick={() => handleDelete(p.id)}>
-                            Delete
-                        </button>
-                    </li>
-                {/each}
-            </ul>
-        {/if}
-    </section>
+{#if loading}
+    <p>Loading projects...</p>
+{:else if projects.length === 0}
+    <div class="empty-state">
+        <p>You don't have any projects yet.</p>
+        <p>Create a new project or join an existing one with an invite code.</p>
+    </div>
+{:else}
+    <div class="projects-grid">
+        {#each projects as project}
+            <a href="/projects/{project.id}" class="project-card">
+                <div class="project-header">
+                    <h3>{project.name}</h3>
+                    <span class="role-badge role-{project.role}">{getRoleBadge(project.role)}</span>
+                </div>
+                {#if project.description}
+                    <p class="project-description">{project.description}</p>
+                {/if}
+                <div class="project-meta">
+                    Created {new Date(project.created_at).toLocaleDateString()}
+                </div>
+            </a>
+        {/each}
+    </div>
 {/if}
 
 <style>
     h1 {
         margin-bottom: 1.5rem;
+    }
+
+    .error {
+        background: #fee;
+        color: #c00;
+        padding: 0.75rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+    }
+
+    .actions {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .btn-primary {
+        padding: 0.75rem 1.5rem;
+        background: var(--accent, #7b61ff);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 1rem;
+        cursor: pointer;
+    }
+
+    .btn-secondary {
+        padding: 0.75rem 1.5rem;
+        background: white;
+        color: var(--accent, #7b61ff);
+        border: 2px solid var(--accent, #7b61ff);
+        border-radius: 8px;
+        font-size: 1rem;
+        cursor: pointer;
+    }
+
+    .btn-primary:hover, .btn-secondary:hover {
+        opacity: 0.9;
     }
 
     .card {
@@ -281,32 +237,13 @@
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
     }
 
-    h2 {
+    .form-card h2 {
         margin-top: 0;
         margin-bottom: 1rem;
         color: var(--accent, #7b61ff);
     }
 
-    h3 {
-        margin: 1rem 0 0.5rem;
-        font-size: 1rem;
-    }
-
-    .error {
-        background: #fee;
-        color: #c00;
-        padding: 0.75rem;
-        border-radius: 8px;
-        margin-bottom: 1rem;
-    }
-
-    .form-row {
-        display: flex;
-        gap: 1rem;
-    }
-
     .field {
-        flex: 1;
         margin-bottom: 1rem;
     }
 
@@ -317,7 +254,7 @@
         font-size: 0.9rem;
     }
 
-    input, select {
+    input {
         width: 100%;
         padding: 0.75rem;
         border: 1px solid #ddd;
@@ -325,36 +262,9 @@
         font-size: 1rem;
     }
 
-    input:focus, select:focus {
+    input:focus {
         outline: none;
         border-color: var(--accent, #7b61ff);
-    }
-
-    .split-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-bottom: 1rem;
-    }
-
-    .split-table th,
-    .split-table td {
-        padding: 0.5rem;
-        text-align: left;
-        border-bottom: 1px solid #eee;
-    }
-
-    .split-table input[type="number"] {
-        width: 80px;
-        padding: 0.5rem;
-    }
-
-    .split-table input[type="checkbox"] {
-        width: auto;
-    }
-
-    .share {
-        font-weight: 600;
-        color: var(--accent, #7b61ff);
     }
 
     button[type="submit"] {
@@ -367,83 +277,83 @@
         cursor: pointer;
     }
 
-    button[type="submit"]:hover:not(:disabled) {
-        opacity: 0.9;
-    }
-
     button[type="submit"]:disabled {
         opacity: 0.6;
         cursor: not-allowed;
     }
 
-    .payments-list {
-        list-style: none;
-        padding: 0;
-        margin: 0;
+    .empty-state {
+        text-align: center;
+        padding: 3rem;
+        color: #666;
     }
 
-    .payments-list li {
-        padding: 1rem;
-        border-bottom: 1px solid #eee;
-        position: relative;
+    .projects-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1.5rem;
     }
 
-    .payments-list li:last-child {
-        border-bottom: none;
+    .project-card {
+        display: block;
+        background: rgba(255, 255, 255, 0.8);
+        backdrop-filter: blur(10px);
+        border-radius: 16px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+        text-decoration: none;
+        color: inherit;
+        transition: transform 0.2s, box-shadow 0.2s;
     }
 
-    .payment-header {
+    .project-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+    }
+
+    .project-header {
         display: flex;
         justify-content: space-between;
-        align-items: center;
-        margin-bottom: 0.25rem;
-    }
-
-    .amount {
-        font-weight: 700;
-        color: var(--accent, #7b61ff);
-    }
-
-    .payment-meta {
-        font-size: 0.85rem;
-        color: #666;
+        align-items: flex-start;
         margin-bottom: 0.5rem;
     }
 
-    .payment-splits {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
+    .project-header h3 {
+        margin: 0;
+        color: var(--accent, #7b61ff);
     }
 
-    .chip {
-        background: #f0f0f0;
-        padding: 0.25rem 0.5rem;
-        border-radius: 4px;
-        font-size: 0.85rem;
-    }
-
-    .delete-btn {
-        position: absolute;
-        top: 1rem;
-        right: 1rem;
-        padding: 0.25rem 0.5rem;
-        background: transparent;
-        border: 1px solid #ddd;
-        border-radius: 4px;
+    .role-badge {
         font-size: 0.75rem;
-        color: #999;
-        cursor: pointer;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-weight: 600;
     }
 
-    .delete-btn:hover {
-        background: #fee;
-        border-color: #fcc;
-        color: #c00;
+    .role-admin {
+        background: #7b61ff;
+        color: white;
     }
 
-    .empty {
+    .role-editor {
+        background: #61c4ff;
+        color: white;
+    }
+
+    .role-reader {
+        background: #e0e0e0;
         color: #666;
-        font-style: italic;
+    }
+
+    .project-description {
+        color: #666;
+        margin: 0.5rem 0;
+        font-size: 0.9rem;
+    }
+
+    .project-meta {
+        font-size: 0.8rem;
+        color: #999;
+        margin-top: 1rem;
     }
 </style>

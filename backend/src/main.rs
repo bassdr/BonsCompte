@@ -39,13 +39,14 @@ impl FromRef<AppState> for String {
     }
 }
 
-/// Middleware to inject JWT secret into request extensions
-async fn inject_jwt_secret(
+/// Middleware to inject JWT secret and pool into request extensions
+async fn inject_extensions(
     axum::extract::State(state): axum::extract::State<AppState>,
     mut request: axum::http::Request<axum::body::Body>,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     request.extensions_mut().insert(JwtSecret(state.jwt_secret.clone()));
+    request.extensions_mut().insert(state.pool.clone());
     next.run(request).await
 }
 
@@ -87,20 +88,28 @@ async fn main() {
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
         .allow_headers(Any);
 
+    // Project sub-routes (nested under /api/projects/:id)
+    let project_routes = Router::new()
+        .nest("/participants", routes::participants::router())
+        .nest("/members", routes::members::router())
+        .nest("/payments", routes::payments::router())
+        .nest("/debts", routes::debts::router());
+
     // Build router
     let app = Router::new()
         // Health check
         .route("/health", get(|| async { "OK" }))
         // Public routes (auth)
         .nest("/auth", routes::auth::router())
-        // Protected routes (with JWT middleware)
+        // Protected routes (with extensions middleware)
         .nest(
             "/api",
             Router::new()
                 .nest("/users", routes::users::router())
-                .nest("/payments", routes::payments::router())
-                .nest("/debts", routes::debts::router())
-                .layer(middleware::from_fn_with_state(state.clone(), inject_jwt_secret)),
+                .nest("/projects", routes::projects::router())
+                // Project-scoped routes
+                .nest("/projects/{id}", project_routes)
+                .layer(middleware::from_fn_with_state(state.clone(), inject_extensions)),
         )
         // Global middleware
         .layer(TraceLayer::new_for_http())

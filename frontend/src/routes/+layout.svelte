@@ -45,8 +45,7 @@
         <nav class="navbar">
             <div class="nav-brand">BonsCompte</div>
             <div class="nav-links">
-                <a href="/" class:active={$page.url.pathname === '/'}>Home</a>
-                <a href="/debts" class:active={$page.url.pathname === '/debts'}>Debts</a>
+                <a href="/" class:active={$page.url.pathname === '/'}>Projects</a>
             </div>
             <div class="nav-user">
                 <span>{$auth.user?.username}</span>

@@ -70,39 +70,191 @@ export async function register(
     return res.json();
 }
 
-// Protected endpoints
+// Types
+export interface Project {
+    id: number;
+    name: string;
+    description: string | null;
+    invite_code: string | null;
+    created_by: number;
+    created_at: string;
+}
+
+export interface ProjectWithRole extends Project {
+    role: string;
+}
+
+export interface Participant {
+    id: number;
+    project_id: number;
+    name: string;
+    user_id: number | null;
+    default_weight: number;
+    created_at: string;
+}
+
+export interface ProjectMember {
+    id: number;
+    project_id: number;
+    user_id: number;
+    username: string;
+    display_name: string | null;
+    role: string;
+    participant_id: number | null;
+    participant_name: string | null;
+    joined_at: string;
+}
+
+export interface Payment {
+    id: number;
+    project_id: number | null;
+    payer_id: number | null;
+    amount: number;
+    description: string;
+    payment_date: string;
+    created_at: string;
+}
+
+export interface Contribution {
+    id: number;
+    participant_id: number;
+    participant_name: string;
+    payment_id: number;
+    amount: number;
+    weight: number;
+}
+
+export interface PaymentWithContributions extends Payment {
+    payer_name: string | null;
+    contributions: Contribution[];
+}
+
+export interface ParticipantBalance {
+    participant_id: number;
+    participant_name: string;
+    total_paid: number;
+    total_owed: number;
+    net_balance: number;
+}
+
+export interface Debt {
+    from_participant_id: number;
+    from_participant_name: string;
+    to_participant_id: number;
+    to_participant_name: string;
+    amount: number;
+}
+
+export interface DebtSummary {
+    balances: ParticipantBalance[];
+    settlements: Debt[];
+}
+
+// Users
 export const getUsers = () => authFetch("/api/users");
 
-export const getPayments = () => authFetch("/api/payments");
+// Projects
+export const getProjects = (): Promise<ProjectWithRole[]> =>
+    authFetch("/api/projects");
 
-export const getPayment = (id: number) => authFetch(`/api/payments/${id}`);
+export const getProject = (id: number): Promise<Project> =>
+    authFetch(`/api/projects/${id}`);
 
+export const createProject = (data: { name: string; description?: string }): Promise<Project> =>
+    authFetch("/api/projects", {
+        method: "POST",
+        body: JSON.stringify(data)
+    });
+
+export const updateProject = (id: number, data: { name?: string; description?: string }): Promise<Project> =>
+    authFetch(`/api/projects/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data)
+    });
+
+export const deleteProject = (id: number) =>
+    authFetch(`/api/projects/${id}`, { method: "DELETE" });
+
+export const regenerateInviteCode = (id: number): Promise<Project> =>
+    authFetch(`/api/projects/${id}/regenerate-invite`, { method: "POST" });
+
+export const joinProject = (inviteCode: string): Promise<Project> =>
+    authFetch("/api/projects/join", {
+        method: "POST",
+        body: JSON.stringify({ invite_code: inviteCode })
+    });
+
+// Participants
+export const getParticipants = (projectId: number): Promise<Participant[]> =>
+    authFetch(`/api/projects/${projectId}/participants`);
+
+export const getParticipant = (projectId: number, participantId: number): Promise<Participant> =>
+    authFetch(`/api/projects/${projectId}/participants/${participantId}`);
+
+export const createParticipant = (projectId: number, data: { name: string; default_weight?: number }): Promise<Participant> =>
+    authFetch(`/api/projects/${projectId}/participants`, {
+        method: "POST",
+        body: JSON.stringify(data)
+    });
+
+export const updateParticipant = (projectId: number, participantId: number, data: { name?: string; default_weight?: number }): Promise<Participant> =>
+    authFetch(`/api/projects/${projectId}/participants/${participantId}`, {
+        method: "PUT",
+        body: JSON.stringify(data)
+    });
+
+export const deleteParticipant = (projectId: number, participantId: number) =>
+    authFetch(`/api/projects/${projectId}/participants/${participantId}`, { method: "DELETE" });
+
+export const claimParticipant = (projectId: number, participantId: number): Promise<Participant> =>
+    authFetch(`/api/projects/${projectId}/participants/${participantId}/claim`, { method: "POST" });
+
+// Members
+export const getMembers = (projectId: number): Promise<ProjectMember[]> =>
+    authFetch(`/api/projects/${projectId}/members`);
+
+export const getMember = (projectId: number, userId: number): Promise<ProjectMember> =>
+    authFetch(`/api/projects/${projectId}/members/${userId}`);
+
+export const updateMemberRole = (projectId: number, userId: number, role: string): Promise<ProjectMember> =>
+    authFetch(`/api/projects/${projectId}/members/${userId}`, {
+        method: "PUT",
+        body: JSON.stringify({ role })
+    });
+
+export const removeMember = (projectId: number, userId: number) =>
+    authFetch(`/api/projects/${projectId}/members/${userId}`, { method: "DELETE" });
+
+export const setMemberParticipant = (projectId: number, userId: number, participantId: number | null): Promise<ProjectMember> =>
+    authFetch(`/api/projects/${projectId}/members/${userId}/participant`, {
+        method: "PUT",
+        body: JSON.stringify({ participant_id: participantId })
+    });
+
+// Payments
 export interface CreatePaymentInput {
     payer_id: number | null;
-    receiver_id?: number | null;
     amount: number;
     description: string;
     payment_date?: string;
-    contributions: Array<{ user_id: number; weight: number }>;
+    contributions: Array<{ participant_id: number; weight: number }>;
 }
 
-export const createPayment = (payload: CreatePaymentInput) =>
-    authFetch("/api/payments", {
+export const getPayments = (projectId: number): Promise<PaymentWithContributions[]> =>
+    authFetch(`/api/projects/${projectId}/payments`);
+
+export const getPayment = (projectId: number, paymentId: number): Promise<PaymentWithContributions> =>
+    authFetch(`/api/projects/${projectId}/payments/${paymentId}`);
+
+export const createPayment = (projectId: number, payload: CreatePaymentInput): Promise<PaymentWithContributions> =>
+    authFetch(`/api/projects/${projectId}/payments`, {
         method: "POST",
         body: JSON.stringify(payload)
     });
 
-export const deletePayment = (id: number) =>
-    authFetch(`/api/payments/${id}`, { method: "DELETE" });
+export const deletePayment = (projectId: number, paymentId: number) =>
+    authFetch(`/api/projects/${projectId}/payments/${paymentId}`, { method: "DELETE" });
 
-export const getDebts = () => authFetch("/api/debts");
-
-// Legacy compatibility (will be removed)
-export const getMembers = getUsers;
-export const getExpenses = getPayments;
-export const postExpense = createPayment;
-
-export async function uploadReceipt(_file: File) {
-    // TODO: implement file upload endpoint
-    return { url: "" };
-}
+// Debts
+export const getDebts = (projectId: number): Promise<DebtSummary> =>
+    authFetch(`/api/projects/${projectId}/debts`);

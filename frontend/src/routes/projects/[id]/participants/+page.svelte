@@ -30,9 +30,10 @@
         success = '';
 
         try {
+            const weight = parseFloat(newWeight);
             await createParticipant(projectId, {
                 name: newName.trim(),
-                default_weight: parseFloat(newWeight) || 1
+                default_weight: isNaN(weight) ? 1 : weight
             });
 
             // Reset form
@@ -71,9 +72,10 @@
         success = '';
 
         try {
+            const weight = parseFloat(editWeight);
             await updateParticipant(projectId, editingId, {
                 name: editName.trim(),
-                default_weight: parseFloat(editWeight) || 1
+                default_weight: isNaN(weight) ? 1 : weight
             });
 
             cancelEdit();
@@ -204,7 +206,13 @@
                     {:else}
                         <div class="participant-info">
                             <span class="name">{p.name}</span>
-                            <span class="weight">Weight: {p.default_weight}</span>
+                            <span class="weight">
+                                {#if p.default_weight === 0}
+                                    Weight: 0 (will not participate)
+                                {:else}
+                                    Weight: {p.default_weight}
+                                {/if}
+                            </span>
                             {#if p.user_id}
                                 <span class="linked">Linked to account</span>
                             {/if}

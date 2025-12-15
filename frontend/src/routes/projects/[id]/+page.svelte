@@ -59,7 +59,7 @@
         if ($participants.length > 0) {
             for (const p of $participants) {
                 if (weights[p.id] === undefined) weights[p.id] = p.default_weight;
-                if (included[p.id] === undefined) included[p.id] = true;
+                if (included[p.id] === undefined) included[p.id] = p.default_weight > 0;
             }
             // Default payer to first participant
             if (payerId === null && $participants.length > 0) {
@@ -67,6 +67,25 @@
             }
         }
     });
+
+    // Sync weight and included: weight 0 unchecks, uncheck sets weight to 0
+    function handleWeightChange(participantId: number, newWeight: number) {
+        weights[participantId] = newWeight;
+        if (newWeight === 0) {
+            included[participantId] = false;
+        }
+    }
+
+    function handleIncludedChange(participantId: number, isIncluded: boolean) {
+        included[participantId] = isIncluded;
+        if (!isIncluded) {
+            weights[participantId] = 0;
+        } else if (weights[participantId] === 0) {
+            // Restore to default weight when re-including
+            const participant = $participants.find(p => p.id === participantId);
+            weights[participantId] = participant?.default_weight || 1;
+        }
+    }
 
     // Load payments when projectId changes
     $effect(() => {
@@ -193,13 +212,15 @@
                                 <td>
                                     <input
                                         type="checkbox"
-                                        bind:checked={included[p.id]}
+                                        checked={included[p.id]}
+                                        onchange={(e) => handleIncludedChange(p.id, e.currentTarget.checked)}
                                     />
                                 </td>
                                 <td>
                                     <input
                                         type="number"
-                                        bind:value={weights[p.id]}
+                                        value={weights[p.id]}
+                                        oninput={(e) => handleWeightChange(p.id, parseFloat(e.currentTarget.value) || 0)}
                                         min="0"
                                         step="0.5"
                                         disabled={!included[p.id]}
@@ -232,7 +253,14 @@
                 <li>
                     <div class="payment-header">
                         <strong>{p.description}</strong>
-                        <span class="amount">${p.amount.toFixed(2)}</span>
+                        <span class="amount-group">
+                            <span class="amount">${p.amount.toFixed(2)}</span>
+                            {#if $canEdit}
+                                <button class="delete-btn" onclick={() => handleDelete(p.id)} title="Delete payment">
+                                    &times;
+                                </button>
+                            {/if}
+                        </span>
                     </div>
                     <div class="payment-meta">
                         Paid by {p.payer_name ?? 'Unknown'} on {formatDate(p.payment_date)}
@@ -244,11 +272,6 @@
                             </span>
                         {/each}
                     </div>
-                    {#if $canEdit}
-                        <button class="delete-btn" onclick={() => handleDelete(p.id)}>
-                            Delete
-                        </button>
-                    {/if}
                 </li>
             {/each}
         </ul>
@@ -380,7 +403,6 @@
     .payments-list li {
         padding: 1rem;
         border-bottom: 1px solid #eee;
-        position: relative;
     }
 
     .payments-list li:last-child {
@@ -392,6 +414,12 @@
         justify-content: space-between;
         align-items: center;
         margin-bottom: 0.25rem;
+    }
+
+    .amount-group {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
     }
 
     .amount {
@@ -419,21 +447,23 @@
     }
 
     .delete-btn {
-        position: absolute;
-        top: 1rem;
-        right: 1rem;
-        padding: 0.25rem 0.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        padding: 0;
         background: transparent;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        font-size: 0.75rem;
+        border: none;
+        border-radius: 50%;
+        font-size: 1rem;
+        line-height: 1;
         color: #999;
         cursor: pointer;
     }
 
     .delete-btn:hover {
         background: #fee;
-        border-color: #fcc;
         color: #c00;
     }
 

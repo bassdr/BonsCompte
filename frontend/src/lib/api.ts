@@ -113,6 +113,14 @@ export interface Payment {
     description: string;
     payment_date: string;
     created_at: string;
+    // Receipt image (Base64 encoded)
+    receipt_image: string | null;
+    // Recurrence fields
+    is_recurring: boolean;
+    recurrence_type: string | null;  // 'daily' | 'weekly' | 'monthly' | 'yearly'
+    recurrence_interval: number | null;
+    recurrence_times_per: number | null;
+    recurrence_end_date: string | null;
 }
 
 export interface Contribution {
@@ -145,9 +153,20 @@ export interface Debt {
     amount: number;
 }
 
+export interface PaymentOccurrence {
+    payment_id: number;
+    description: string;
+    amount: number;
+    occurrence_date: string;
+    payer_id: number | null;
+    is_recurring: boolean;
+}
+
 export interface DebtSummary {
     balances: ParticipantBalance[];
     settlements: Debt[];
+    target_date: string;
+    occurrences: PaymentOccurrence[];
 }
 
 // Users
@@ -238,6 +257,14 @@ export interface CreatePaymentInput {
     description: string;
     payment_date?: string;
     contributions: Array<{ participant_id: number; weight: number }>;
+    // Receipt image (Base64 encoded)
+    receipt_image?: string;
+    // Recurrence fields
+    is_recurring?: boolean;
+    recurrence_type?: string;
+    recurrence_interval?: number;
+    recurrence_times_per?: number;
+    recurrence_end_date?: string;
 }
 
 export const getPayments = (projectId: number): Promise<PaymentWithContributions[]> =>
@@ -252,9 +279,17 @@ export const createPayment = (projectId: number, payload: CreatePaymentInput): P
         body: JSON.stringify(payload)
     });
 
+export const updatePayment = (projectId: number, paymentId: number, payload: CreatePaymentInput): Promise<PaymentWithContributions> =>
+    authFetch(`/api/projects/${projectId}/payments/${paymentId}`, {
+        method: "PUT",
+        body: JSON.stringify(payload)
+    });
+
 export const deletePayment = (projectId: number, paymentId: number) =>
     authFetch(`/api/projects/${projectId}/payments/${paymentId}`, { method: "DELETE" });
 
 // Debts
-export const getDebts = (projectId: number): Promise<DebtSummary> =>
-    authFetch(`/api/projects/${projectId}/debts`);
+export const getDebts = (projectId: number, targetDate?: string): Promise<DebtSummary> => {
+    const params = targetDate ? `?date=${targetDate}` : '';
+    return authFetch(`/api/projects/${projectId}/debts${params}`);
+};

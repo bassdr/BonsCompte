@@ -22,7 +22,7 @@ struct PaymentPath {
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_payments).post(create_payment))
-        .route("/{payment_id}", get(get_payment).delete(delete_payment))
+        .route("/{payment_id}", get(get_payment).put(update_payment).delete(delete_payment))
 }
 
 async fn list_payments(
@@ -169,18 +169,26 @@ async fn create_payment(
 
     // Insert payment
     let payment_date = input.payment_date.unwrap_or_else(|| {
-        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
+        chrono::Utc::now().format("%Y-%m-%d").to_string()
     });
 
+    let is_recurring = input.is_recurring.unwrap_or(false);
+
     let result = sqlx::query(
-        "INSERT INTO payments (project_id, payer_id, amount, description, payment_date)
-         VALUES (?, ?, ?, ?, ?)"
+        "INSERT INTO payments (project_id, payer_id, amount, description, payment_date, receipt_image, is_recurring, recurrence_type, recurrence_interval, recurrence_times_per, recurrence_end_date)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(member.project_id)
     .bind(input.payer_id)
     .bind(input.amount)
     .bind(&input.description)
     .bind(&payment_date)
+    .bind(&input.receipt_image)
+    .bind(is_recurring)
+    .bind(&input.recurrence_type)
+    .bind(input.recurrence_interval)
+    .bind(input.recurrence_times_per)
+    .bind(&input.recurrence_end_date)
     .execute(&pool)
     .await?;
 
@@ -222,6 +230,165 @@ async fn create_payment(
     // Fetch created payment
     let payment: Payment = sqlx::query_as("SELECT * FROM payments WHERE id = ?")
         .bind(payment_id)
+        .fetch_one(&pool)
+        .await?;
+
+    // Get payer name
+    let payer_name: Option<String> = if let Some(payer_id) = payment.payer_id {
+        sqlx::query_scalar("SELECT name FROM participants WHERE id = ?")
+            .bind(payer_id)
+            .fetch_optional(&pool)
+            .await?
+    } else {
+        None
+    };
+
+    Ok(Json(PaymentWithContributions {
+        payment,
+        payer_name,
+        contributions,
+    }))
+}
+
+async fn update_payment(
+    Path(path): Path<PaymentPath>,
+    member: ProjectMember,
+    State(pool): State<SqlitePool>,
+    Json(input): Json<CreatePayment>,
+) -> AppResult<Json<PaymentWithContributions>> {
+    // Check editor permission
+    if !member.can_edit() {
+        return Err(AppError::Forbidden("Editor access required".to_string()));
+    }
+
+    // Verify payment exists and belongs to project
+    let existing: Option<Payment> = sqlx::query_as(
+        "SELECT * FROM payments WHERE id = ? AND project_id = ?"
+    )
+    .bind(path.payment_id)
+    .bind(member.project_id)
+    .fetch_optional(&pool)
+    .await?;
+
+    if existing.is_none() {
+        return Err(AppError::NotFound("Payment not found".to_string()));
+    }
+
+    // Validate
+    if input.amount <= 0.0 {
+        return Err(AppError::BadRequest("Amount must be positive".to_string()));
+    }
+    if input.contributions.is_empty() {
+        return Err(AppError::BadRequest("At least one contribution required".to_string()));
+    }
+
+    // Validate payer belongs to project
+    if let Some(payer_id) = input.payer_id {
+        let payer_exists: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM participants WHERE id = ? AND project_id = ?"
+        )
+        .bind(payer_id)
+        .bind(member.project_id)
+        .fetch_optional(&pool)
+        .await?;
+
+        if payer_exists.is_none() {
+            return Err(AppError::BadRequest("Invalid payer".to_string()));
+        }
+    }
+
+    // Validate all participants belong to project
+    for contrib in &input.contributions {
+        let participant_exists: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM participants WHERE id = ? AND project_id = ?"
+        )
+        .bind(contrib.participant_id)
+        .bind(member.project_id)
+        .fetch_optional(&pool)
+        .await?;
+
+        if participant_exists.is_none() {
+            return Err(AppError::BadRequest(format!(
+                "Invalid participant: {}", contrib.participant_id
+            )));
+        }
+    }
+
+    // Calculate total weight
+    let total_weight: f64 = input.contributions.iter().map(|c| c.weight).sum();
+    if total_weight <= 0.0 {
+        return Err(AppError::BadRequest("Total weight must be positive".to_string()));
+    }
+
+    let payment_date = input.payment_date.clone().unwrap_or_else(|| {
+        chrono::Utc::now().format("%Y-%m-%d").to_string()
+    });
+
+    let is_recurring = input.is_recurring.unwrap_or(false);
+
+    // Update payment
+    sqlx::query(
+        "UPDATE payments SET payer_id = ?, amount = ?, description = ?, payment_date = ?,
+         receipt_image = ?, is_recurring = ?, recurrence_type = ?, recurrence_interval = ?,
+         recurrence_times_per = ?, recurrence_end_date = ?
+         WHERE id = ? AND project_id = ?"
+    )
+    .bind(input.payer_id)
+    .bind(input.amount)
+    .bind(&input.description)
+    .bind(&payment_date)
+    .bind(&input.receipt_image)
+    .bind(is_recurring)
+    .bind(&input.recurrence_type)
+    .bind(input.recurrence_interval)
+    .bind(input.recurrence_times_per)
+    .bind(&input.recurrence_end_date)
+    .bind(path.payment_id)
+    .bind(member.project_id)
+    .execute(&pool)
+    .await?;
+
+    // Delete old contributions
+    sqlx::query("DELETE FROM contributions WHERE payment_id = ?")
+        .bind(path.payment_id)
+        .execute(&pool)
+        .await?;
+
+    // Insert new contributions
+    let mut contributions = Vec::new();
+    for contrib in &input.contributions {
+        let share_amount = (input.amount * contrib.weight / total_weight * 100.0).round() / 100.0;
+
+        let participant_name: String = sqlx::query_scalar(
+            "SELECT name FROM participants WHERE id = ?"
+        )
+        .bind(contrib.participant_id)
+        .fetch_one(&pool)
+        .await?;
+
+        let result = sqlx::query(
+            "INSERT INTO contributions (participant_id, payment_id, amount, weight) VALUES (?, ?, ?, ?)"
+        )
+        .bind(contrib.participant_id)
+        .bind(path.payment_id)
+        .bind(share_amount)
+        .bind(contrib.weight)
+        .execute(&pool)
+        .await?;
+
+        contributions.push(ContributionWithParticipant {
+            id: result.last_insert_rowid(),
+            participant_id: contrib.participant_id,
+            participant_name,
+            payment_id: path.payment_id,
+            amount: share_amount,
+            weight: contrib.weight,
+        });
+    }
+
+    // Fetch updated payment
+    let payment: Payment = sqlx::query_as("SELECT * FROM payments WHERE id = ?")
+        .bind(path.payment_id)
         .fetch_one(&pool)
         .await?;
 

@@ -9,6 +9,48 @@
       "Bash(npm run check:*)",
       "Bash(ls:*)",
       "Bash(curl:*)"
+    ],
+    "deny": [
+      "Read(*.csv)",
+      "Read(*.log)",
+      "Read(*.pyc)",
+      "Read(backend/.env)",
+      "Read(backend/target/)",
+      "Read(scripts/.env)",
+      "Read(service-account-key.json)",
+      "Read(.github/)",
+      "Read(.idea/)",
+      "Read(.next/)",
+      "Read(.serverless)",
+      "Read(.terraform.lock.hcl)",
+      "Read(.terraform/)",
+      "Read(.vscode/)",
+      "Read(__pycache__/)",
+      "Read(build/)",
+      "Read(data/)",
+      "Read(backend/data/)",
+      "Read(dist/)",
+      "Read(frontend/dist/)",
+      "Read(node_modules/)",
+      "Read(frontend/node_modules/)",
+      "Read(frontend/.svelte-kit/)",
+      "Read(venv/)",
+      "Read(yarn.lock)",
+      "Read(backend/Cargo.lock)"
+    ],
+    "ask": []
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/scripts/validate-bash.sh"
+          }
+        ]
+      }
     ]
   }
 }

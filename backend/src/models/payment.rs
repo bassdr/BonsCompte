@@ -10,6 +10,14 @@ pub struct Payment {
     pub description: String,
     pub payment_date: String,
     pub created_at: String,
+    // Receipt image (Base64 encoded)
+    pub receipt_image: Option<String>,
+    // Recurrence fields
+    pub is_recurring: bool,
+    pub recurrence_type: Option<String>,  // 'daily', 'weekly', 'monthly', 'yearly'
+    pub recurrence_interval: Option<i32>, // every X periods
+    pub recurrence_times_per: Option<i32>, // NULL = every X, non-NULL = X times per period
+    pub recurrence_end_date: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -19,6 +27,14 @@ pub struct CreatePayment {
     pub description: String,
     pub payment_date: Option<String>,
     pub contributions: Vec<CreateContribution>,
+    // Receipt image (Base64 encoded)
+    pub receipt_image: Option<String>,
+    // Recurrence fields
+    pub is_recurring: Option<bool>,
+    pub recurrence_type: Option<String>,
+    pub recurrence_interval: Option<i32>,
+    pub recurrence_times_per: Option<i32>,
+    pub recurrence_end_date: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

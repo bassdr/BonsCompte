@@ -48,11 +48,11 @@
                 <h1>{$currentProject.name}</h1>
             </div>
             <nav class="project-nav">
-                <a href="/projects/{$page.params.id}" class:active={$page.url.pathname === `/projects/${$page.params.id}`}>
-                    Payments
-                </a>
                 <a href="/projects/{$page.params.id}/debts" class:active={$page.url.pathname.includes('/debts')}>
                     Debts
+                </a>
+                <a href="/projects/{$page.params.id}/payments" class:active={$page.url.pathname.includes('/payments')}>
+                    Payments
                 </a>
                 <a href="/projects/{$page.params.id}/participants" class:active={$page.url.pathname.includes('/participants')}>
                     Participants

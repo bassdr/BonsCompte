@@ -177,6 +177,54 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         .execute(pool)
         .await?;
 
+    // =====================
+    // Migration 003: Payment enhancements (receipt image, recurrence)
+    // =====================
+
+    // Add receipt_image column if not exists
+    sqlx::query(
+        "ALTER TABLE payments ADD COLUMN receipt_image TEXT"
+    )
+    .execute(pool)
+    .await
+    .ok(); // Ignore error if column already exists
+
+    // Add recurrence columns if not exist
+    sqlx::query(
+        "ALTER TABLE payments ADD COLUMN is_recurring INTEGER NOT NULL DEFAULT 0"
+    )
+    .execute(pool)
+    .await
+    .ok();
+
+    sqlx::query(
+        "ALTER TABLE payments ADD COLUMN recurrence_type TEXT"
+    )
+    .execute(pool)
+    .await
+    .ok();
+
+    sqlx::query(
+        "ALTER TABLE payments ADD COLUMN recurrence_interval INTEGER DEFAULT 1"
+    )
+    .execute(pool)
+    .await
+    .ok();
+
+    sqlx::query(
+        "ALTER TABLE payments ADD COLUMN recurrence_times_per INTEGER"
+    )
+    .execute(pool)
+    .await
+    .ok();
+
+    sqlx::query(
+        "ALTER TABLE payments ADD COLUMN recurrence_end_date TEXT"
+    )
+    .execute(pool)
+    .await
+    .ok();
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

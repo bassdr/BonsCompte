@@ -181,8 +181,10 @@ To build locally (useful for development):
 ```sh
 git clone https://github.com/bassdr/BonsCompte.git
 cd BonsCompte
-docker compose -f docker/docker-compose.yml up --build
+docker compose up --build
 ```
+
+The `docker-compose.override.yml` file is automatically merged with `docker-compose.yml` and enables the build sections for local development.
 
 #### Update to Latest Version
 

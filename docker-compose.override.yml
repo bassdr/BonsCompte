@@ -1,0 +1,16 @@
+version: '3.8'
+
+# This file is automatically merged with docker-compose.yml by Docker Compose
+# It's used for development builds and is ignored in production deployments
+# See: https://docs.docker.com/compose/extends/#multiple-compose-files
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile

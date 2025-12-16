@@ -161,7 +161,6 @@ wget https://raw.githubusercontent.com/bassdr/BonsCompte/main/docker-compose.yml
 ```sh
 cat > .env << EOF
 JWT_SECRET=your-very-secret-key-change-this-in-production
-VITE_API_BASE=http://your-server-hostname:8000
 EOF
 ```
 
@@ -176,15 +175,19 @@ The application will be available at:
 
 #### Development with Local Build
 
-To build locally (useful for development):
+To build and run locally (useful for development):
 
 ```sh
 git clone https://github.com/bassdr/BonsCompte.git
 cd BonsCompte
-docker compose up --build
+docker compose up --build -d
 ```
 
-The `docker-compose.override.yml` file is automatically merged with `docker-compose.yml` and enables the build sections for local development.
+Then access the application at:
+- Frontend: `http://localhost:3000`
+- Backend API: `http://localhost:8000`
+
+The `docker-compose.override.yml` file is automatically merged with `docker-compose.yml` and enables the build sections for local development. The frontend automatically uses relative paths (`/api`) to communicate with the backend, so it works seamlessly in development without additional configuration.
 
 #### Update to Latest Version
 
@@ -204,11 +207,7 @@ HOST=0.0.0.0
 PORT=8000
 ```
 
-Frontend (`.env` or via docker-compose):
-```
-VITE_API_BASE=http://localhost:8000
-NODE_ENV=production
-```
+Frontend automatically uses `/api` as the base path for all API calls, which works correctly when deployed behind a reverse proxy (like Nginx). The frontend is served from the same domain and the reverse proxy routes `/api/*` to the backend.
 
 ### Persistent Data
 
@@ -221,10 +220,14 @@ volumes:
       - /path/to/local/data:/data  # Use host directory
 ```
 
-### SSL/TLS Setup
+### Reverse Proxy Setup (Production)
 
-For production deployments, use a reverse proxy like Nginx or Traefik:
+For production deployments with SSL/TLS, use a reverse proxy like Nginx or Traefik to:
+1. Terminate SSL/TLS
+2. Route frontend and backend through a single domain
+3. Keep backend only accessible locally
 
+**Docker Compose (with reverse proxy):**
 ```yaml
 services:
   frontend:
@@ -235,4 +238,22 @@ services:
       - "127.0.0.1:8000:8000"  # Only localhost
 ```
 
-Then configure your reverse proxy to handle SSL and forward traffic to localhost ports.
+**Example Nginx configuration:**
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+}
+
+location /api/ {
+    proxy_pass http://127.0.0.1:8000/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Real-IP $remote_addr;
+}
+```
+
+The frontend automatically routes all API calls to `/api/*`, which your reverse proxy forwards to the backend.

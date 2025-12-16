@@ -1,7 +1,7 @@
 import { auth, type User } from './auth';
 import { browser } from '$app/environment';
 
-const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
+const BASE = import.meta.env.VITE_API_BASE ?? "/api";
 
 async function authFetch(path: string, opts: RequestInit = {}) {
     const token = auth.getToken();

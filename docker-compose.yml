@@ -30,7 +30,6 @@ services:
     container_name: bonscompte-frontend
     restart: unless-stopped
     environment:
-      VITE_API_BASE: http://localhost:8000
       NODE_ENV: production
     ports:
       - "3000:3000"

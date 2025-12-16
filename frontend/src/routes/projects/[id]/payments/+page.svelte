@@ -572,7 +572,7 @@
                                         class="icon-btn"
                                         title="View receipt"
                                         onclick={() => openImageModal(p.receipt_image!)}
-                                    >&#x1F4F7;</button>
+                                    >&#x1F9FE;</button>
                                 {/if}
                             </div>
                         </div>

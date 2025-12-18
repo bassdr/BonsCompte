@@ -193,7 +193,12 @@ async fn delete_account(
                 )));
             }
 
-            // No other members, project will be deleted via CASCADE
+            // No other members - delete the project (will cascade to all related records)
+            sqlx::query("DELETE FROM projects WHERE id = ?")
+                .bind(project.id)
+                .execute(&pool)
+                .await?;
+
             affected_projects.push(ProjectOutcome {
                 project_id: project.id,
                 project_name: project.name,
@@ -202,6 +207,12 @@ async fn delete_account(
             });
         }
     }
+
+    // Nullify used_by in any participant invites that reference this user
+    sqlx::query("UPDATE participant_invites SET used_by = NULL WHERE used_by = ?")
+        .bind(auth.user_id)
+        .execute(&pool)
+        .await?;
 
     // Unlink user from all participants (in projects they didn't own)
     sqlx::query("UPDATE participants SET user_id = NULL WHERE user_id = ?")

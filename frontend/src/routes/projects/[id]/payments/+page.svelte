@@ -643,7 +643,12 @@
                         </span>
                     </div>
                     <div class="payment-meta">
-                        Paid by {p.payer_name ?? 'Unknown'} {isFutureDate(p.payment_date) ? 'from' : 'on'} {formatDate(p.payment_date)}
+                        Paid by {p.payer_name ?? 'Unknown'}
+                        {#if p.is_recurring && p.recurrence_end_date}
+                            from {formatDate(p.payment_date)} to {formatDate(p.recurrence_end_date)}
+                        {:else}
+                            {isFutureDate(p.payment_date) ? 'from' : 'on'} {formatDate(p.payment_date)}
+                        {/if}
                         {#if p.is_recurring}
                             <span class="recurrence-badge">{formatRecurrence(p)}</span>
                         {/if}

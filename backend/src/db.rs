@@ -225,6 +225,59 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .await
     .ok();
 
+    // =====================
+    // Migration 004: User Management & Advanced Invite System
+    // =====================
+
+    // Add project settings for invite control
+    sqlx::query(
+        "ALTER TABLE projects ADD COLUMN invites_enabled INTEGER NOT NULL DEFAULT 1"
+    )
+    .execute(pool)
+    .await
+    .ok();
+
+    sqlx::query(
+        "ALTER TABLE projects ADD COLUMN require_approval INTEGER NOT NULL DEFAULT 0"
+    )
+    .execute(pool)
+    .await
+    .ok();
+
+    // Add status to project_members for approval workflow
+    sqlx::query(
+        "ALTER TABLE project_members ADD COLUMN status TEXT NOT NULL DEFAULT 'active'"
+    )
+    .execute(pool)
+    .await
+    .ok();
+
+    // Add invite tokens for participant-specific invites
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS participant_invites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            participant_id INTEGER NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+            invite_token TEXT UNIQUE NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            expires_at TEXT,
+            used_by INTEGER REFERENCES users(id),
+            used_at TEXT,
+            UNIQUE(participant_id)
+        )"
+    )
+    .execute(pool)
+    .await?;
+
+    // Index for looking up invites by token
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_participant_invites_token ON participant_invites(invite_token)")
+        .execute(pool)
+        .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_participant_invites_participant ON participant_invites(participant_id)")
+        .execute(pool)
+        .await?;
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

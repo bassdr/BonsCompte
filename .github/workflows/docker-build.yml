@@ -27,9 +27,12 @@ jobs:
           - service: backend
             dockerfile: ./backend/Dockerfile
             context: ./backend
+            build-args: ""
           - service: frontend
             dockerfile: ./frontend/Dockerfile
             context: ./frontend
+            # Production build: use /api prefix for nginx reverse proxy
+            build-args: "VITE_API_BASE=/api"
 
     steps:
       - name: Checkout repository
@@ -67,5 +70,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
+          build-args: ${{ matrix.build-args }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

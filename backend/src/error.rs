@@ -23,6 +23,9 @@ pub enum AppError {
     #[error("Bad request: {0}")]
     BadRequest(String),
 
+    #[error("Validation error: {0}")]
+    Validation(String),
+
     #[error("Forbidden: {0}")]
     Forbidden(String),
 
@@ -44,6 +47,7 @@ impl IntoResponse for AppError {
             AppError::UserExists => (StatusCode::CONFLICT, self.to_string()),
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
+            AppError::Validation(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg.clone()),
             AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.clone()),
             AppError::Database(e) => {
                 tracing::error!("Database error: {:?}", e);

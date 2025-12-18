@@ -3,6 +3,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
+# VITE_API_BASE: empty for direct backend access, "/api" for reverse proxy setup
+ARG VITE_API_BASE=""
+ENV VITE_API_BASE=${VITE_API_BASE}
 RUN npm run build
 RUN npm prune --production
 

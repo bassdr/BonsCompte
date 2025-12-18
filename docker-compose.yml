@@ -25,6 +25,8 @@ services:
       retries: 3
 
   # Frontend SvelteKit
+  # Note: The pre-built image uses VITE_API_BASE="/api" for production with nginx reverse proxy.
+  # For direct backend access, use docker-compose.override.yml to build locally.
   frontend:
     image: ghcr.io/bassdr/bonscompte-frontend:latest
     container_name: bonscompte-frontend

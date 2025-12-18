@@ -35,6 +35,7 @@ pub struct ProjectMemberRow {
     pub role: String,
     pub participant_id: Option<i64>,
     pub joined_at: String,
+    pub status: String,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize)]
@@ -48,6 +49,7 @@ pub struct ProjectMemberResponse {
     pub participant_id: Option<i64>,
     pub participant_name: Option<String>,
     pub joined_at: String,
+    pub status: String,
 }
 
 #[derive(Debug, Deserialize)]

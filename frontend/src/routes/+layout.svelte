@@ -1,7 +1,7 @@
 <svelte:head>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/src/styles/moit-doll.css">
 </svelte:head>
 
 <script lang="ts">
@@ -49,6 +49,7 @@
             </div>
             <div class="nav-user">
                 <span>{$auth.user?.username}</span>
+                <a href="/settings" class="settings-link" class:active={$page.url.pathname === '/settings'}>Settings</a>
                 <button onclick={handleLogout}>Logout</button>
             </div>
         </nav>
@@ -125,9 +126,90 @@
         background: #f5f5f5;
     }
 
+    .settings-link {
+        text-decoration: none;
+        color: #666;
+        font-weight: 500;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        transition: all 0.2s;
+    }
+
+    .settings-link:hover,
+    .settings-link.active {
+        color: var(--accent, #7b61ff);
+        background: rgba(123, 97, 255, 0.1);
+    }
+
     main {
-        padding: 2rem;
+        padding: 2rem 1rem;
         max-width: 1200px;
         margin: 0 auto;
+    }
+
+    /* Mobile responsive styles */
+    @media (max-width: 768px) {
+        .navbar {
+            flex-wrap: wrap;
+            gap: 1rem;
+            padding: 0.75rem 1rem;
+        }
+
+        .nav-brand {
+            font-size: 1.1rem;
+            flex: 0 0 100%;
+        }
+
+        .nav-links {
+            gap: 1rem;
+            flex: 1;
+        }
+
+        .nav-links a {
+            font-size: 0.9rem;
+            padding: 0.5rem 0.75rem;
+        }
+
+        .nav-user {
+            flex: 0 0 100%;
+            justify-content: space-between;
+            gap: 0.75rem;
+        }
+
+        .nav-user span {
+            font-size: 0.9rem;
+        }
+
+        .nav-user button {
+            padding: 0.4rem 0.8rem;
+            font-size: 0.9rem;
+        }
+
+        main {
+            padding: 1rem 0.75rem;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .navbar {
+            padding: 0.5rem 0.5rem;
+        }
+
+        .nav-brand {
+            font-size: 1rem;
+        }
+
+        .nav-links {
+            gap: 0.5rem;
+        }
+
+        .nav-links a {
+            font-size: 0.8rem;
+            padding: 0.4rem 0.6rem;
+        }
+
+        main {
+            padding: 0.75rem 0.5rem;
+        }
     }
 </style>

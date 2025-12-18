@@ -134,48 +134,35 @@ npm run format               # Auto-format with Prettier
 
 ## Deployment
 
-### Docker (Multi-Platform)
+BonsCompte supports three deployment scenarios:
 
-BonsCompte is automatically built and published to GitHub Container Registry for both `linux/amd64` and `linux/arm64` architectures (including Raspberry Pi 4).
+| Scenario | Frontend | Backend | API Base |
+|----------|----------|---------|----------|
+| **Development** | `localhost:5173` | `localhost:8000` | `http://localhost:8000` |
+| **Docker Local** | `localhost:3000` | `localhost:8000` | `http://localhost:8000` |
+| **Production** | Behind NGINX | Behind NGINX | `/api` (via reverse proxy) |
 
-Images are built on every push to `main` and tagged with:
-- `latest` for the default branch
-- Git branch name
-- Git commit SHA
-- Semantic version tags (e.g., `v1.0.0`)
+### 1. Development Mode (without Docker)
 
-#### Quick Start on Raspberry Pi 4 or Any Server
+Run the backend and frontend separately for rapid development:
 
-1. Create a directory for BonsCompte:
+**Terminal 1 - Backend:**
 ```sh
-mkdir -p /srv/bonscompte
-cd /srv/bonscompte
+cd backend
+cargo run  # Starts on localhost:8000
 ```
 
-2. Download the docker-compose file:
+**Terminal 2 - Frontend:**
 ```sh
-wget https://raw.githubusercontent.com/bassdr/BonsCompte/main/docker-compose.yml
+cd frontend
+npm run dev  # Starts on localhost:5173
 ```
 
-3. Create a `.env` file with your configuration:
-```sh
-cat > .env << EOF
-JWT_SECRET=your-very-secret-key-change-this-in-production
-EOF
-```
+No configuration needed - the frontend defaults to `http://localhost:8000` for API calls.
 
-4. Start the services:
-```sh
-docker compose up -d
-```
+### 2. Docker Local Development
 
-The application will be available at:
-- Frontend: `http://localhost:3000`
-- Backend API: `http://localhost:8000`
-
-#### Development with Local Build
-
-To build and run locally (useful for development):
+Build and run locally using Docker Compose:
 
 ```sh
 git clone https://github.com/bassdr/BonsCompte.git
@@ -183,11 +170,72 @@ cd BonsCompte
 docker compose up --build -d
 ```
 
-Then access the application at:
+Access the application at:
 - Frontend: `http://localhost:3000`
 - Backend API: `http://localhost:8000`
 
-The `docker-compose.override.yml` file is automatically merged with `docker-compose.yml` and enables the build sections for local development. The frontend automatically uses relative paths (`/api`) to communicate with the backend, so it works seamlessly in development without additional configuration.
+The `docker-compose.override.yml` file is automatically merged and builds images with `VITE_API_BASE=http://localhost:8000` for direct backend access.
+
+### 3. Production with NGINX
+
+For production, use the pre-built Docker images behind an NGINX reverse proxy.
+
+#### Quick Start
+
+1. Create a directory and download config:
+```sh
+mkdir -p /srv/bonscompte
+cd /srv/bonscompte
+wget https://raw.githubusercontent.com/bassdr/BonsCompte/main/docker-compose.yml
+```
+
+2. Create a `.env` file:
+```sh
+cat > .env << EOF
+JWT_SECRET=your-very-secret-key-change-this-in-production
+EOF
+```
+
+3. Update ports to only bind locally (add to docker-compose.yml or create override):
+```yaml
+services:
+  backend:
+    ports:
+      - "127.0.0.1:8000:8000"
+  frontend:
+    ports:
+      - "127.0.0.1:3000:3000"
+```
+
+4. Start the services:
+```sh
+docker compose up -d
+```
+
+5. Configure NGINX (see [docs/NGINX_CONFIGURATION.md](docs/NGINX_CONFIGURATION.md) for full details):
+```nginx
+server {
+    server_name example.com;
+    listen 443 ssl;
+    # ... SSL configuration ...
+
+    # Frontend
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # Backend API (strips /api prefix)
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+```
+
+The pre-built frontend image uses `VITE_API_BASE=/api`, so all API calls go through `/api/*` which NGINX forwards to the backend (stripping the prefix).
 
 #### Update to Latest Version
 
@@ -196,9 +244,18 @@ docker compose pull
 docker compose up -d
 ```
 
+### Docker Images
+
+Multi-platform images are published to GitHub Container Registry for `linux/amd64` and `linux/arm64`:
+
+- `ghcr.io/bassdr/bonscompte-backend:latest`
+- `ghcr.io/bassdr/bonscompte-frontend:latest`
+
+Tags include: `latest`, branch name, commit SHA, semantic versions (e.g., `v1.0.0`).
+
 ### Environment Variables
 
-Backend (`.env`):
+**Backend** (`.env` or environment):
 ```
 DATABASE_URL=sqlite:///data/bonscompte.db
 JWT_SECRET=your-secret-key
@@ -207,53 +264,17 @@ HOST=0.0.0.0
 PORT=8000
 ```
 
-Frontend automatically uses `/api` as the base path for all API calls, which works correctly when deployed behind a reverse proxy (like Nginx). The frontend is served from the same domain and the reverse proxy routes `/api/*` to the backend.
+**Frontend** (build-time via `VITE_API_BASE`):
+- Unset: Defaults to `http://localhost:8000` (development)
+- `/api`: Relative path for NGINX reverse proxy (production)
 
 ### Persistent Data
 
-SQLite database is stored in a Docker volume `sqlite_data` by default. To use a host directory instead:
+SQLite database is stored in a Docker volume `sqlite_data`. To use a host directory:
 
-```yaml
-volumes:
-  backend:
-    volumes:
-      - /path/to/local/data:/data  # Use host directory
-```
-
-### Reverse Proxy Setup (Production)
-
-For production deployments with SSL/TLS, use a reverse proxy like Nginx or Traefik to:
-1. Terminate SSL/TLS
-2. Route frontend and backend through a single domain
-3. Keep backend only accessible locally
-
-**Docker Compose (with reverse proxy):**
 ```yaml
 services:
-  frontend:
-    ports:
-      - "127.0.0.1:3000:3000"  # Only localhost
   backend:
-    ports:
-      - "127.0.0.1:8000:8000"  # Only localhost
+    volumes:
+      - /path/to/local/data:/data
 ```
-
-**Example Nginx configuration:**
-```nginx
-location / {
-    proxy_pass http://127.0.0.1:3000;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $connection_upgrade;
-}
-
-location /api/ {
-    proxy_pass http://127.0.0.1:8000/;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Real-IP $remote_addr;
-}
-```
-
-The frontend automatically routes all API calls to `/api/*`, which your reverse proxy forwards to the backend.

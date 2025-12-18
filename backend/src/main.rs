@@ -95,22 +95,18 @@ async fn main() {
         .nest("/payments", routes::payments::router())
         .nest("/debts", routes::debts::router());
 
-    // Build router
+    // Build router - all routes at root level (use reverse proxy for /api prefix if needed)
     let app = Router::new()
         // Health check
         .route("/health", get(|| async { "OK" }))
         // Public routes (auth)
         .nest("/auth", routes::auth::router())
         // Protected routes (with extensions middleware)
-        .nest(
-            "/api",
-            Router::new()
-                .nest("/users", routes::users::router())
-                .nest("/projects", routes::projects::router())
-                // Project-scoped routes
-                .nest("/projects/{id}", project_routes)
-                .layer(middleware::from_fn_with_state(state.clone(), inject_extensions)),
-        )
+        .nest("/users", routes::users::router())
+        .nest("/projects", routes::projects::router())
+        // Project-scoped routes
+        .nest("/projects/{id}", project_routes)
+        .layer(middleware::from_fn_with_state(state.clone(), inject_extensions))
         // Global middleware
         .layer(TraceLayer::new_for_http())
         .layer(cors)

@@ -1,15 +1,16 @@
 use axum::{
     extract::State,
-    routing::{get, post},
+    routing::{get, post, put},
     Json, Router,
 };
 use rand::Rng;
+use serde::Serialize;
 use sqlx::SqlitePool;
 
 use crate::{
     auth::{AuthUser, ProjectMember, AdminMember},
     error::{AppError, AppResult},
-    models::{Project, ProjectWithRole, CreateProject, UpdateProject, JoinProject},
+    models::{Project, ProjectWithRole, CreateProject, UpdateProject, JoinProject, UpdateProjectSettings},
     AppState,
 };
 
@@ -19,6 +20,7 @@ pub fn router() -> Router<AppState> {
         .route("/join", post(join_project))
         .route("/{id}", get(get_project).put(update_project).delete(delete_project))
         .route("/{id}/regenerate-invite", post(regenerate_invite))
+        .route("/{id}/settings", put(update_project_settings))
 }
 
 fn generate_invite_code() -> String {
@@ -37,10 +39,11 @@ async fn list_projects(
     State(pool): State<SqlitePool>,
 ) -> AppResult<Json<Vec<ProjectWithRole>>> {
     let projects: Vec<ProjectWithRole> = sqlx::query_as(
-        "SELECT p.id, p.name, p.description, p.invite_code, p.created_by, p.created_at, pm.role
+        "SELECT p.id, p.name, p.description, p.invite_code, p.created_by, p.created_at,
+                p.invites_enabled, p.require_approval, pm.role
          FROM projects p
          JOIN project_members pm ON p.id = pm.project_id
-         WHERE pm.user_id = ?
+         WHERE pm.user_id = ? AND pm.status = 'active'
          ORDER BY p.created_at DESC"
     )
     .bind(auth.user_id)
@@ -193,11 +196,58 @@ async fn regenerate_invite(
     Ok(Json(project))
 }
 
+async fn update_project_settings(
+    admin: AdminMember,
+    State(pool): State<SqlitePool>,
+    Json(input): Json<UpdateProjectSettings>,
+) -> AppResult<Json<Project>> {
+    let member = admin.0;
+
+    // Build dynamic update
+    let mut updates = Vec::new();
+    let mut bool_binds: Vec<bool> = Vec::new();
+
+    if let Some(invites_enabled) = input.invites_enabled {
+        updates.push("invites_enabled = ?");
+        bool_binds.push(invites_enabled);
+    }
+    if let Some(require_approval) = input.require_approval {
+        updates.push("require_approval = ?");
+        bool_binds.push(require_approval);
+    }
+
+    if updates.is_empty() {
+        return Err(AppError::BadRequest("No settings to update".to_string()));
+    }
+
+    let sql = format!("UPDATE projects SET {} WHERE id = ?", updates.join(", "));
+    let mut query = sqlx::query(&sql);
+    for bind in &bool_binds {
+        query = query.bind(bind);
+    }
+    query = query.bind(member.project_id);
+    query.execute(&pool).await?;
+
+    let project: Project = sqlx::query_as("SELECT * FROM projects WHERE id = ?")
+        .bind(member.project_id)
+        .fetch_one(&pool)
+        .await?;
+
+    Ok(Json(project))
+}
+
+#[derive(Serialize)]
+struct JoinProjectResponse {
+    project: Project,
+    status: String,
+    participant_id: Option<i64>,
+}
+
 async fn join_project(
     auth: AuthUser,
     State(pool): State<SqlitePool>,
     Json(input): Json<JoinProject>,
-) -> AppResult<Json<Project>> {
+) -> AppResult<Json<JoinProjectResponse>> {
     // Find project by invite code
     let project: Option<Project> = sqlx::query_as(
         "SELECT * FROM projects WHERE invite_code = ?"
@@ -207,6 +257,11 @@ async fn join_project(
     .await?;
 
     let project = project.ok_or_else(|| AppError::NotFound("Invalid invite code".to_string()))?;
+
+    // Check if invites are enabled
+    if !project.invites_enabled {
+        return Err(AppError::Forbidden("Invites are disabled for this project".to_string()));
+    }
 
     // Check if already a member
     let existing: Option<i64> = sqlx::query_scalar(
@@ -221,14 +276,83 @@ async fn join_project(
         return Err(AppError::BadRequest("Already a member of this project".to_string()));
     }
 
-    // Add as editor member (without participant association initially)
+    let mut tx = pool.begin().await?;
+
+    // Handle participant token if provided
+    let mut participant_id: Option<i64> = None;
+    if let Some(token) = &input.participant_token {
+        // Look up the participant invite
+        #[derive(sqlx::FromRow)]
+        struct ParticipantInvite {
+            id: i64,
+            participant_id: i64,
+            used_by: Option<i64>,
+        }
+
+        let invite: Option<ParticipantInvite> = sqlx::query_as(
+            "SELECT id, participant_id, used_by FROM participant_invites
+             WHERE invite_token = ? AND project_id = ?"
+        )
+        .bind(token)
+        .bind(project.id)
+        .fetch_optional(&mut *tx)
+        .await?;
+
+        if let Some(invite) = invite {
+            if invite.used_by.is_some() {
+                return Err(AppError::BadRequest("This invite link has already been used".to_string()));
+            }
+
+            // Check if participant already has a user linked
+            let existing_user: Option<i64> = sqlx::query_scalar(
+                "SELECT user_id FROM participants WHERE id = ? AND user_id IS NOT NULL"
+            )
+            .bind(invite.participant_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+
+            if existing_user.is_some() {
+                return Err(AppError::BadRequest("This participant is already linked to a user".to_string()));
+            }
+
+            // Link user to participant
+            sqlx::query("UPDATE participants SET user_id = ? WHERE id = ?")
+                .bind(auth.user_id)
+                .bind(invite.participant_id)
+                .execute(&mut *tx)
+                .await?;
+
+            // Mark invite as used
+            sqlx::query("UPDATE participant_invites SET used_by = ?, used_at = datetime('now') WHERE id = ?")
+                .bind(auth.user_id)
+                .bind(invite.id)
+                .execute(&mut *tx)
+                .await?;
+
+            participant_id = Some(invite.participant_id);
+        }
+        // If token doesn't match, silently ignore (allow joining without participant link)
+    }
+
+    // Determine status based on require_approval
+    let status = if project.require_approval { "pending" } else { "active" };
+
+    // Add as editor member
     sqlx::query(
-        "INSERT INTO project_members (project_id, user_id, role) VALUES (?, ?, 'editor')"
+        "INSERT INTO project_members (project_id, user_id, role, participant_id, status) VALUES (?, ?, 'editor', ?, ?)"
     )
     .bind(project.id)
     .bind(auth.user_id)
-    .execute(&pool)
+    .bind(participant_id)
+    .bind(status)
+    .execute(&mut *tx)
     .await?;
 
-    Ok(Json(project))
+    tx.commit().await?;
+
+    Ok(Json(JoinProjectResponse {
+        project,
+        status: status.to_string(),
+        participant_id,
+    }))
 }

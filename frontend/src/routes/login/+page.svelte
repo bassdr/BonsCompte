@@ -137,4 +137,62 @@
     .link a {
         color: var(--accent, #7b61ff);
     }
+
+    /* Mobile responsive styles */
+    @media (max-width: 768px) {
+        .auth-container {
+            margin: 1rem auto;
+            padding: 1.5rem 1rem;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        input {
+            padding: 0.875rem;
+            font-size: 16px;
+        }
+
+        button {
+            padding: 0.875rem;
+            font-size: 1rem;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .auth-container {
+            margin: 1rem 0;
+            padding: 1rem;
+            max-width: 100%;
+        }
+
+        h1 {
+            font-size: 1.3rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .field {
+            margin-bottom: 1.25rem;
+        }
+
+        input {
+            padding: 1rem;
+            font-size: 16px;
+            border-radius: 6px;
+        }
+
+        button {
+            padding: 1rem;
+            margin-top: 1.5rem;
+            font-size: 1rem;
+            border-radius: 6px;
+        }
+
+        .link {
+            margin-top: 1.25rem;
+            font-size: 0.95rem;
+        }
+    }
 </style>

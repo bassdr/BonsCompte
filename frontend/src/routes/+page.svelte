@@ -64,14 +64,14 @@
         error = '';
 
         try {
-            const project = await joinProject(inviteCode.trim());
+            const response = await joinProject(inviteCode.trim());
 
             // Reset form
             inviteCode = '';
             showJoinForm = false;
 
             // Go to joined project
-            goto(`/projects/${project.id}`);
+            goto(`/projects/${response.project.id}`);
         } catch (e) {
             error = e instanceof Error ? e.message : 'Failed to join project';
         } finally {
@@ -355,5 +355,113 @@
         font-size: 0.8rem;
         color: #999;
         margin-top: 1rem;
+    }
+
+    /* Mobile responsive styles */
+    @media (max-width: 768px) {
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .actions {
+            gap: 0.75rem;
+            margin-bottom: 1.25rem;
+            flex-wrap: wrap;
+        }
+
+        .btn-primary, .btn-secondary {
+            padding: 0.65rem 1.25rem;
+            font-size: 0.95rem;
+            flex: 1;
+            min-width: 140px;
+        }
+
+        .card {
+            padding: 1.25rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .projects-grid {
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 1.25rem;
+        }
+
+        .project-card {
+            padding: 1.25rem;
+        }
+
+        .empty-state {
+            padding: 2rem 1rem;
+        }
+    }
+
+    @media (max-width: 480px) {
+        h1 {
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+        }
+
+        .actions {
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            flex-direction: column;
+        }
+
+        .btn-primary, .btn-secondary {
+            padding: 0.75rem 1rem;
+            font-size: 0.9rem;
+            width: 100%;
+        }
+
+        .card {
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .form-card h2 {
+            font-size: 1.1rem;
+            margin-bottom: 0.875rem;
+        }
+
+        .projects-grid {
+            grid-template-columns: 1fr;
+            gap: 1rem;
+        }
+
+        .project-card {
+            padding: 1rem;
+        }
+
+        .project-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.5rem;
+        }
+
+        .project-header h3 {
+            font-size: 1rem;
+        }
+
+        .role-badge {
+            font-size: 0.7rem;
+            padding: 0.2rem 0.4rem;
+        }
+
+        input {
+            padding: 0.875rem;
+            font-size: 16px;
+        }
+
+        button[type="submit"] {
+            padding: 0.875rem 1rem;
+            font-size: 0.95rem;
+            width: 100%;
+        }
+
+        .empty-state {
+            padding: 1.5rem 1rem;
+            font-size: 0.95rem;
+        }
     }
 </style>

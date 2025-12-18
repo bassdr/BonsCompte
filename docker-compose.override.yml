@@ -14,3 +14,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        # For local development: frontend calls backend directly on localhost:8000
+        # The browser makes requests to this URL, so it must be reachable from host
+        VITE_API_BASE: "http://localhost:8000"

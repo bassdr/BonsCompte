@@ -132,6 +132,7 @@
     h1 {
         margin: 0;
         color: var(--accent, #7b61ff);
+        font-size: 1.8rem;
     }
 
     .project-nav {
@@ -141,6 +142,8 @@
         backdrop-filter: blur(10px);
         border-radius: 12px;
         padding: 0.5rem;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
     }
 
     .project-nav a {
@@ -150,6 +153,8 @@
         font-weight: 600;
         border-radius: 8px;
         transition: all 0.2s;
+        white-space: nowrap;
+        flex-shrink: 0;
     }
 
     .project-nav a:hover {
@@ -164,5 +169,64 @@
 
     .project-content {
         /* Content area */
+    }
+
+    /* Mobile responsive styles */
+    @media (max-width: 768px) {
+        .project-header {
+            margin-bottom: 1.5rem;
+        }
+
+        .project-title {
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .back-link {
+            width: 32px;
+            height: 32px;
+            font-size: 1.1rem;
+        }
+
+        h1 {
+            font-size: 1.3rem;
+        }
+
+        .project-nav {
+            padding: 0.4rem;
+            border-radius: 10px;
+        }
+
+        .project-nav a {
+            padding: 0.6rem 1rem;
+            font-size: 0.9rem;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .project-title {
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .back-link {
+            width: 28px;
+            height: 28px;
+            font-size: 1rem;
+        }
+
+        h1 {
+            font-size: 1.1rem;
+        }
+
+        .project-nav {
+            padding: 0.35rem;
+            gap: 0.3rem;
+        }
+
+        .project-nav a {
+            padding: 0.5rem 0.8rem;
+            font-size: 0.8rem;
+        }
     }
 </style>

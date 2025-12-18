@@ -1,11 +1,25 @@
 <script lang="ts">
     import { page } from '$app/stores';
-    import { createParticipant, updateParticipant, deleteParticipant, claimParticipant } from "$lib/api";
-    import { participants, refreshParticipants, canEdit, isAdmin } from '$lib/stores/project';
+    import {
+        createParticipant,
+        updateParticipant,
+        deleteParticipant,
+        claimParticipant,
+        createParticipantInvite,
+        getParticipantInvite,
+        revokeParticipantInvite,
+        type ParticipantInvite
+    } from "$lib/api";
+    import { participants, refreshParticipants, canEdit, isAdmin, currentProject } from '$lib/stores/project';
     import { auth } from '$lib/auth';
 
     let error = $state('');
     let success = $state('');
+
+    // Invite state
+    let invites = $state<Record<number, ParticipantInvite | null>>({});
+    let loadingInvite = $state<number | null>(null);
+    let copiedId = $state<number | null>(null);
 
     // Form state
     let showAddForm = $state(false);
@@ -124,6 +138,80 @@
         const currentUserId = $auth.user?.id;
         return !$participants.some(part => part.user_id === currentUserId);
     }
+
+    async function handleGenerateInvite(participantId: number) {
+        loadingInvite = participantId;
+        error = '';
+
+        try {
+            const invite = await createParticipantInvite(projectId, participantId);
+            invites[participantId] = invite;
+            success = 'Invite link generated';
+        } catch (e) {
+            error = e instanceof Error ? e.message : 'Failed to generate invite';
+        } finally {
+            loadingInvite = null;
+        }
+    }
+
+    async function handleRevokeInvite(participantId: number) {
+        if (!confirm('Revoke this invite link? Anyone who has it will no longer be able to use it.')) return;
+
+        loadingInvite = participantId;
+        error = '';
+
+        try {
+            await revokeParticipantInvite(projectId, participantId);
+            invites[participantId] = null;
+            success = 'Invite link revoked';
+        } catch (e) {
+            error = e instanceof Error ? e.message : 'Failed to revoke invite';
+        } finally {
+            loadingInvite = null;
+        }
+    }
+
+    async function loadInvite(participantId: number) {
+        try {
+            const invite = await getParticipantInvite(projectId, participantId);
+            invites[participantId] = invite;
+        } catch {
+            // No invite exists, that's fine
+            invites[participantId] = null;
+        }
+    }
+
+    function getInviteUrl(invite: ParticipantInvite): string {
+        const code = $currentProject?.invite_code || '';
+        const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+        return `${baseUrl}/join?code=${code}&p=${invite.invite_token}`;
+    }
+
+    async function copyInviteUrl(participantId: number) {
+        const invite = invites[participantId];
+        if (!invite) return;
+
+        try {
+            await navigator.clipboard.writeText(getInviteUrl(invite));
+            copiedId = participantId;
+            setTimeout(() => {
+                if (copiedId === participantId) copiedId = null;
+            }, 2000);
+        } catch {
+            error = 'Failed to copy to clipboard';
+        }
+    }
+
+    // Load invites for participants without users (admin only)
+    $effect(() => {
+        if ($isAdmin && $participants.length > 0) {
+            for (const p of $participants) {
+                if (p.user_id === null && invites[p.id] === undefined) {
+                    loadInvite(p.id);
+                }
+            }
+        }
+    });
 </script>
 
 <h2>Participants</h2>
@@ -204,32 +292,70 @@
                             <button type="button" onclick={cancelEdit}>Cancel</button>
                         </form>
                     {:else}
-                        <div class="participant-info">
-                            <span class="name">{p.name}</span>
-                            <span class="weight">
-                                {#if p.default_weight === 0}
-                                    Weight: 0 (will not participate)
-                                {:else}
-                                    Weight: {p.default_weight}
+                        <div class="participant-row">
+                            <div class="participant-info">
+                                <span class="name">{p.name}</span>
+                                <span class="weight">
+                                    {#if p.default_weight === 0}
+                                        Weight: 0 (will not participate)
+                                    {:else}
+                                        Weight: {p.default_weight}
+                                    {/if}
+                                </span>
+                                {#if p.user_id}
+                                    <span class="linked">Linked to account</span>
                                 {/if}
-                            </span>
-                            {#if p.user_id}
-                                <span class="linked">Linked to account</span>
-                            {/if}
+                            </div>
+                            <div class="participant-actions">
+                                {#if canClaim(p)}
+                                    <button class="btn-claim" onclick={() => handleClaim(p.id)}>
+                                        Claim as me
+                                    </button>
+                                {/if}
+                                {#if $canEdit}
+                                    <button class="btn-edit" onclick={() => startEdit(p)}>Edit</button>
+                                {/if}
+                                {#if $isAdmin}
+                                    <button class="btn-delete" onclick={() => handleDelete(p.id)}>Delete</button>
+                                {/if}
+                            </div>
                         </div>
-                        <div class="participant-actions">
-                            {#if canClaim(p)}
-                                <button class="btn-claim" onclick={() => handleClaim(p.id)}>
-                                    Claim as me
-                                </button>
-                            {/if}
-                            {#if $canEdit}
-                                <button class="btn-edit" onclick={() => startEdit(p)}>Edit</button>
-                            {/if}
-                            {#if $isAdmin}
-                                <button class="btn-delete" onclick={() => handleDelete(p.id)}>Delete</button>
-                            {/if}
-                        </div>
+
+                        {#if $isAdmin && p.user_id === null}
+                            <div class="invite-section">
+                                {#if invites[p.id]}
+                                    <div class="invite-link-row">
+                                        <span class="invite-label">Invite link:</span>
+                                        <code class="invite-url">{getInviteUrl(invites[p.id]!)}</code>
+                                        <button
+                                            class="btn-copy"
+                                            onclick={() => copyInviteUrl(p.id)}
+                                            disabled={loadingInvite === p.id}
+                                        >
+                                            {copiedId === p.id ? 'Copied!' : 'Copy'}
+                                        </button>
+                                        <button
+                                            class="btn-revoke"
+                                            onclick={() => handleRevokeInvite(p.id)}
+                                            disabled={loadingInvite === p.id}
+                                        >
+                                            Revoke
+                                        </button>
+                                    </div>
+                                    {#if invites[p.id]?.used_by}
+                                        <span class="invite-used">Invite already used</span>
+                                    {/if}
+                                {:else}
+                                    <button
+                                        class="btn-generate-invite"
+                                        onclick={() => handleGenerateInvite(p.id)}
+                                        disabled={loadingInvite === p.id}
+                                    >
+                                        {loadingInvite === p.id ? 'Generating...' : 'Generate Invite Link'}
+                                    </button>
+                                {/if}
+                            </div>
+                        {/if}
                     {/if}
                 </li>
             {/each}
@@ -349,8 +475,7 @@
 
     .participants-list li {
         display: flex;
-        justify-content: space-between;
-        align-items: center;
+        flex-direction: column;
         padding: 1rem;
         border-bottom: 1px solid #eee;
     }
@@ -457,5 +582,134 @@
     .edit-form button[type="button"] {
         background: transparent;
         border: 1px solid #ddd;
+    }
+
+    /* Participant row layout */
+    .participant-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+    }
+
+    /* Invite section */
+    .invite-section {
+        margin-top: 0.75rem;
+        padding-top: 0.75rem;
+        border-top: 1px dashed #ddd;
+        width: 100%;
+    }
+
+    .invite-link-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .invite-label {
+        font-size: 0.85rem;
+        color: #666;
+    }
+
+    .invite-url {
+        background: #f5f5f5;
+        padding: 0.4rem 0.75rem;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        max-width: 300px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .btn-copy {
+        padding: 0.4rem 0.75rem;
+        background: var(--accent, #7b61ff);
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        cursor: pointer;
+    }
+
+    .btn-copy:hover:not(:disabled) {
+        opacity: 0.9;
+    }
+
+    .btn-revoke {
+        padding: 0.4rem 0.75rem;
+        background: transparent;
+        color: #c00;
+        border: 1px solid #c00;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        cursor: pointer;
+    }
+
+    .btn-revoke:hover:not(:disabled) {
+        background: #fee;
+    }
+
+    .btn-generate-invite {
+        padding: 0.5rem 1rem;
+        background: #e8e4ff;
+        color: var(--accent, #7b61ff);
+        border: 1px solid var(--accent, #7b61ff);
+        border-radius: 6px;
+        font-size: 0.85rem;
+        cursor: pointer;
+    }
+
+    .btn-generate-invite:hover:not(:disabled) {
+        background: #d8d0ff;
+    }
+
+    .btn-generate-invite:disabled,
+    .btn-copy:disabled,
+    .btn-revoke:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .invite-used {
+        font-size: 0.8rem;
+        color: #666;
+        font-style: italic;
+        margin-top: 0.25rem;
+        display: block;
+    }
+
+    /* Mobile responsive */
+    @media (max-width: 768px) {
+        .participants-list li {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .participant-row {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }
+
+        .participant-info {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.25rem;
+        }
+
+        .participant-actions {
+            flex-wrap: wrap;
+        }
+
+        .invite-link-row {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .invite-url {
+            max-width: 100%;
+        }
     }
 </style>

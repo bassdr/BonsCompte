@@ -1,7 +1,9 @@
 import { auth, type User } from './auth';
 import { browser } from '$app/environment';
 
-const BASE = import.meta.env.VITE_API_BASE ?? "/api";
+// Default to localhost:8000 for development
+// Override with VITE_API_BASE in docker builds or production
+const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
 async function authFetch(path: string, opts: RequestInit = {}) {
     const token = auth.getToken();
@@ -70,6 +72,19 @@ export async function register(
     return res.json();
 }
 
+// User management
+export const changePassword = (currentPassword: string, newPassword: string): Promise<{ message: string }> =>
+    authFetch("/users/me/password", {
+        method: "PUT",
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+    });
+
+export const deleteAccount = (password: string): Promise<DeleteAccountResponse> =>
+    authFetch("/users/me", {
+        method: "DELETE",
+        body: JSON.stringify({ password })
+    });
+
 // Types
 export interface Project {
     id: number;
@@ -78,6 +93,8 @@ export interface Project {
     invite_code: string | null;
     created_by: number;
     created_at: string;
+    invites_enabled: boolean;
+    require_approval: boolean;
 }
 
 export interface ProjectWithRole extends Project {
@@ -103,6 +120,33 @@ export interface ProjectMember {
     participant_id: number | null;
     participant_name: string | null;
     joined_at: string;
+    status: 'pending' | 'active' | 'rejected';
+}
+
+export interface ParticipantInvite {
+    id: number;
+    participant_id: number;
+    invite_token: string;
+    created_at: string;
+    expires_at: string | null;
+    used_by: number | null;
+    used_at: string | null;
+}
+
+export interface JoinProjectResponse {
+    project: Project;
+    status: string;
+    participant_id: number | null;
+}
+
+export interface DeleteAccountResponse {
+    message: string;
+    affected_projects: Array<{
+        project_id: number;
+        project_name: string;
+        outcome: 'transferred' | 'deleted';
+        transferred_to: string | null;
+    }>;
 }
 
 export interface Payment {
@@ -170,85 +214,111 @@ export interface DebtSummary {
 }
 
 // Users
-export const getUsers = () => authFetch("/api/users");
+export const getUsers = () => authFetch("/users");
 
 // Projects
 export const getProjects = (): Promise<ProjectWithRole[]> =>
-    authFetch("/api/projects");
+    authFetch("/projects");
 
 export const getProject = (id: number): Promise<Project> =>
-    authFetch(`/api/projects/${id}`);
+    authFetch(`/projects/${id}`);
 
 export const createProject = (data: { name: string; description?: string }): Promise<Project> =>
-    authFetch("/api/projects", {
+    authFetch("/projects", {
         method: "POST",
         body: JSON.stringify(data)
     });
 
 export const updateProject = (id: number, data: { name?: string; description?: string }): Promise<Project> =>
-    authFetch(`/api/projects/${id}`, {
+    authFetch(`/projects/${id}`, {
         method: "PUT",
         body: JSON.stringify(data)
     });
 
 export const deleteProject = (id: number) =>
-    authFetch(`/api/projects/${id}`, { method: "DELETE" });
+    authFetch(`/projects/${id}`, { method: "DELETE" });
 
 export const regenerateInviteCode = (id: number): Promise<Project> =>
-    authFetch(`/api/projects/${id}/regenerate-invite`, { method: "POST" });
+    authFetch(`/projects/${id}/regenerate-invite`, { method: "POST" });
 
-export const joinProject = (inviteCode: string): Promise<Project> =>
-    authFetch("/api/projects/join", {
+export const joinProject = (inviteCode: string, participantToken?: string): Promise<JoinProjectResponse> =>
+    authFetch("/projects/join", {
         method: "POST",
-        body: JSON.stringify({ invite_code: inviteCode })
+        body: JSON.stringify({ invite_code: inviteCode, participant_token: participantToken })
+    });
+
+export const updateProjectSettings = (id: number, settings: { invites_enabled?: boolean; require_approval?: boolean }): Promise<Project> =>
+    authFetch(`/projects/${id}/settings`, {
+        method: "PUT",
+        body: JSON.stringify(settings)
     });
 
 // Participants
 export const getParticipants = (projectId: number): Promise<Participant[]> =>
-    authFetch(`/api/projects/${projectId}/participants`);
+    authFetch(`/projects/${projectId}/participants`);
 
 export const getParticipant = (projectId: number, participantId: number): Promise<Participant> =>
-    authFetch(`/api/projects/${projectId}/participants/${participantId}`);
+    authFetch(`/projects/${projectId}/participants/${participantId}`);
 
 export const createParticipant = (projectId: number, data: { name: string; default_weight?: number }): Promise<Participant> =>
-    authFetch(`/api/projects/${projectId}/participants`, {
+    authFetch(`/projects/${projectId}/participants`, {
         method: "POST",
         body: JSON.stringify(data)
     });
 
 export const updateParticipant = (projectId: number, participantId: number, data: { name?: string; default_weight?: number }): Promise<Participant> =>
-    authFetch(`/api/projects/${projectId}/participants/${participantId}`, {
+    authFetch(`/projects/${projectId}/participants/${participantId}`, {
         method: "PUT",
         body: JSON.stringify(data)
     });
 
 export const deleteParticipant = (projectId: number, participantId: number) =>
-    authFetch(`/api/projects/${projectId}/participants/${participantId}`, { method: "DELETE" });
+    authFetch(`/projects/${projectId}/participants/${participantId}`, { method: "DELETE" });
 
 export const claimParticipant = (projectId: number, participantId: number): Promise<Participant> =>
-    authFetch(`/api/projects/${projectId}/participants/${participantId}/claim`, { method: "POST" });
+    authFetch(`/projects/${projectId}/participants/${participantId}/claim`, { method: "POST" });
+
+// Participant Invites
+export const createParticipantInvite = (projectId: number, participantId: number): Promise<ParticipantInvite> =>
+    authFetch(`/projects/${projectId}/participants/${participantId}/invite`, { method: "POST" });
+
+export const getParticipantInvite = (projectId: number, participantId: number): Promise<ParticipantInvite> =>
+    authFetch(`/projects/${projectId}/participants/${participantId}/invite`);
+
+export const revokeParticipantInvite = (projectId: number, participantId: number): Promise<{ revoked: boolean }> =>
+    authFetch(`/projects/${projectId}/participants/${participantId}/invite`, { method: "DELETE" });
 
 // Members
 export const getMembers = (projectId: number): Promise<ProjectMember[]> =>
-    authFetch(`/api/projects/${projectId}/members`);
+    authFetch(`/projects/${projectId}/members`);
 
 export const getMember = (projectId: number, userId: number): Promise<ProjectMember> =>
-    authFetch(`/api/projects/${projectId}/members/${userId}`);
+    authFetch(`/projects/${projectId}/members/${userId}`);
 
 export const updateMemberRole = (projectId: number, userId: number, role: string): Promise<ProjectMember> =>
-    authFetch(`/api/projects/${projectId}/members/${userId}`, {
+    authFetch(`/projects/${projectId}/members/${userId}`, {
         method: "PUT",
         body: JSON.stringify({ role })
     });
 
 export const removeMember = (projectId: number, userId: number) =>
-    authFetch(`/api/projects/${projectId}/members/${userId}`, { method: "DELETE" });
+    authFetch(`/projects/${projectId}/members/${userId}`, { method: "DELETE" });
 
 export const setMemberParticipant = (projectId: number, userId: number, participantId: number | null): Promise<ProjectMember> =>
-    authFetch(`/api/projects/${projectId}/members/${userId}/participant`, {
+    authFetch(`/projects/${projectId}/members/${userId}/participant`, {
         method: "PUT",
         body: JSON.stringify({ participant_id: participantId })
     });
+
+// Member Approval
+export const getPendingMembers = (projectId: number): Promise<ProjectMember[]> =>
+    authFetch(`/projects/${projectId}/members/pending`);
+
+export const approveMember = (projectId: number, userId: number): Promise<ProjectMember> =>
+    authFetch(`/projects/${projectId}/members/${userId}/approve`, { method: "PUT" });
+
+export const rejectMember = (projectId: number, userId: number): Promise<{ rejected: boolean }> =>
+    authFetch(`/projects/${projectId}/members/${userId}/reject`, { method: "PUT" });
 
 // Payments
 export interface CreatePaymentInput {
@@ -268,28 +338,28 @@ export interface CreatePaymentInput {
 }
 
 export const getPayments = (projectId: number): Promise<PaymentWithContributions[]> =>
-    authFetch(`/api/projects/${projectId}/payments`);
+    authFetch(`/projects/${projectId}/payments`);
 
 export const getPayment = (projectId: number, paymentId: number): Promise<PaymentWithContributions> =>
-    authFetch(`/api/projects/${projectId}/payments/${paymentId}`);
+    authFetch(`/projects/${projectId}/payments/${paymentId}`);
 
 export const createPayment = (projectId: number, payload: CreatePaymentInput): Promise<PaymentWithContributions> =>
-    authFetch(`/api/projects/${projectId}/payments`, {
+    authFetch(`/projects/${projectId}/payments`, {
         method: "POST",
         body: JSON.stringify(payload)
     });
 
 export const updatePayment = (projectId: number, paymentId: number, payload: CreatePaymentInput): Promise<PaymentWithContributions> =>
-    authFetch(`/api/projects/${projectId}/payments/${paymentId}`, {
+    authFetch(`/projects/${projectId}/payments/${paymentId}`, {
         method: "PUT",
         body: JSON.stringify(payload)
     });
 
 export const deletePayment = (projectId: number, paymentId: number) =>
-    authFetch(`/api/projects/${projectId}/payments/${paymentId}`, { method: "DELETE" });
+    authFetch(`/projects/${projectId}/payments/${paymentId}`, { method: "DELETE" });
 
 // Debts
 export const getDebts = (projectId: number, targetDate?: string): Promise<DebtSummary> => {
     const params = targetDate ? `?date=${targetDate}` : '';
-    return authFetch(`/api/projects/${projectId}/debts${params}`);
+    return authFetch(`/projects/${projectId}/debts${params}`);
 };

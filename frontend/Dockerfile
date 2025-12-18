@@ -11,9 +11,20 @@ RUN npm prune --production
 
 FROM node:22-alpine
 WORKDIR /app
-COPY --from=builder /app/build build/
-COPY --from=builder /app/node_modules node_modules/
-COPY package.json .
+
+# Create non-root user for security
+# Using uid 1000 (standard app user ID)
+RUN addgroup -g 1000 appuser && adduser -D -u 1000 -G appuser appuser
+
+# Copy built application from builder
+COPY --from=builder --chown=appuser:appuser /app/build build/
+COPY --from=builder --chown=appuser:appuser /app/node_modules node_modules/
+COPY --chown=appuser:appuser package.json .
+
 EXPOSE 3000
 ENV NODE_ENV=production
+
+# Switch to non-root user
+USER appuser
+
 CMD [ "node", "build" ]

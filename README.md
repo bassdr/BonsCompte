@@ -278,3 +278,75 @@ services:
     volumes:
       - /path/to/local/data:/data
 ```
+
+### Docker Security & User Management
+
+Both BonsCompte containers follow Docker security best practices by running as **non-root users**.
+
+**Default Setup (UID 1000):**
+
+Images are built to run as `appuser` with UID 1000:GID 1000. This is the standard unprivileged user ID used by most distributions.
+
+**Benefits:**
+- Limits damage if the application is compromised
+- Prevents container escape attacks from escalating to root
+- Follows principle of least privilege
+- Works out-of-the-box on most systems
+
+**Customizing User for Your Environment:**
+
+You can override the user in `docker-compose.yml` if you need a different UID:GID:
+
+```yaml
+services:
+  backend:
+    user: "1000:1000"        # Default (recommended)
+    # OR
+    user: "${UID}:${GID}"    # Current host user (development)
+    # OR
+    user: "nobody"           # System nobody user
+    # OR
+    user: ""                 # Reset to image default (UID 1000:1000)
+
+  frontend:
+    user: "1000:1000"        # Same options as backend
+```
+
+**Volume Permissions:**
+
+When mounting host directories, ensure the container user can access them:
+
+**Option 1: Adjust host directory to UID 1000 (recommended)**
+```sh
+mkdir -p /path/to/data
+chown 1000:1000 /path/to/data
+chmod 755 /path/to/data
+```
+
+**Option 2: Use Docker named volumes (simplest)**
+```yaml
+volumes:
+  sqlite_data:
+    driver: local
+```
+No permission setup needed - Docker manages ownership automatically.
+
+**Option 3: Run as current user (development only)**
+```yaml
+services:
+  backend:
+    user: "${UID}:${GID}"
+    volumes:
+      - ./data:/data  # Works with current user's ownership
+```
+
+**Option 4: Make directory world-writable (least secure)**
+```sh
+chmod 777 /path/to/data
+```
+
+**Finding Your UID:GID:**
+```sh
+id
+# Output: uid=1000(username) gid=1000(username) ...
+```

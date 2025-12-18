@@ -148,25 +148,68 @@
             return;
         }
 
-        // Validate file type
-        if (!file.type.startsWith('image/')) {
-            error = 'Please select an image file';
+        // Validate file type by MIME type
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+        if (!allowedTypes.includes(file.type)) {
+            error = 'Please select a supported image format (JPEG, PNG, GIF, or WebP)';
             return;
         }
 
         // Validate file size (max 5MB)
-        if (file.size > 5 * 1024 * 1024) {
-            error = 'Image must be less than 5MB';
+        const maxSizeMB = 5;
+        const maxSizeBytes = maxSizeMB * 1024 * 1024;
+        if (file.size > maxSizeBytes) {
+            error = `Image must be less than ${maxSizeMB}MB (actual: ${(file.size / (1024 * 1024)).toFixed(2)}MB)`;
             return;
         }
 
         const reader = new FileReader();
+        reader.onerror = () => {
+            error = 'Failed to read the image file';
+        };
         reader.onload = (e) => {
             const base64 = e.target?.result as string;
+
+            // Validate magic bytes for actual image format
+            if (!isValidImageMagic(base64)) {
+                error = 'File is not a valid image. Please upload a real image file.';
+                return;
+            }
+
             receiptImage = base64;
             receiptPreview = base64;
+            error = '';
         };
         reader.readAsDataURL(file);
+    }
+
+    // Check image magic bytes to validate it's an actual image
+    function isValidImageMagic(base64: string): boolean {
+        // Extract binary data after comma in data URI
+        const base64Data = base64.includes(',') ? base64.split(',')[1] : base64;
+
+        try {
+            // Decode first few bytes to check magic
+            const binaryString = atob(base64Data.substring(0, 12)); // First 12 chars = ~9 bytes
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+
+            // Check for image magic bytes
+            // JPEG: FF D8 FF
+            if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) return true;
+            // PNG: 89 50 4E 47
+            if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) return true;
+            // GIF: 47 49 46 (GIF)
+            if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return true;
+            // WebP: 52 49 46 46 ... 57 45 42 50 (RIFF...WEBP)
+            if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) return true;
+
+            return false;
+        } catch {
+            return false;
+        }
     }
 
     function clearReceipt() {
@@ -416,11 +459,11 @@
 
                 <!-- Receipt Image -->
                 <div class="field">
-                    <label>Receipt Image (optional)</label>
+                    <label>Receipt Image <span class="hint">(JPEG, PNG, GIF, WebP - max 5MB)</span></label>
                     <div class="receipt-upload">
                         <input
                             type="file"
-                            accept="image/*"
+                            accept="image/jpeg,image/png,image/gif,image/webp"
                             onchange={handleFileChange}
                             id="receipt-input"
                         />
@@ -682,6 +725,14 @@
         margin-bottom: 0.5rem;
         font-weight: 600;
         font-size: 0.9rem;
+    }
+
+    label .hint {
+        font-weight: normal;
+        font-size: 0.8rem;
+        color: #666;
+        display: block;
+        margin-top: 0.25rem;
     }
 
     .checkbox-label {

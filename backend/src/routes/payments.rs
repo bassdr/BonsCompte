@@ -10,6 +10,7 @@ use crate::{
     auth::ProjectMember,
     error::{AppError, AppResult},
     models::{ContributionWithParticipant, CreatePayment, Payment, PaymentWithContributions},
+    services::validate_image_base64,
     AppState,
 };
 
@@ -167,6 +168,11 @@ async fn create_payment(
         return Err(AppError::BadRequest("Total weight must be positive".to_string()));
     }
 
+    // Validate receipt image if provided
+    if let Some(ref image) = input.receipt_image {
+        validate_image_base64(image)?;
+    }
+
     // Insert payment
     let payment_date = input.payment_date.unwrap_or_else(|| {
         chrono::Utc::now().format("%Y-%m-%d").to_string()
@@ -318,6 +324,11 @@ async fn update_payment(
     let total_weight: f64 = input.contributions.iter().map(|c| c.weight).sum();
     if total_weight <= 0.0 {
         return Err(AppError::BadRequest("Total weight must be positive".to_string()));
+    }
+
+    // Validate receipt image if provided
+    if let Some(ref image) = input.receipt_image {
+        validate_image_base64(image)?;
     }
 
     let payment_date = input.payment_date.clone().unwrap_or_else(|| {

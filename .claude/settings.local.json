@@ -9,7 +9,8 @@
       "Bash(npm run check:*)",
       "Bash(ls:*)",
       "Bash(curl:*)",
-      "Bash(cargo build:*)"
+      "Bash(cargo build:*)",
+      "Bash(wc:*)"
     ],
     "deny": [
       "Read(*.csv)",

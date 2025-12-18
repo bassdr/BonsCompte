@@ -18,8 +18,6 @@
     let showDeleteConfirm = $state(false);
     let deleteResult = $state<DeleteAccountResponse | null>(null);
 
-    const user = auth.user;
-
     async function handleChangePassword(e: Event) {
         e.preventDefault();
         passwordError = '';
@@ -77,18 +75,18 @@
 <div class="settings-container">
     <h1>Account Settings</h1>
 
-    {#if user}
+    {#if $auth.user}
         <section class="section">
             <h2>Account Info</h2>
             <div class="info-grid">
                 <div class="info-item">
                     <span class="label">Username</span>
-                    <span class="value">{user.username}</span>
+                    <span class="value">{$auth.user?.username}</span>
                 </div>
-                {#if user.display_name}
+                {#if $auth.user?.display_name}
                     <div class="info-item">
                         <span class="label">Display Name</span>
-                        <span class="value">{user.display_name}</span>
+                        <span class="value">{$auth.user?.display_name}</span>
                     </div>
                 {/if}
             </div>

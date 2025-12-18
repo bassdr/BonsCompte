@@ -1,7 +1,8 @@
 <script lang="ts">
     import { page } from '$app/stores';
     import { getPayments, createPayment, updatePayment, deletePayment, type PaymentWithContributions, type CreatePaymentInput } from "$lib/api";
-    import { participants, currentProject, canEdit } from '$lib/stores/project';
+    import { participants, currentProject, canEdit, members } from '$lib/stores/project';
+    import { auth } from '$lib/auth';
 
     let payments: PaymentWithContributions[] = $state([]);
     let loading = $state(true);
@@ -89,9 +90,16 @@
                 if (weights[p.id] === undefined) weights[p.id] = p.default_weight;
                 if (included[p.id] === undefined) included[p.id] = p.default_weight > 0;
             }
-            // Default payer to first participant
-            if (payerId === null && $participants.length > 0) {
-                payerId = $participants[0].id;
+            // Default payer to current user's participant if linked, otherwise first participant
+            if (payerId === null) {
+                // Find current user's participant (user_id matches current auth user)
+                const currentUserMember = $members.find(m => m.user_id === $auth.user?.id);
+                if (currentUserMember?.participant_id) {
+                    payerId = currentUserMember.participant_id;
+                } else if ($participants.length > 0) {
+                    // Fallback to first participant if user doesn't have a linked participant
+                    payerId = $participants[0].id;
+                }
             }
         }
     });

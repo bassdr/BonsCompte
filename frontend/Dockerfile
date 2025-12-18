@@ -13,8 +13,8 @@ FROM node:22-alpine
 WORKDIR /app
 
 # Create non-root user for security
-# Using uid 1000 (standard app user ID)
-RUN addgroup -g 1000 appuser && adduser -D -u 1000 -G appuser appuser
+# Using uid 1001 (Alpine-safe app user ID, 1000 is reserved)
+RUN addgroup -g 1001 appuser && adduser -D -u 1001 -G appuser appuser
 
 # Copy built application from builder
 COPY --from=builder --chown=appuser:appuser /app/build build/

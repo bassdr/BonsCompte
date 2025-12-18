@@ -283,9 +283,12 @@ services:
 
 Both BonsCompte containers follow Docker security best practices by running as **non-root users**.
 
-**Default Setup (UID 1000):**
+**Default Setup:**
 
-Images are built to run as `appuser` with UID 1000:GID 1000. This is the standard unprivileged user ID used by most distributions.
+- **Backend**: UID 1000:GID 1000 (standard app user ID)
+- **Frontend**: UID 1001:GID 1001 (Alpine-safe alternative, avoids GID conflicts)
+
+Both run as `appuser`, which is the standard unprivileged user ID for containers.
 
 **Benefits:**
 - Limits damage if the application is compromised
@@ -295,31 +298,45 @@ Images are built to run as `appuser` with UID 1000:GID 1000. This is the standar
 
 **Customizing User for Your Environment:**
 
-You can override the user in `docker-compose.yml` if you need a different UID:GID:
+You can override the user in `docker-compose.yml` if you need different UIDs:
 
 ```yaml
 services:
   backend:
-    user: "1000:1000"        # Default (recommended)
+    user: "1000:1000"        # Default (recommended) - backend image default
     # OR
     user: "${UID}:${GID}"    # Current host user (development)
     # OR
     user: "nobody"           # System nobody user
     # OR
-    user: ""                 # Reset to image default (UID 1000:1000)
+    user: ""                 # Reset to image default
 
   frontend:
-    user: "1000:1000"        # Same options as backend
+    user: "1001:1001"        # Default (recommended) - frontend image default
+    # OR
+    user: "${UID}:${GID}"    # Current host user (development)
+    # OR
+    user: ""                 # Reset to image default
 ```
 
 **Volume Permissions:**
 
-When mounting host directories, ensure the container user can access them:
+When mounting host directories, ensure the container user can access them. Adjust the UID/GID in commands below to match your container's UID.
 
-**Option 1: Adjust host directory to UID 1000 (recommended)**
+**Option 1: Adjust host directory to match container user (recommended)**
+
+For backend (UID 1000):
 ```sh
 mkdir -p /path/to/data
 chown 1000:1000 /path/to/data
+chmod 755 /path/to/data
+```
+
+For frontend or custom UID:
+```sh
+# Replace CONTAINER_UID with your container's actual UID (e.g., 1001 for frontend)
+mkdir -p /path/to/data
+chown $CONTAINER_UID:$CONTAINER_UID /path/to/data
 chmod 755 /path/to/data
 ```
 

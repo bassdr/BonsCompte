@@ -15,7 +15,6 @@ use crate::{
 
 #[derive(Deserialize)]
 struct MemberPath {
-    id: i64,
     user_id: i64,
 }
 

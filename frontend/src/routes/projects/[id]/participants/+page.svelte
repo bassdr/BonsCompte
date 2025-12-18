@@ -20,6 +20,7 @@
     let invites = $state<Record<number, ParticipantInvite | null>>({});
     let loadingInvite = $state<number | null>(null);
     let copiedId = $state<number | null>(null);
+    let loadingInvites = $state<Set<number>>(new Set()); // Track in-flight requests
 
     // Form state
     let showAddForm = $state(false);
@@ -172,12 +173,18 @@
     }
 
     async function loadInvite(participantId: number) {
+        // Prevent duplicate requests
+        if (loadingInvites.has(participantId)) return;
+        loadingInvites = new Set([...loadingInvites, participantId]);
+
         try {
             const invite = await getParticipantInvite(projectId, participantId);
             invites[participantId] = invite;
         } catch {
             // No invite exists, that's fine
             invites[participantId] = null;
+        } finally {
+            loadingInvites = new Set([...loadingInvites].filter(id => id !== participantId));
         }
     }
 
@@ -206,7 +213,8 @@
     $effect(() => {
         if ($isAdmin && $participants.length > 0) {
             for (const p of $participants) {
-                if (p.user_id === null && invites[p.id] === undefined) {
+                // Only load if not already loaded and not currently loading
+                if (p.user_id === null && invites[p.id] === undefined && !loadingInvites.has(p.id)) {
                     loadInvite(p.id);
                 }
             }

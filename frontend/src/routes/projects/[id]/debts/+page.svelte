@@ -26,10 +26,12 @@
     let projectId = $derived(parseInt($page.params.id ?? ''));
 
     // Get unique payment dates (from all payments, considering recurrence)
+    // Always include today as a navigation point
     let paymentDates = $derived.by(() => {
         if (!debts?.occurrences) return [];
-        const dates = [...new Set(debts.occurrences.map(o => o.occurrence_date))];
-        return dates.sort();
+        const dates = new Set(debts.occurrences.map(o => o.occurrence_date));
+        dates.add(todayStr); // Add today to the set
+        return [...dates].sort();
     });
 
     // Find previous date with payments (from current occurrences)

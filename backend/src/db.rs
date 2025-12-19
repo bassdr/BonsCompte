@@ -278,6 +278,44 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         .execute(pool)
         .await?;
 
+    // =====================
+    // Migration 005: User Preferences (i18n)
+    // =====================
+
+    // Add user preference columns for internationalization
+    sqlx::query(
+        "ALTER TABLE users ADD COLUMN language TEXT NOT NULL DEFAULT 'en'"
+    )
+    .execute(pool)
+    .await
+    .ok();
+
+    sqlx::query(
+        "ALTER TABLE users ADD COLUMN date_format TEXT NOT NULL DEFAULT 'yyyy-MM-dd'"
+    )
+    .execute(pool)
+    .await
+    .ok();
+
+    sqlx::query(
+        "ALTER TABLE users ADD COLUMN currency_position TEXT NOT NULL DEFAULT 'before'"
+    )
+    .execute(pool)
+    .await
+    .ok();
+
+    sqlx::query(
+        "ALTER TABLE users ADD COLUMN decimal_separator TEXT NOT NULL DEFAULT '.'"
+    )
+    .execute(pool)
+    .await
+    .ok();
+
+    // Create index for faster lookups
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_users_language ON users(language)")
+        .execute(pool)
+        .await?;
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

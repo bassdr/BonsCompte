@@ -73,6 +73,9 @@ export async function register(
 }
 
 // User management
+export const getCurrentUser = (): Promise<User> =>
+    authFetch("/users/me");
+
 export const changePassword = (currentPassword: string, newPassword: string): Promise<{ message: string }> =>
     authFetch("/users/me/password", {
         method: "PUT",
@@ -83,6 +86,19 @@ export const deleteAccount = (password: string): Promise<DeleteAccountResponse> 
     authFetch("/users/me", {
         method: "DELETE",
         body: JSON.stringify({ password })
+    });
+
+export interface UpdatePreferencesRequest {
+    language?: string;
+    date_format?: string;
+    currency_position?: string;
+    decimal_separator?: string;
+}
+
+export const updateUserPreferences = (prefs: UpdatePreferencesRequest): Promise<User> =>
+    authFetch("/users/me/preferences", {
+        method: "PUT",
+        body: JSON.stringify(prefs)
     });
 
 // Types

@@ -3,6 +3,8 @@
     import { getPayments, createPayment, updatePayment, deletePayment, type PaymentWithContributions, type CreatePaymentInput } from "$lib/api";
     import { participants, currentProject, canEdit, members } from '$lib/stores/project';
     import { auth } from '$lib/auth';
+    import { preferences } from '$lib/stores/preferences';
+    import { formatCurrency } from '$lib/i18n/formatters';
 
     let payments: PaymentWithContributions[] = $state([]);
     let loading = $state(true);
@@ -463,6 +465,7 @@
                         placeholder="What was this for?"
                         required
                     />
+                    <span class="description-hint">Note: Use a language all participants understand</span>
                 </div>
 
                 <!-- Receipt Image -->
@@ -573,7 +576,7 @@
                                         disabled={!included[p.id]}
                                     />
                                 </td>
-                                <td class="share">${shares[p.id]?.toFixed(2) ?? '0.00'}</td>
+                                <td class="share">{formatCurrency(shares[p.id] ?? 0)}</td>
                                 <td>
                                     <button
                                         type="button"
@@ -628,7 +631,7 @@
                             </div>
                         </div>
                         <span class="amount-group">
-                            <span class="amount">${p.amount.toFixed(2)}</span>
+                            <span class="amount">{formatCurrency(p.amount)}</span>
                             {#if $canEdit}
                                 <button
                                     class="edit-btn"
@@ -656,7 +659,7 @@
                     <div class="payment-splits">
                         {#each p.contributions as c}
                             <span class="chip">
-                                {c.participant_name}: ${c.amount.toFixed(2)}
+                                {c.participant_name}: {formatCurrency(c.amount)}
                             </span>
                         {/each}
                     </div>
@@ -746,6 +749,13 @@
         color: #666;
         display: block;
         margin-top: 0.25rem;
+    }
+
+    .description-hint {
+        font-size: 0.8rem;
+        color: #999;
+        margin-top: 0.25rem;
+        display: block;
     }
 
     .checkbox-label {

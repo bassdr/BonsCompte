@@ -9,12 +9,19 @@
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
     import { browser } from '$app/environment';
+    import { initI18n, setLocale, _, locale } from '$lib/i18n';
+    import { preferences, loadPreferencesFromUser } from '$lib/stores/preferences';
+    import { updateUserPreferences } from '$lib/api';
     import type { Snippet } from 'svelte';
 
     let { children }: { children: Snippet } = $props();
 
-    // Initialize auth on mount
+    // Initialize i18n and auth on mount
     $effect(() => {
+        if (browser) {
+            // Initialize i18n with default language (will be overridden by user preferences on login)
+            initI18n();
+        }
         auth.init();
     });
 
@@ -36,6 +43,26 @@
         auth.logout();
         goto('/login');
     }
+
+    async function toggleLanguage() {
+        const currentLang = $locale || 'en';
+        const newLang = currentLang === 'en' ? 'fr' : 'en';
+
+        // Update UI immediately
+        setLocale(newLang);
+
+        // Save to backend if authenticated
+        if ($isAuthenticated) {
+            try {
+                const updatedUser = await updateUserPreferences({ language: newLang });
+                loadPreferencesFromUser(updatedUser);
+            } catch (err) {
+                console.error('Failed to save language preference:', err);
+                // Revert on error
+                setLocale(currentLang);
+            }
+        }
+    }
 </script>
 
 {#if $isLoading}
@@ -45,12 +72,15 @@
         <nav class="navbar">
             <div class="nav-brand">BonsCompte</div>
             <div class="nav-links">
-                <a href="/" class:active={$page.url.pathname === '/'}>Projects</a>
+                <a href="/" class:active={$page.url.pathname === '/'}>{$_('nav.projects')}</a>
             </div>
             <div class="nav-user">
+                <button class="lang-toggle" onclick={toggleLanguage} title={$_('nav.switchLanguage')}>
+                    {$locale === 'fr' ? 'EN' : 'FR'}
+                </button>
                 <span>{$auth.user?.username}</span>
-                <a href="/settings" class="settings-link" class:active={$page.url.pathname === '/settings'}>Settings</a>
-                <button onclick={handleLogout}>Logout</button>
+                <a href="/settings" class="settings-link" class:active={$page.url.pathname === '/settings'}>{$_('nav.settings')}</a>
+                <button onclick={handleLogout}>{$_('nav.logout')}</button>
             </div>
         </nav>
     {/if}
@@ -139,6 +169,23 @@
     .settings-link.active {
         color: var(--accent, #7b61ff);
         background: rgba(123, 97, 255, 0.1);
+    }
+
+    .lang-toggle {
+        padding: 0.4rem 0.6rem;
+        background: var(--accent, #7b61ff);
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .lang-toggle:hover {
+        opacity: 0.9;
+        transform: scale(1.05);
     }
 
     main {

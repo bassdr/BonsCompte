@@ -1,7 +1,10 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
-    import { changePassword, deleteAccount, type DeleteAccountResponse } from '$lib/api';
+    import { changePassword, deleteAccount, updateUserPreferences, type DeleteAccountResponse, type UpdatePreferencesRequest } from '$lib/api';
     import { auth } from '$lib/auth';
+    import { preferences, loadPreferencesFromUser } from '$lib/stores/preferences';
+    import { setLocale, _ } from '$lib/i18n';
+    import { get } from 'svelte/store';
 
     // Password change state
     let currentPassword = $state('');
@@ -17,6 +20,26 @@
     let deleting = $state(false);
     let showDeleteConfirm = $state(false);
     let deleteResult = $state<DeleteAccountResponse | null>(null);
+
+    // Initialize form state from preferences
+    const initialPrefs = get(preferences);
+    let formLanguage = $state(initialPrefs.language);
+    let formDateFormat = $state(initialPrefs.dateFormat);
+    let formCurrencyPosition = $state(initialPrefs.currencyPosition);
+    let formDecimalSeparator = $state(initialPrefs.decimalSeparator);
+
+    let preferencesError = $state('');
+    let preferencesSuccess = $state('');
+    let savingPreferences = $state(false);
+
+    // Update form when preferences store changes
+    $effect(() => {
+        const prefs = $preferences;
+        formLanguage = prefs.language;
+        formDateFormat = prefs.dateFormat;
+        formCurrencyPosition = prefs.currencyPosition;
+        formDecimalSeparator = prefs.decimalSeparator;
+    });
 
     async function handleChangePassword(e: Event) {
         e.preventDefault();
@@ -70,31 +93,144 @@
             deleting = false;
         }
     }
+
+    async function handleSavePreferences(e: Event) {
+        e.preventDefault();
+        preferencesError = '';
+        preferencesSuccess = '';
+        savingPreferences = true;
+
+        try {
+            const updates: UpdatePreferencesRequest = {
+                language: formLanguage,
+                date_format: formDateFormat,
+                currency_position: formCurrencyPosition,
+                decimal_separator: formDecimalSeparator
+            };
+
+            const updatedUser = await updateUserPreferences(updates);
+
+            // Reload preferences store and update i18n locale
+            loadPreferencesFromUser(updatedUser);
+            setLocale(updatedUser.language);
+
+            preferencesSuccess = 'Preferences updated successfully!';
+            setTimeout(() => {
+                preferencesSuccess = '';
+            }, 3000);
+        } catch (err) {
+            preferencesError = err instanceof Error ? err.message : 'Failed to update preferences';
+            console.error('Error updating preferences:', err);
+        } finally {
+            savingPreferences = false;
+        }
+    }
+
+    function resetPreferencesForm() {
+        const prefs = get(preferences);
+        formLanguage = prefs.language;
+        formDateFormat = prefs.dateFormat;
+        formCurrencyPosition = prefs.currencyPosition;
+        formDecimalSeparator = prefs.decimalSeparator;
+        preferencesError = '';
+        preferencesSuccess = '';
+    }
 </script>
 
 <div class="settings-container">
-    <h1>Account Settings</h1>
+    <h1>{$_('settings.title')}</h1>
 
     {#if $auth.user}
         <section class="section">
-            <h2>Account Info</h2>
-            <div class="info-grid">
+            <h2>{$_('settings.account')}</h2>
+            <dl class="info-list">
                 <div class="info-item">
-                    <span class="label">Username</span>
-                    <span class="value">{$auth.user?.username}</span>
+                    <dt>{$_('auth.username')}</dt>
+                    <dd>{$auth.user?.username}</dd>
                 </div>
                 {#if $auth.user?.display_name}
                     <div class="info-item">
-                        <span class="label">Display Name</span>
-                        <span class="value">{$auth.user?.display_name}</span>
+                        <dt>{$_('auth.displayName')}</dt>
+                        <dd>{$auth.user?.display_name}</dd>
                     </div>
                 {/if}
-            </div>
+            </dl>
         </section>
     {/if}
 
     <section class="section">
-        <h2>Change Password</h2>
+        <h2>{$_('settings.preferences')}</h2>
+
+        <form onsubmit={handleSavePreferences}>
+            {#if preferencesError}
+                <div class="error">{preferencesError}</div>
+            {/if}
+            {#if preferencesSuccess}
+                <div class="success">{preferencesSuccess}</div>
+            {/if}
+
+            <div class="field">
+                <label for="language">{$_('settings.language')}</label>
+                <select id="language" bind:value={formLanguage} disabled={savingPreferences}>
+                    <option value="en">English</option>
+                    <option value="fr">Français</option>
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="dateFormat">{$_('settings.dateFormat')}</label>
+                <select id="dateFormat" bind:value={formDateFormat} disabled={savingPreferences}>
+                    <option value="YYYY-MM-DD">YYYY-MM-DD (2025-12-18)</option>
+                    <option value="DD/MM/YYYY">DD/MM/YYYY (18/12/2025)</option>
+                    <option value="MM/DD/YYYY">MM/DD/YYYY (12/18/2025)</option>
+                </select>
+            </div>
+
+            <div class="field">
+                <label>{$_('settings.currencyPosition')}</label>
+                <div class="radio-group">
+                    <label class="radio-label">
+                        <input type="radio" name="currencyPosition" value="before" bind:group={formCurrencyPosition} disabled={savingPreferences}>
+                        {$_('settings.before')}
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="currencyPosition" value="after" bind:group={formCurrencyPosition} disabled={savingPreferences}>
+                        {$_('settings.after')}
+                    </label>
+                </div>
+            </div>
+
+            <div class="field">
+                <label>{$_('settings.decimalSeparator')}</label>
+                <div class="radio-group">
+                    <label class="radio-label">
+                        <input type="radio" name="decimalSeparator" value="." bind:group={formDecimalSeparator} disabled={savingPreferences}>
+                        {$_('settings.period')}
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="decimalSeparator" value="," bind:group={formDecimalSeparator} disabled={savingPreferences}>
+                        {$_('settings.comma')}
+                    </label>
+                </div>
+            </div>
+
+            <div class="warning-box">
+                {$_('settings.currencyWarning')}
+            </div>
+
+            <div class="button-group">
+                <button type="submit" disabled={savingPreferences}>
+                    {savingPreferences ? $_('common.loading') : $_('common.save')}
+                </button>
+                <button type="button" class="btn-secondary" onclick={resetPreferencesForm} disabled={savingPreferences}>
+                    {$_('common.cancel')}
+                </button>
+            </div>
+        </form>
+    </section>
+
+    <section class="section">
+        <h2>{$_('settings.changePassword')}</h2>
 
         <form onsubmit={handleChangePassword}>
             {#if passwordError}
@@ -105,7 +241,7 @@
             {/if}
 
             <div class="field">
-                <label for="current-password">Current Password</label>
+                <label for="current-password">{$_('settings.currentPassword')}</label>
                 <input
                     id="current-password"
                     type="password"
@@ -116,7 +252,7 @@
             </div>
 
             <div class="field">
-                <label for="new-password">New Password</label>
+                <label for="new-password">{$_('settings.newPassword')}</label>
                 <input
                     id="new-password"
                     type="password"
@@ -128,7 +264,7 @@
             </div>
 
             <div class="field">
-                <label for="confirm-password">Confirm New Password</label>
+                <label for="confirm-password">{$_('settings.confirmNewPassword')}</label>
                 <input
                     id="confirm-password"
                     type="password"
@@ -139,25 +275,24 @@
             </div>
 
             <button type="submit" disabled={changingPassword}>
-                {changingPassword ? 'Changing...' : 'Change Password'}
+                {changingPassword ? $_('common.loading') : $_('settings.changePassword')}
             </button>
         </form>
     </section>
 
     <section class="section danger-zone">
-        <h2>Danger Zone</h2>
+        <h2>{$_('settings.deleteAccount')}</h2>
         <p class="warning-text">
-            Deleting your account is permanent and cannot be undone.
-            Projects you own will be transferred to another admin or deleted if no other members exist.
+            {$_('settings.deleteAccountWarning')}
         </p>
 
         {#if !showDeleteConfirm}
             <button class="btn-danger" onclick={() => showDeleteConfirm = true}>
-                Delete Account
+                {$_('settings.deleteAccount')}
             </button>
         {:else}
             <div class="delete-confirm">
-                <h3>Confirm Account Deletion</h3>
+                <h3>{$_('settings.deleteAccount')}</h3>
 
                 <form onsubmit={handleDeleteAccount}>
                     {#if deleteError}
@@ -165,14 +300,13 @@
                     {/if}
 
                     <div class="field">
-                        <label for="delete-password">Enter your password to confirm</label>
+                        <label for="delete-password">{$_('auth.password')}</label>
                         <input
                             id="delete-password"
                             type="password"
                             bind:value={deletePassword}
                             required
                             disabled={deleting}
-                            placeholder="Your password"
                         />
                     </div>
 
@@ -183,10 +317,10 @@
                             onclick={() => { showDeleteConfirm = false; deletePassword = ''; deleteError = ''; }}
                             disabled={deleting}
                         >
-                            Cancel
+                            {$_('common.cancel')}
                         </button>
                         <button type="submit" class="btn-danger" disabled={deleting}>
-                            {deleting ? 'Deleting...' : 'Delete My Account'}
+                            {deleting ? $_('common.loading') : $_('settings.deleteAccount')}
                         </button>
                     </div>
                 </form>
@@ -198,8 +332,7 @@
 <style>
     .settings-container {
         max-width: 600px;
-        margin: 2rem auto;
-        padding: 2rem;
+        margin: 0 auto;
     }
 
     h1 {
@@ -220,24 +353,29 @@
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
 
-    .info-grid {
-        display: grid;
-        gap: 1rem;
+    .info-list {
+        margin: 0;
     }
 
     .info-item {
         display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
+        justify-content: space-between;
+        padding: 0.75rem 0;
+        border-bottom: 1px solid #eee;
     }
 
-    .info-item .label {
-        font-size: 0.85rem;
+    .info-item:last-child {
+        border-bottom: none;
+    }
+
+    .info-item dt {
+        font-size: 0.9rem;
         color: #666;
     }
 
-    .info-item .value {
+    .info-item dd {
         font-weight: 500;
+        margin: 0;
     }
 
     .field {
@@ -251,7 +389,8 @@
         font-size: 0.9rem;
     }
 
-    input {
+    input,
+    select {
         width: 100%;
         padding: 0.75rem;
         border: 1px solid #ddd;
@@ -259,9 +398,50 @@
         font-size: 1rem;
     }
 
-    input:focus {
+    input:focus,
+    select:focus {
         outline: none;
         border-color: var(--accent, #7b61ff);
+    }
+
+    select {
+        cursor: pointer;
+    }
+
+    .radio-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .radio-label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        cursor: pointer;
+        padding: 0.5rem;
+        border-radius: 6px;
+        font-weight: normal;
+        margin-bottom: 0;
+    }
+
+    .radio-label:hover {
+        background-color: rgba(123, 97, 255, 0.05);
+    }
+
+    .radio-label input[type="radio"] {
+        width: auto;
+        cursor: pointer;
+    }
+
+    .warning-box {
+        background-color: #fff3cd;
+        border: 1px solid #ffc107;
+        border-radius: 6px;
+        padding: 1rem;
+        color: #856404;
+        font-size: 0.9rem;
+        margin-bottom: 1rem;
     }
 
     button {
@@ -343,11 +523,6 @@
 
     /* Mobile responsive */
     @media (max-width: 768px) {
-        .settings-container {
-            margin: 1rem auto;
-            padding: 1rem;
-        }
-
         h1 {
             font-size: 1.5rem;
             margin-bottom: 1.5rem;
@@ -374,12 +549,6 @@
     }
 
     @media (max-width: 480px) {
-        .settings-container {
-            margin: 0;
-            padding: 1rem;
-            max-width: 100%;
-        }
-
         h1 {
             font-size: 1.3rem;
         }

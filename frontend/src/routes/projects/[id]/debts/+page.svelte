@@ -1,6 +1,8 @@
 <script lang="ts">
     import { page } from '$app/stores';
     import { getDebts, getPayments, type DebtSummary, type PaymentWithContributions } from "$lib/api";
+    import { preferences } from '$lib/stores/preferences';
+    import { formatCurrency } from '$lib/i18n/formatters';
 
     let debts: DebtSummary | null = $state(null);
     let allPayments: PaymentWithContributions[] = $state([]);
@@ -483,10 +485,10 @@
                 {#each debts.balances as b}
                     <tr>
                         <td>{b.participant_name}</td>
-                        <td>${b.total_paid.toFixed(2)}</td>
-                        <td>${b.total_owed.toFixed(2)}</td>
+                        <td>{formatCurrency(b.total_paid)}</td>
+                        <td>{formatCurrency(b.total_owed)}</td>
                         <td class:positive={b.net_balance > 0} class:negative={b.net_balance < 0}>
-                            {b.net_balance >= 0 ? '+' : ''}${b.net_balance.toFixed(2)}
+                            {b.net_balance >= 0 ? '+' : ''}{formatCurrency(Math.abs(b.net_balance))}
                         </td>
                     </tr>
                 {/each}
@@ -505,7 +507,7 @@
                         <span class="from">{s.from_participant_name}</span>
                         <span class="arrow">&rarr;</span>
                         <span class="to">{s.to_participant_name}</span>
-                        <span class="amount">${s.amount.toFixed(2)}</span>
+                        <span class="amount">{formatCurrency(s.amount)}</span>
                     </li>
                 {/each}
             </ul>
@@ -540,14 +542,14 @@
                                         <div class="year-summary-header">
                                             <span class="expand-icon">▶</span>
                                             <span class="year-label">{year}</span>
-                                            <span class="year-total">${getYearTotal(yearData).toFixed(2)}</span>
+                                            <span class="year-total">{formatCurrency(getYearTotal(yearData))}</span>
                                         </div>
                                         <div class="year-summary-meta">
                                             {getYearTransactionCount(yearData)} {getYearTransactionCount(yearData) === 1 ? 'transaction' : 'transactions'}
                                         </div>
                                         <div class="year-summary-participants">
                                             {#each [...getYearParticipantTotals(yearData).entries()].sort((a, b) => b[1] - a[1]) as [participantName, amount]}
-                                                <span class="participant-chip">{participantName}: ${amount.toFixed(2)}</span>
+                                                <span class="participant-chip">{participantName}: {formatCurrency(amount)}</span>
                                             {/each}
                                         </div>
                                     </div>
@@ -570,14 +572,14 @@
                                                     <div class="month-summary-header">
                                                         <span class="expand-icon">▶</span>
                                                         <span class="month-label">{monthData.month}</span>
-                                                        <span class="month-total">${monthData.totalAmount.toFixed(2)}</span>
+                                                        <span class="month-total">{formatCurrency(monthData.totalAmount)}</span>
                                                     </div>
                                                     <div class="month-summary-meta">
                                                         {getTransactionCount(monthData)} {getTransactionCount(monthData) === 1 ? 'transaction' : 'transactions'}
                                                     </div>
                                                     <div class="month-summary-participants">
                                                         {#each [...monthData.participantTotals.entries()].sort((a, b) => b[1] - a[1]) as [participantName, amount]}
-                                                            <span class="participant-chip">{participantName}: ${amount.toFixed(2)}</span>
+                                                            <span class="participant-chip">{participantName}: {formatCurrency(amount)}</span>
                                                         {/each}
                                                     </div>
                                                 </div>
@@ -590,7 +592,7 @@
                                                 <div class="date-group">
                                                     <div class="date-label">
                                                         {formatDate(dateData.date)}
-                                                        <span class="date-total">${dateData.totalAmount.toFixed(2)}</span>
+                                                        <span class="date-total">{formatCurrency(dateData.totalAmount)}</span>
                                                     </div>
 
                                                     <!-- Individual transactions -->
@@ -606,7 +608,7 @@
                                                                             <span class="occ-tag recurring-tag">recurring</span>
                                                                         {/if}
                                                                     </span>
-                                                                    <span class="trans-amount">${occ.amount.toFixed(2)}</span>
+                                                                    <span class="trans-amount">{formatCurrency(occ.amount)}</span>
                                                                 </div>
                                                                 <div class="trans-meta">
                                                                     {#if payment}
@@ -630,7 +632,7 @@
                                                                     <div class="trans-splits">
                                                                         {#each payment.contributions as c}
                                                                             <span class="chip">
-                                                                                {c.participant_name}: ${c.amount.toFixed(2)}
+                                                                                {c.participant_name}: {formatCurrency(c.amount)}
                                                                             </span>
                                                                         {/each}
                                                                     </div>

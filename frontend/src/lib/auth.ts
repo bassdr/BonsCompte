@@ -1,10 +1,16 @@
 import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
+import { loadPreferencesFromUser } from '$lib/stores/preferences';
+import { setLocale } from '$lib/i18n';
 
 export interface User {
     id: number;
     username: string;
     display_name: string | null;
+    language: string;
+    date_format: string;
+    currency_position: string;
+    decimal_separator: string;
 }
 
 interface AuthState {
@@ -14,6 +20,7 @@ interface AuthState {
 }
 
 const TOKEN_KEY = 'bonscompte_token';
+const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
 function createAuthStore() {
     const { subscribe, set, update } = writable<AuthState>({
@@ -25,7 +32,7 @@ function createAuthStore() {
     return {
         subscribe,
 
-        init() {
+        async init() {
             if (!browser) {
                 update(s => ({ ...s, loading: false }));
                 return;
@@ -39,15 +46,35 @@ function createAuthStore() {
 
                     // Check if expired
                     if (payload.exp * 1000 > Date.now()) {
-                        set({
-                            token,
-                            user: {
-                                id: payload.sub,
-                                username: payload.username,
-                                display_name: null
-                            },
-                            loading: false
-                        });
+                        // Fetch full user data from API
+                        try {
+                            const res = await fetch(`${BASE}/users/me`, {
+                                headers: { "Authorization": `Bearer ${token}` }
+                            });
+                            if (res.ok) {
+                                const user: User = await res.json();
+                                loadPreferencesFromUser(user);
+                                setLocale(user.language);
+                                set({ token, user, loading: false });
+                                return;
+                            }
+                        } catch {
+                            // Fall back to token data if fetch fails
+                        }
+
+                        // Fallback: use basic info from token with default preferences
+                        const user: User = {
+                            id: payload.sub,
+                            username: payload.username,
+                            display_name: null,
+                            language: 'en',
+                            date_format: 'YYYY-MM-DD',
+                            currency_position: 'before',
+                            decimal_separator: '.'
+                        };
+                        loadPreferencesFromUser(user);
+                        setLocale(user.language);
+                        set({ token, user, loading: false });
                         return;
                     }
                 } catch {
@@ -63,6 +90,9 @@ function createAuthStore() {
             if (browser) {
                 localStorage.setItem(TOKEN_KEY, token);
             }
+            // Load user preferences and update i18n locale
+            loadPreferencesFromUser(user);
+            setLocale(user.language);
             set({ token, user, loading: false });
         },
 

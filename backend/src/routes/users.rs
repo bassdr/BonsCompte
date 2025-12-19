@@ -9,15 +9,16 @@ use sqlx::SqlitePool;
 use crate::{
     auth::{password::{hash_password, verify_password}, AuthUser},
     error::{AppError, AppResult},
-    models::{User, UserResponse},
+    models::{User, UserResponse, UpdateUserPreferences},
     AppState,
 };
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_users))
+        .route("/me", get(get_current_user).delete(delete_account))
         .route("/me/password", put(change_password))
-        .route("/me", delete(delete_account))
+        .route("/me/preferences", put(update_preferences))
         .route("/{id}", get(get_user))
 }
 
@@ -57,6 +58,20 @@ async fn list_users(
     Ok(Json(users.into_iter().map(UserResponse::from).collect()))
 }
 
+async fn get_current_user(
+    auth: AuthUser,
+    State(pool): State<SqlitePool>,
+) -> AppResult<Json<UserResponse>> {
+    let user: Option<User> = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+        .bind(auth.user_id)
+        .fetch_optional(&pool)
+        .await?;
+
+    let user = user.ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+
+    Ok(Json(UserResponse::from(user)))
+}
+
 async fn get_user(
     _auth: AuthUser,
     State(pool): State<SqlitePool>,
@@ -68,6 +83,75 @@ async fn get_user(
         .await?;
 
     let user = user.ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+
+    Ok(Json(UserResponse::from(user)))
+}
+
+async fn update_preferences(
+    auth: AuthUser,
+    State(pool): State<SqlitePool>,
+    Json(req): Json<UpdateUserPreferences>,
+) -> AppResult<Json<UserResponse>> {
+    // Validate language if provided
+    if let Some(ref lang) = req.language {
+        if !["en", "fr"].contains(&lang.as_str()) {
+            return Err(AppError::Validation("Language must be 'en' or 'fr'".to_string()));
+        }
+    }
+
+    // Validate currency_position if provided
+    if let Some(ref pos) = req.currency_position {
+        if !["before", "after"].contains(&pos.as_str()) {
+            return Err(AppError::Validation("Currency position must be 'before' or 'after'".to_string()));
+        }
+    }
+
+    // Validate decimal_separator if provided
+    if let Some(ref sep) = req.decimal_separator {
+        if ![".", ","].contains(&sep.as_str()) {
+            return Err(AppError::Validation("Decimal separator must be '.' or ','".to_string()));
+        }
+    }
+
+    // Build dynamic UPDATE query
+    let mut updates = Vec::new();
+    let mut params: Vec<String> = Vec::new();
+
+    if let Some(lang) = req.language {
+        updates.push("language = ?");
+        params.push(lang);
+    }
+    if let Some(date_fmt) = req.date_format {
+        updates.push("date_format = ?");
+        params.push(date_fmt);
+    }
+    if let Some(curr_pos) = req.currency_position {
+        updates.push("currency_position = ?");
+        params.push(curr_pos);
+    }
+    if let Some(dec_sep) = req.decimal_separator {
+        updates.push("decimal_separator = ?");
+        params.push(dec_sep);
+    }
+
+    if updates.is_empty() {
+        return Err(AppError::Validation("No preferences to update".to_string()));
+    }
+
+    // Build and execute query
+    let query_str = format!("UPDATE users SET {} WHERE id = ?", updates.join(", "));
+    let mut query = sqlx::query(&query_str);
+    for param in params {
+        query = query.bind(param);
+    }
+    query = query.bind(auth.user_id);
+    query.execute(&pool).await?;
+
+    // Fetch and return updated user
+    let user: User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+        .bind(auth.user_id)
+        .fetch_one(&pool)
+        .await?;
 
     Ok(Json(UserResponse::from(user)))
 }

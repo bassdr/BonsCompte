@@ -30,6 +30,11 @@
     let recurrenceTimesPer = $state(1);
     let recurrenceEndDate = $state('');
 
+    // Internal transfer: receiver_account_id
+    // null = external expense (money leaves system)
+    // number = internal transfer to this account (e.g., deposit to pool)
+    let receiverAccountId = $state<number | null>(null);
+
     // Image modal state
     let showImageModal = $state(false);
     let modalImage = $state<string | null>(null);
@@ -123,10 +128,16 @@
         }
     }
 
-    // Pay this person back - uncheck all except this one
-    function payBack(participantId: number) {
+    // Transfer money to this person/pool - creates an internal transfer
+    // This is used for paying back debts or depositing to pool
+    function transferTo(participantId: number) {
+        // Set receiver to the target participant (person or pool)
+        receiverAccountId = participantId;
+
+        // The contributor should be the payer (who is transferring money)
+        // This creates a record: payer transfers X to recipient
         for (const p of $participants) {
-            if (p.id === participantId) {
+            if (p.id === payerId) {
                 included[p.id] = true;
                 weights[p.id] = 1;
             } else {
@@ -135,6 +146,15 @@
             }
         }
     }
+
+    // Check if this is an internal transfer
+    let isInternalTransfer = $derived(receiverAccountId !== null);
+
+    // Get receiver name for display
+    let receiverName = $derived.by(() => {
+        if (receiverAccountId === null) return null;
+        return $participants.find(p => p.id === receiverAccountId)?.name ?? 'Unknown';
+    });
 
     // Include all participants with default weight > 0
     function includeAll() {
@@ -246,6 +266,7 @@
         recurrenceType = 'monthly';
         recurrenceTimesPer = 1;
         recurrenceEndDate = '';
+        receiverAccountId = null; // Reset internal transfer state
 
         // Reset weights and included to defaults
         for (const p of $participants) {
@@ -269,6 +290,7 @@
         receiptImage = payment.receipt_image;
         receiptPreview = payment.receipt_image;
         isRecurring = payment.is_recurring;
+        receiverAccountId = payment.receiver_account_id; // Load internal transfer state
 
         if (payment.is_recurring) {
             recurrenceType = (payment.recurrence_type as 'daily' | 'weekly' | 'monthly' | 'yearly') || 'monthly';
@@ -323,6 +345,7 @@
                 contributions,
                 receipt_image: receiptImage ?? undefined,
                 is_recurring: isRecurring,
+                receiver_account_id: receiverAccountId, // Internal transfer support
             };
 
             if (isRecurring) {
@@ -467,7 +490,7 @@
 
                 <!-- Receipt Image -->
                 <div class="field">
-                    <label>Receipt Image <span class="hint">(JPEG, PNG, GIF, WebP - max 5MB)</span></label>
+                    <label for="receipt-input">Receipt Image <span class="hint">(JPEG, PNG, GIF, WebP - max 5MB)</span></label>
                     <div class="receipt-upload">
                         <input
                             type="file"
@@ -495,8 +518,8 @@
                         <div class="recurrence-options">
                             <div class="form-row">
                                 <div class="field">
-                                    <label>Mode</label>
-                                    <select bind:value={recurrenceMode}>
+                                    <label for="recurrence-mode">Mode</label>
+                                    <select id="recurrence-mode" bind:value={recurrenceMode}>
                                         <option value="every">Every X period</option>
                                         <option value="times_per">X times per period</option>
                                     </select>
@@ -504,19 +527,19 @@
 
                                 {#if recurrenceMode === 'every'}
                                     <div class="field small">
-                                        <label>Every</label>
-                                        <input type="number" bind:value={recurrenceInterval} min="1" />
+                                        <label for="recurrence-interval">Every</label>
+                                        <input id="recurrence-interval" type="number" bind:value={recurrenceInterval} min="1" />
                                     </div>
                                 {:else}
                                     <div class="field small">
-                                        <label>Times</label>
-                                        <input type="number" bind:value={recurrenceTimesPer} min="1" />
+                                        <label for="recurrence-times">Times</label>
+                                        <input id="recurrence-times" type="number" bind:value={recurrenceTimesPer} min="1" />
                                     </div>
                                 {/if}
 
                                 <div class="field">
-                                    <label>Period</label>
-                                    <select bind:value={recurrenceType}>
+                                    <label for="recurrence-type">Period</label>
+                                    <select id="recurrence-type" bind:value={recurrenceType}>
                                         <option value="daily">{recurrenceMode === 'every' ? 'Day(s)' : 'Day'}</option>
                                         <option value="weekly">{recurrenceMode === 'every' ? 'Week(s)' : 'Week'}</option>
                                         <option value="monthly">{recurrenceMode === 'every' ? 'Month(s)' : 'Month'}</option>
@@ -537,6 +560,15 @@
                         </div>
                     {/if}
                 </div>
+
+                {#if isInternalTransfer}
+                    {@const receiver = $participants.find(p => p.id === receiverAccountId)}
+                    <div class="internal-transfer-banner">
+                        <span class="transfer-icon">↗</span>
+                        <span class="transfer-text">Internal Transfer to {receiver?.name ?? 'Unknown'}</span>
+                        <button type="button" class="clear-transfer-btn" onclick={() => { receiverAccountId = null; includeAll(); }}>Cancel</button>
+                    </div>
+                {/if}
 
                 <div class="split-header">
                     <h4>Split between</h4>
@@ -577,10 +609,10 @@
                                 <td>
                                     <button
                                         type="button"
-                                        class="payback-btn"
-                                        onclick={() => payBack(p.id)}
-                                        title="Pay only this person back"
-                                    >Only</button>
+                                        class="payback-btn transfer-btn"
+                                        onclick={() => transferTo(p.id)}
+                                        title={p.account_type === 'pool' ? 'Deposit to pool' : 'Transfer money to this person'}
+                                    >{p.account_type === 'pool' ? 'Deposit' : 'Pay back'}</button>
                                 </td>
                             </tr>
                         {/each}
@@ -643,7 +675,13 @@
                         </span>
                     </div>
                     <div class="payment-meta">
-                        Paid by {p.payer_name ?? 'Unknown'}
+                        {#if p.receiver_account_id !== null}
+                            {@const receiver = $participants.find(pr => pr.id === p.receiver_account_id)}
+                            <span class="transfer-badge">Transfer</span>
+                            {p.payer_name ?? 'Unknown'} → {receiver?.name ?? 'Unknown'}
+                        {:else}
+                            Paid by {p.payer_name ?? 'Unknown'}
+                        {/if}
                         {#if p.is_recurring && p.recurrence_end_date}
                             from {formatDate(p.payment_date)} to {formatDate(p.recurrence_end_date)}
                         {:else}
@@ -668,8 +706,20 @@
 
 <!-- Image Modal -->
 {#if showImageModal && modalImage}
-    <div class="modal-overlay" onclick={closeImageModal}>
-        <div class="modal-content" onclick={(e) => e.stopPropagation()}>
+    <div
+        class="modal-overlay"
+        role="button"
+        tabindex="0"
+        onclick={closeImageModal}
+        onkeydown={(e) => e.key === 'Escape' && closeImageModal()}
+    >
+        <div
+            class="modal-content"
+            role="button"
+            tabindex="0"
+            onclick={(e) => e.stopPropagation()}
+            onkeydown={(e) => e.stopPropagation()}
+        >
             <button class="modal-close" onclick={closeImageModal}>&times;</button>
             <img src={modalImage} alt="Receipt" />
         </div>
@@ -1117,5 +1167,61 @@
 
     .modal-close:hover {
         background: #f0f0f0;
+    }
+
+    /* Internal Transfer Styles */
+    .internal-transfer-banner {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+        border: 1px solid #81c784;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+    }
+
+    .transfer-icon {
+        font-size: 1.2rem;
+        color: #2e7d32;
+    }
+
+    .transfer-text {
+        flex: 1;
+        font-weight: 500;
+        color: #2e7d32;
+    }
+
+    .clear-transfer-btn {
+        padding: 0.25rem 0.75rem;
+        background: white;
+        border: 1px solid #81c784;
+        border-radius: 4px;
+        color: #2e7d32;
+        font-size: 0.85rem;
+        cursor: pointer;
+    }
+
+    .clear-transfer-btn:hover {
+        background: #f1f8e9;
+    }
+
+    .transfer-badge {
+        background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
+        color: white;
+        padding: 0.15rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .transfer-btn {
+        background: #e8f5e9 !important;
+        color: #2e7d32 !important;
+        border-color: #81c784 !important;
+    }
+
+    .transfer-btn:hover {
+        background: #c8e6c9 !important;
     }
 </style>

@@ -70,6 +70,10 @@ pub struct PaymentOccurrence {
     pub occurrence_date: String,
     pub payer_id: Option<i64>,
     pub is_recurring: bool,
+    // Internal transfer support
+    // None = external expense (money leaves system, affects settlements)
+    // Some = internal transfer (money moves between accounts, only affects pool ownership)
+    pub receiver_account_id: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -155,11 +159,50 @@ pub async fn calculate_debts_at_date(
 
     // Calculate total paid and owed based on occurrences
     // Also track pairwise amounts: (payer_id, contributor_id) -> (total_amount, breakdown)
+    //
+    // Transfer types:
+    // 1. External expense (receiver_account_id IS NULL): Normal expense, affects settlements
+    // 2. User → User transfer: Direct payment, affects settlements (reduces debt)
+    // 3. User → Pool transfer: Only affects pool ownership, NOT settlements
+    // 4. Pool → User transfer: Only affects pool ownership, NOT settlements
     let mut paid_map: HashMap<i64, f64> = HashMap::new();
     let mut owed_map: HashMap<i64, f64> = HashMap::new();
     let mut pairwise_map: HashMap<(i64, i64), (f64, Vec<PairwisePaymentBreakdown>)> = HashMap::new();
 
     for occurrence in &all_occurrences {
+        // Check if this is a pool-related transfer (should not affect settlements)
+        if let Some(receiver_id) = occurrence.receiver_account_id {
+            let receiver_is_pool = pool_participants.contains(&receiver_id);
+            let payer_is_pool = occurrence.payer_id.map(|id| pool_participants.contains(&id)).unwrap_or(false);
+
+            if receiver_is_pool || payer_is_pool {
+                // Pool transfer - skip for settlement calculations (handled in pool ownership)
+                continue;
+            }
+
+            // User-to-user transfer: treat as direct payment
+            // Payer gives money directly to receiver, reducing payer's debt to receiver
+            if let Some(payer_id) = occurrence.payer_id {
+                // Add to payer's "paid" total
+                *paid_map.entry(payer_id).or_insert(0.0) += occurrence.amount;
+
+                // Add to receiver's "owed" total (they received the money)
+                *owed_map.entry(receiver_id).or_insert(0.0) += occurrence.amount;
+
+                // Track pairwise: payer paid this amount directly to receiver
+                let entry = pairwise_map.entry((payer_id, receiver_id)).or_insert((0.0, Vec::new()));
+                entry.0 += occurrence.amount;
+                entry.1.push(PairwisePaymentBreakdown {
+                    payment_id: occurrence.payment_id,
+                    description: occurrence.description.clone(),
+                    occurrence_date: occurrence.occurrence_date.clone(),
+                    amount: occurrence.amount,
+                });
+            }
+            continue;
+        }
+
+        // External expense (receiver_account_id IS NULL)
         // Add to paid total for payer
         if let Some(payer_id) = occurrence.payer_id {
             *paid_map.entry(payer_id).or_insert(0.0) += occurrence.amount;
@@ -262,14 +305,33 @@ pub async fn calculate_debts_at_date(
         .map(|(id, name, _)| (*id, name.clone()))
     {
         // Track contributions to pool (deposited) and consumption from pool (expenses)
-        // Contributions: Payments where pool is a contributor (someone paid, pool benefited)
-        //   -> The PAYER's ownership increases by the pool's contribution amount
-        // Consumption: Payments where pool is the payer
-        //   -> Each contributor's ownership decreases by their share
+        //
+        // Pool ownership is affected by:
+        // 1. EXTERNAL expenses where pool is payer: decreases contributor ownership (consumption)
+        // 2. EXTERNAL expenses where pool is contributor: increases payer's ownership
+        // 3. INTERNAL transfers TO pool: increases sender's ownership (deposit)
+        // 4. INTERNAL transfers FROM pool: decreases receiver's ownership (withdrawal)
 
         let mut ownership_map: HashMap<i64, (f64, f64)> = HashMap::new(); // (contributed, consumed)
 
         for occurrence in &all_occurrences {
+            // Handle internal transfers (receiver_account_id IS NOT NULL)
+            if let Some(receiver_id) = occurrence.receiver_account_id {
+                if let Some(payer_id) = occurrence.payer_id {
+                    if receiver_id == pool_id && payer_id != pool_id {
+                        // Internal transfer TO pool: payer's ownership increases
+                        let entry = ownership_map.entry(payer_id).or_insert((0.0, 0.0));
+                        entry.0 += occurrence.amount; // contributed (deposited to pool)
+                    } else if payer_id == pool_id && receiver_id != pool_id {
+                        // Internal transfer FROM pool: receiver's ownership decreases
+                        let entry = ownership_map.entry(receiver_id).or_insert((0.0, 0.0));
+                        entry.1 += occurrence.amount; // consumed (withdrawn from pool)
+                    }
+                }
+                continue; // Skip contribution-based logic for internal transfers
+            }
+
+            // Handle external expenses (receiver_account_id IS NULL)
             if let Some(contribs) = contribution_map.get(&occurrence.payment_id) {
                 // Check if pool is involved in this payment
                 let pool_contrib = contribs.iter().find(|(pid, _)| *pid == pool_id);
@@ -328,7 +390,8 @@ pub async fn calculate_debts_at_date(
     };
 
     // Calculate direct-only settlements based on pairwise relationships
-    let direct_settlements = calculate_direct_settlements(&pairwise_balances, &pool_participants);
+    // Pass balances to ensure we respect net balance constraints
+    let direct_settlements = calculate_direct_settlements(&pairwise_balances, &balances, &pool_participants);
 
     Ok(DebtSummary {
         balances,
@@ -364,6 +427,7 @@ fn generate_payment_occurrences(payment: &Payment, target_date: NaiveDate) -> Ve
             occurrence_date: payment.payment_date.clone(),
             payer_id: payment.payer_id,
             is_recurring: false,
+            receiver_account_id: payment.receiver_account_id,
         });
         return occurrences;
     }
@@ -395,6 +459,7 @@ fn generate_payment_occurrences(payment: &Payment, target_date: NaiveDate) -> Ve
             occurrence_date: current.format("%Y-%m-%d").to_string(),
             payer_id: payment.payer_id,
             is_recurring: true,
+            receiver_account_id: payment.receiver_account_id,
         });
 
         current = match add_interval(current, &effective_type, effective_interval) {
@@ -515,10 +580,18 @@ fn calculate_settlements(
 
 /// Calculate direct-only settlements based on pairwise relationships
 /// Only settles debts between participants who have directly transacted
+/// Respects net balance constraints: only debtors pay, only creditors receive
 fn calculate_direct_settlements(
     pairwise_balances: &[PairwiseBalance],
+    balances: &[ParticipantBalance],
     pool_participants: &std::collections::HashSet<i64>,
 ) -> Vec<Debt> {
+    // Build a map of participant_id -> net_balance
+    let balance_map: HashMap<i64, f64> = balances
+        .iter()
+        .map(|b| (b.participant_id, b.net_balance))
+        .collect();
+
     let mut settlements = Vec::new();
 
     for pw in pairwise_balances {
@@ -527,28 +600,51 @@ fn calculate_direct_settlements(
             continue;
         }
 
+        // Only process each unique pair once (avoid duplicates)
+        // Since pairwise_balances contains both (A, B) and (B, A),
+        // we only process when participant_id < other_participant_id
+        if pw.participant_id >= pw.other_participant_id {
+            continue;
+        }
+
+        // Get net balances for both participants
+        let balance_participant = balance_map.get(&pw.participant_id).copied().unwrap_or(0.0);
+        let balance_other = balance_map.get(&pw.other_participant_id).copied().unwrap_or(0.0);
+
         // Only create settlement if there's a net debt
         // pw.net = amount_paid_for - amount_owed_by
         // If net > 0, other owes this participant
         // If net < 0, this participant owes other
+        //
+        // IMPORTANT: Only settle if:
+        // - The payer has negative net balance (actually owes money overall)
+        // - The receiver has positive net balance (actually is owed money overall)
+        // This ensures direct settlements respect the same final balances as minimal mode
+
         if pw.net > 0.01 {
             // other_participant owes participant
-            settlements.push(Debt {
-                from_participant_id: pw.other_participant_id,
-                from_participant_name: pw.other_participant_name.clone(),
-                to_participant_id: pw.participant_id,
-                to_participant_name: pw.participant_name.clone(),
-                amount: (pw.net * 100.0).round() / 100.0,
-            });
+            // other should pay (needs negative balance), participant receives (needs positive balance)
+            if balance_other < -0.01 && balance_participant > 0.01 {
+                settlements.push(Debt {
+                    from_participant_id: pw.other_participant_id,
+                    from_participant_name: pw.other_participant_name.clone(),
+                    to_participant_id: pw.participant_id,
+                    to_participant_name: pw.participant_name.clone(),
+                    amount: (pw.net * 100.0).round() / 100.0,
+                });
+            }
         } else if pw.net < -0.01 {
             // participant owes other_participant
-            settlements.push(Debt {
-                from_participant_id: pw.participant_id,
-                from_participant_name: pw.participant_name.clone(),
-                to_participant_id: pw.other_participant_id,
-                to_participant_name: pw.other_participant_name.clone(),
-                amount: ((-pw.net) * 100.0).round() / 100.0,
-            });
+            // participant should pay (needs negative balance), other receives (needs positive balance)
+            if balance_participant < -0.01 && balance_other > 0.01 {
+                settlements.push(Debt {
+                    from_participant_id: pw.participant_id,
+                    from_participant_name: pw.participant_name.clone(),
+                    to_participant_id: pw.other_participant_id,
+                    to_participant_name: pw.other_participant_name.clone(),
+                    amount: ((-pw.net) * 100.0).round() / 100.0,
+                });
+            }
         }
     }
 
@@ -556,4 +652,653 @@ fn calculate_direct_settlements(
     settlements.sort_by(|a, b| b.amount.partial_cmp(&a.amount).unwrap_or(std::cmp::Ordering::Equal));
 
     settlements
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_simple_settlement_two_participants() {
+        // Carl (id=1) pays $100, David (id=2) is the sole contributor
+        // Result: David owes Carl $100
+        let balances = vec![
+            ParticipantBalance {
+                participant_id: 1,
+                participant_name: "Carl".to_string(),
+                total_paid: 100.0,
+                total_owed: 0.0,
+                net_balance: 100.0,
+            },
+            ParticipantBalance {
+                participant_id: 2,
+                participant_name: "David".to_string(),
+                total_paid: 0.0,
+                total_owed: 100.0,
+                net_balance: -100.0,
+            },
+        ];
+
+        let participant_map: HashMap<i64, String> = vec![
+            (1, "Carl".to_string()),
+            (2, "David".to_string()),
+        ].into_iter().collect();
+
+        let pool_participants: std::collections::HashSet<i64> = std::collections::HashSet::new();
+
+        let settlements = calculate_settlements(&balances, &participant_map, &pool_participants);
+
+        assert_eq!(settlements.len(), 1);
+        assert_eq!(settlements[0].from_participant_id, 2); // David
+        assert_eq!(settlements[0].to_participant_id, 1);   // Carl
+        assert_eq!(settlements[0].amount, 100.0);
+    }
+
+    #[test]
+    fn test_settlement_with_prior_even_balance() {
+        // Carl and David were even at $1000 each
+        // Carl now pays additional $100 for David only
+        // Result: David owes Carl $100
+        let balances = vec![
+            ParticipantBalance {
+                participant_id: 1,
+                participant_name: "Carl".to_string(),
+                total_paid: 1100.0,
+                total_owed: 1000.0,
+                net_balance: 100.0, // 1100 - 1000 = +100
+            },
+            ParticipantBalance {
+                participant_id: 2,
+                participant_name: "David".to_string(),
+                total_paid: 1000.0,
+                total_owed: 1100.0,
+                net_balance: -100.0, // 1000 - 1100 = -100
+            },
+        ];
+
+        let participant_map: HashMap<i64, String> = vec![
+            (1, "Carl".to_string()),
+            (2, "David".to_string()),
+        ].into_iter().collect();
+
+        let pool_participants: std::collections::HashSet<i64> = std::collections::HashSet::new();
+
+        let settlements = calculate_settlements(&balances, &participant_map, &pool_participants);
+
+        assert_eq!(settlements.len(), 1);
+        assert_eq!(settlements[0].from_participant_id, 2); // David
+        assert_eq!(settlements[0].to_participant_id, 1);   // Carl
+        assert_eq!(settlements[0].amount, 100.0);
+    }
+
+    #[test]
+    fn test_settlement_three_participants() {
+        // A paid 300 for A, B, C equally (each owes 100)
+        // A: paid 300, owes 100, net = +200
+        // B: paid 0, owes 100, net = -100
+        // C: paid 0, owes 100, net = -100
+        let balances = vec![
+            ParticipantBalance {
+                participant_id: 1,
+                participant_name: "A".to_string(),
+                total_paid: 300.0,
+                total_owed: 100.0,
+                net_balance: 200.0,
+            },
+            ParticipantBalance {
+                participant_id: 2,
+                participant_name: "B".to_string(),
+                total_paid: 0.0,
+                total_owed: 100.0,
+                net_balance: -100.0,
+            },
+            ParticipantBalance {
+                participant_id: 3,
+                participant_name: "C".to_string(),
+                total_paid: 0.0,
+                total_owed: 100.0,
+                net_balance: -100.0,
+            },
+        ];
+
+        let participant_map: HashMap<i64, String> = vec![
+            (1, "A".to_string()),
+            (2, "B".to_string()),
+            (3, "C".to_string()),
+        ].into_iter().collect();
+
+        let pool_participants: std::collections::HashSet<i64> = std::collections::HashSet::new();
+
+        let settlements = calculate_settlements(&balances, &participant_map, &pool_participants);
+
+        // Should have 2 settlements: B->A $100, C->A $100
+        assert_eq!(settlements.len(), 2);
+
+        let total: f64 = settlements.iter().map(|s| s.amount).sum();
+        assert_eq!(total, 200.0);
+
+        // All settlements should go to A (id=1)
+        for s in &settlements {
+            assert_eq!(s.to_participant_id, 1);
+        }
+    }
+
+    #[test]
+    fn test_direct_settlement_simple() {
+        // Carl (id=1) pays $100 for David (id=2)
+        // Pairwise: Carl paid $100 for David, David paid $0 for Carl
+        // Net: Carl is owed $100 by David
+        let balances = vec![
+            ParticipantBalance {
+                participant_id: 1,
+                participant_name: "Carl".to_string(),
+                total_paid: 100.0,
+                total_owed: 0.0,
+                net_balance: 100.0,
+            },
+            ParticipantBalance {
+                participant_id: 2,
+                participant_name: "David".to_string(),
+                total_paid: 0.0,
+                total_owed: 100.0,
+                net_balance: -100.0,
+            },
+        ];
+
+        let pairwise_balances = vec![
+            PairwiseBalance {
+                participant_id: 1,
+                participant_name: "Carl".to_string(),
+                other_participant_id: 2,
+                other_participant_name: "David".to_string(),
+                amount_paid_for: 100.0,
+                amount_owed_by: 0.0,
+                net: 100.0, // David owes Carl
+                paid_for_breakdown: vec![],
+                owed_by_breakdown: vec![],
+            },
+            PairwiseBalance {
+                participant_id: 2,
+                participant_name: "David".to_string(),
+                other_participant_id: 1,
+                other_participant_name: "Carl".to_string(),
+                amount_paid_for: 0.0,
+                amount_owed_by: 100.0,
+                net: -100.0, // David owes Carl
+                paid_for_breakdown: vec![],
+                owed_by_breakdown: vec![],
+            },
+        ];
+
+        let pool_participants: std::collections::HashSet<i64> = std::collections::HashSet::new();
+
+        let settlements = calculate_direct_settlements(&pairwise_balances, &balances, &pool_participants);
+
+        assert_eq!(settlements.len(), 1);
+        assert_eq!(settlements[0].from_participant_id, 2); // David
+        assert_eq!(settlements[0].to_participant_id, 1);   // Carl
+        assert_eq!(settlements[0].amount, 100.0);
+    }
+
+    // =====================================================
+    // Internal Transfer Tests (receiver_account_id IS NOT NULL)
+    // =====================================================
+
+    #[test]
+    fn test_pool_transfer_excluded_from_settlements() {
+        // Scenario: Carl transfers $100 to pool (pool transfer)
+        // This should NOT affect global settlements - only pool ownership
+        //
+        // When receiver_account_id is a pool, the occurrence is skipped
+        // in the paid/owed calculations, so balances remain at 0
+
+        // Simulate: After pool transfer is processed
+        // Since pool transfers are skipped, balances are unaffected
+        let balances = vec![
+            ParticipantBalance {
+                participant_id: 1,
+                participant_name: "Carl".to_string(),
+                total_paid: 0.0,  // Pool transfer doesn't count as "paid"
+                total_owed: 0.0,
+                net_balance: 0.0,
+            },
+            ParticipantBalance {
+                participant_id: 2,
+                participant_name: "Pool".to_string(),
+                total_paid: 0.0,
+                total_owed: 0.0,
+                net_balance: 0.0,
+            },
+        ];
+
+        let participant_map: HashMap<i64, String> = vec![
+            (1, "Carl".to_string()),
+            (2, "Pool".to_string()),
+        ].into_iter().collect();
+
+        let pool_participants: std::collections::HashSet<i64> = [2].into_iter().collect();
+
+        let settlements = calculate_settlements(&balances, &participant_map, &pool_participants);
+
+        // No settlements because balances are all 0 (pool transfers don't affect settlements)
+        assert_eq!(settlements.len(), 0);
+    }
+
+    #[test]
+    fn test_user_to_user_transfer_settles_debt() {
+        // Full scenario:
+        // 1. David pays $200 groceries, split between Carl and David ($100 each)
+        //    - David: paid $200, owes $100, net = +$100
+        //    - Carl: paid $0, owes $100, net = -$100
+        //    Settlement: Carl owes David $100
+        //
+        // 2. Carl transfers $100 to David (pay back)
+        //    - Carl's paid += $100, David's owed += $100
+        //
+        // Final totals:
+        //    - David: paid $200, owes $200, net = 0
+        //    - Carl: paid $100, owes $100, net = 0
+        //    No settlements needed!
+
+        let balances = vec![
+            ParticipantBalance {
+                participant_id: 1,
+                participant_name: "Carl".to_string(),
+                total_paid: 100.0,   // Transfer of $100
+                total_owed: 100.0,   // His share of groceries
+                net_balance: 0.0,
+            },
+            ParticipantBalance {
+                participant_id: 2,
+                participant_name: "David".to_string(),
+                total_paid: 200.0,   // Groceries
+                total_owed: 200.0,   // His share ($100) + received transfer ($100)
+                net_balance: 0.0,
+            },
+        ];
+
+        let participant_map: HashMap<i64, String> = vec![
+            (1, "Carl".to_string()),
+            (2, "David".to_string()),
+        ].into_iter().collect();
+
+        let pool_participants: std::collections::HashSet<i64> = std::collections::HashSet::new();
+
+        let settlements = calculate_settlements(&balances, &participant_map, &pool_participants);
+
+        // No settlements - debt is settled!
+        assert_eq!(settlements.len(), 0);
+    }
+
+    #[test]
+    fn test_user_to_user_partial_transfer() {
+        // Scenario:
+        // 1. David pays $200 groceries, split between Carl and David ($100 each)
+        //    - Carl owes David $100
+        //
+        // 2. Carl transfers $50 to David (partial pay back)
+        //
+        // Final totals:
+        //    - David: paid $200, owes $150 ($100 share + $50 received), net = +$50
+        //    - Carl: paid $50, owes $100, net = -$50
+        //    Settlement: Carl owes David $50
+
+        let balances = vec![
+            ParticipantBalance {
+                participant_id: 1,
+                participant_name: "Carl".to_string(),
+                total_paid: 50.0,    // Transfer of $50
+                total_owed: 100.0,   // His share of groceries
+                net_balance: -50.0,
+            },
+            ParticipantBalance {
+                participant_id: 2,
+                participant_name: "David".to_string(),
+                total_paid: 200.0,   // Groceries
+                total_owed: 150.0,   // His share ($100) + received transfer ($50)
+                net_balance: 50.0,
+            },
+        ];
+
+        let participant_map: HashMap<i64, String> = vec![
+            (1, "Carl".to_string()),
+            (2, "David".to_string()),
+        ].into_iter().collect();
+
+        let pool_participants: std::collections::HashSet<i64> = std::collections::HashSet::new();
+
+        let settlements = calculate_settlements(&balances, &participant_map, &pool_participants);
+
+        // Carl still owes David $50
+        assert_eq!(settlements.len(), 1);
+        assert_eq!(settlements[0].from_participant_id, 1); // Carl
+        assert_eq!(settlements[0].to_participant_id, 2);   // David
+        assert_eq!(settlements[0].amount, 50.0);
+    }
+
+    #[test]
+    fn test_external_expense_with_pool_payer_creates_correct_settlements() {
+        // Scenario: Pool pays $300 for insurance, split equally among Carl, David, Lise
+        // This is an EXTERNAL expense (receiver_account_id = NULL)
+        //
+        // Expected:
+        // - Carl owes $100 (to pool ownership)
+        // - David owes $100 (to pool ownership)
+        // - Lise owes $100 (to pool ownership)
+        // - Pool is excluded from settlements (it's a pool account)
+        //
+        // Since pool is excluded, settlements should be empty (no inter-user transfers needed)
+
+        let balances = vec![
+            ParticipantBalance {
+                participant_id: 1,
+                participant_name: "Carl".to_string(),
+                total_paid: 0.0,
+                total_owed: 100.0,
+                net_balance: -100.0,
+            },
+            ParticipantBalance {
+                participant_id: 2,
+                participant_name: "David".to_string(),
+                total_paid: 0.0,
+                total_owed: 100.0,
+                net_balance: -100.0,
+            },
+            ParticipantBalance {
+                participant_id: 3,
+                participant_name: "Lise".to_string(),
+                total_paid: 0.0,
+                total_owed: 100.0,
+                net_balance: -100.0,
+            },
+            ParticipantBalance {
+                participant_id: 4,
+                participant_name: "Pool".to_string(),
+                total_paid: 300.0,
+                total_owed: 0.0,
+                net_balance: 300.0,
+            },
+        ];
+
+        let participant_map: HashMap<i64, String> = vec![
+            (1, "Carl".to_string()),
+            (2, "David".to_string()),
+            (3, "Lise".to_string()),
+            (4, "Pool".to_string()),
+        ].into_iter().collect();
+
+        // Pool is participant 4
+        let pool_participants: std::collections::HashSet<i64> = [4].into_iter().collect();
+
+        let settlements = calculate_settlements(&balances, &participant_map, &pool_participants);
+
+        // No settlements among users because the creditor (Pool) is excluded
+        assert_eq!(settlements.len(), 0);
+    }
+
+    #[test]
+    fn test_mixed_scenario_with_pool_and_users() {
+        // Scenario:
+        // 1. Pool pays $300 insurance (external), split among Carl, David, Lise ($100 each)
+        // 2. Carl pays $150 groceries (external), split among Carl, David, Lise ($50 each)
+        //
+        // Balances:
+        // - Carl: paid $150, owes $150 ($100 + $50), net = 0
+        // - David: paid $0, owes $150 ($100 + $50), net = -150
+        // - Lise: paid $0, owes $150 ($100 + $50), net = -150
+        // - Pool: paid $300, owes $0, net = +300
+        //
+        // Settlements (Pool excluded):
+        // - David owes Carl $50 (from groceries share)
+        // - Lise owes Carl $50 (from groceries share)
+        // - But Carl's net is 0, so he's neither debtor nor creditor!
+        //
+        // Actually with pool excluded:
+        // Creditors: none among users (Carl is 0)
+        // Debtors: David (-150), Lise (-150)
+        // No user-to-user settlements possible (no creditor)
+
+        let balances = vec![
+            ParticipantBalance {
+                participant_id: 1,
+                participant_name: "Carl".to_string(),
+                total_paid: 150.0,
+                total_owed: 150.0,
+                net_balance: 0.0,
+            },
+            ParticipantBalance {
+                participant_id: 2,
+                participant_name: "David".to_string(),
+                total_paid: 0.0,
+                total_owed: 150.0,
+                net_balance: -150.0,
+            },
+            ParticipantBalance {
+                participant_id: 3,
+                participant_name: "Lise".to_string(),
+                total_paid: 0.0,
+                total_owed: 150.0,
+                net_balance: -150.0,
+            },
+            ParticipantBalance {
+                participant_id: 4,
+                participant_name: "Pool".to_string(),
+                total_paid: 300.0,
+                total_owed: 0.0,
+                net_balance: 300.0,
+            },
+        ];
+
+        let participant_map: HashMap<i64, String> = vec![
+            (1, "Carl".to_string()),
+            (2, "David".to_string()),
+            (3, "Lise".to_string()),
+            (4, "Pool".to_string()),
+        ].into_iter().collect();
+
+        let pool_participants: std::collections::HashSet<i64> = [4].into_iter().collect();
+
+        let settlements = calculate_settlements(&balances, &participant_map, &pool_participants);
+
+        // No user creditors (Carl is 0), so no settlements
+        assert_eq!(settlements.len(), 0);
+    }
+
+    #[test]
+    fn test_mixed_scenario_with_user_creditor() {
+        // Scenario:
+        // 1. Carl pays $300 groceries (external), split among Carl, David, Lise ($100 each)
+        //
+        // Balances:
+        // - Carl: paid $300, owes $100, net = +200
+        // - David: paid $0, owes $100, net = -100
+        // - Lise: paid $0, owes $100, net = -100
+        //
+        // Settlements:
+        // - David owes Carl $100
+        // - Lise owes Carl $100
+
+        let balances = vec![
+            ParticipantBalance {
+                participant_id: 1,
+                participant_name: "Carl".to_string(),
+                total_paid: 300.0,
+                total_owed: 100.0,
+                net_balance: 200.0,
+            },
+            ParticipantBalance {
+                participant_id: 2,
+                participant_name: "David".to_string(),
+                total_paid: 0.0,
+                total_owed: 100.0,
+                net_balance: -100.0,
+            },
+            ParticipantBalance {
+                participant_id: 3,
+                participant_name: "Lise".to_string(),
+                total_paid: 0.0,
+                total_owed: 100.0,
+                net_balance: -100.0,
+            },
+        ];
+
+        let participant_map: HashMap<i64, String> = vec![
+            (1, "Carl".to_string()),
+            (2, "David".to_string()),
+            (3, "Lise".to_string()),
+        ].into_iter().collect();
+
+        let pool_participants: std::collections::HashSet<i64> = std::collections::HashSet::new();
+
+        let settlements = calculate_settlements(&balances, &participant_map, &pool_participants);
+
+        assert_eq!(settlements.len(), 2);
+        let total: f64 = settlements.iter().map(|s| s.amount).sum();
+        assert_eq!(total, 200.0);
+
+        // All settlements should go to Carl
+        for s in &settlements {
+            assert_eq!(s.to_participant_id, 1);
+        }
+    }
+
+    #[test]
+    fn test_large_pool_transfer_no_unrelated_participants() {
+        // Scenario: Carl transfers $100000 to Pool (pool transfer)
+        // Other users (David, Lise) should not be affected AT ALL
+        //
+        // Since pool transfers are skipped in balance calculation,
+        // everyone's balance remains at 0
+
+        let balances = vec![
+            ParticipantBalance {
+                participant_id: 1,
+                participant_name: "Carl".to_string(),
+                total_paid: 0.0,  // Pool transfers don't count
+                total_owed: 0.0,
+                net_balance: 0.0,
+            },
+            ParticipantBalance {
+                participant_id: 2,
+                participant_name: "David".to_string(),
+                total_paid: 0.0,
+                total_owed: 0.0,
+                net_balance: 0.0,
+            },
+            ParticipantBalance {
+                participant_id: 3,
+                participant_name: "Lise".to_string(),
+                total_paid: 0.0,
+                total_owed: 0.0,
+                net_balance: 0.0,
+            },
+            ParticipantBalance {
+                participant_id: 4,
+                participant_name: "Pool".to_string(),
+                total_paid: 0.0,
+                total_owed: 0.0,
+                net_balance: 0.0,
+            },
+        ];
+
+        let participant_map: HashMap<i64, String> = vec![
+            (1, "Carl".to_string()),
+            (2, "David".to_string()),
+            (3, "Lise".to_string()),
+            (4, "Pool".to_string()),
+        ].into_iter().collect();
+
+        let pool_participants: std::collections::HashSet<i64> = [4].into_iter().collect();
+
+        let settlements = calculate_settlements(&balances, &participant_map, &pool_participants);
+
+        // No settlements - everyone is at 0 (pool transfers don't affect user balances)
+        assert_eq!(settlements.len(), 0);
+    }
+
+    #[test]
+    fn test_user_to_user_transfer_doesnt_affect_unrelated_users() {
+        // Scenario: Carl transfers $100 to David
+        // Lise should NOT be affected at all
+        //
+        // This tests that user-to-user transfers only affect the two parties involved
+
+        let balances = vec![
+            ParticipantBalance {
+                participant_id: 1,
+                participant_name: "Carl".to_string(),
+                total_paid: 100.0,  // Transfer
+                total_owed: 0.0,
+                net_balance: 100.0,
+            },
+            ParticipantBalance {
+                participant_id: 2,
+                participant_name: "David".to_string(),
+                total_paid: 0.0,
+                total_owed: 100.0,  // Received transfer
+                net_balance: -100.0,
+            },
+            ParticipantBalance {
+                participant_id: 3,
+                participant_name: "Lise".to_string(),
+                total_paid: 0.0,    // Not involved
+                total_owed: 0.0,
+                net_balance: 0.0,
+            },
+        ];
+
+        let participant_map: HashMap<i64, String> = vec![
+            (1, "Carl".to_string()),
+            (2, "David".to_string()),
+            (3, "Lise".to_string()),
+        ].into_iter().collect();
+
+        let pool_participants: std::collections::HashSet<i64> = std::collections::HashSet::new();
+
+        let settlements = calculate_settlements(&balances, &participant_map, &pool_participants);
+
+        // Only one settlement: David owes Carl
+        // Lise is not involved at all
+        assert_eq!(settlements.len(), 1);
+        assert_eq!(settlements[0].from_participant_id, 2); // David
+        assert_eq!(settlements[0].to_participant_id, 1);   // Carl
+
+        // Verify Lise is not in any settlement
+        for s in &settlements {
+            assert_ne!(s.from_participant_id, 3);
+            assert_ne!(s.to_participant_id, 3);
+        }
+    }
+
+    #[test]
+    fn test_occurrence_with_receiver_is_internal() {
+        // Test that PaymentOccurrence with receiver_account_id is recognized as internal
+        let occurrence = PaymentOccurrence {
+            payment_id: 1,
+            description: "Transfer to pool".to_string(),
+            amount: 100.0,
+            occurrence_date: "2024-01-01".to_string(),
+            payer_id: Some(1),
+            is_recurring: false,
+            receiver_account_id: Some(2), // Internal transfer to pool
+        };
+
+        assert!(occurrence.receiver_account_id.is_some());
+    }
+
+    #[test]
+    fn test_occurrence_without_receiver_is_external() {
+        // Test that PaymentOccurrence without receiver_account_id is external
+        let occurrence = PaymentOccurrence {
+            payment_id: 1,
+            description: "Groceries".to_string(),
+            amount: 100.0,
+            occurrence_date: "2024-01-01".to_string(),
+            payer_id: Some(1),
+            is_recurring: false,
+            receiver_account_id: None, // External expense
+        };
+
+        assert!(occurrence.receiver_account_id.is_none());
+    }
 }

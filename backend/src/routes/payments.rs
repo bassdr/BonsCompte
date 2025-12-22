@@ -144,6 +144,21 @@ async fn create_payment(
         }
     }
 
+    // Validate receiver_account_id belongs to project (for internal transfers)
+    if let Some(receiver_id) = input.receiver_account_id {
+        let receiver_exists: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM participants WHERE id = ? AND project_id = ?"
+        )
+        .bind(receiver_id)
+        .bind(member.project_id)
+        .fetch_optional(&pool)
+        .await?;
+
+        if receiver_exists.is_none() {
+            return Err(AppError::BadRequest("Invalid receiver account".to_string()));
+        }
+    }
+
     // Validate all participants belong to project
     for contrib in &input.contributions {
         let participant_exists: Option<i64> = sqlx::query_scalar(
@@ -180,8 +195,8 @@ async fn create_payment(
     let is_recurring = input.is_recurring.unwrap_or(false);
 
     let result = sqlx::query(
-        "INSERT INTO payments (project_id, payer_id, amount, description, payment_date, receipt_image, is_recurring, recurrence_type, recurrence_interval, recurrence_times_per, recurrence_end_date)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO payments (project_id, payer_id, amount, description, payment_date, receipt_image, is_recurring, recurrence_type, recurrence_interval, recurrence_times_per, recurrence_end_date, receiver_account_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(member.project_id)
     .bind(input.payer_id)
@@ -194,6 +209,7 @@ async fn create_payment(
     .bind(input.recurrence_interval)
     .bind(input.recurrence_times_per)
     .bind(&input.recurrence_end_date)
+    .bind(input.receiver_account_id)
     .execute(&pool)
     .await?;
 
@@ -302,6 +318,21 @@ async fn update_payment(
         }
     }
 
+    // Validate receiver_account_id belongs to project (for internal transfers)
+    if let Some(receiver_id) = input.receiver_account_id {
+        let receiver_exists: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM participants WHERE id = ? AND project_id = ?"
+        )
+        .bind(receiver_id)
+        .bind(member.project_id)
+        .fetch_optional(&pool)
+        .await?;
+
+        if receiver_exists.is_none() {
+            return Err(AppError::BadRequest("Invalid receiver account".to_string()));
+        }
+    }
+
     // Validate all participants belong to project
     for contrib in &input.contributions {
         let participant_exists: Option<i64> = sqlx::query_scalar(
@@ -340,7 +371,7 @@ async fn update_payment(
     sqlx::query(
         "UPDATE payments SET payer_id = ?, amount = ?, description = ?, payment_date = ?,
          receipt_image = ?, is_recurring = ?, recurrence_type = ?, recurrence_interval = ?,
-         recurrence_times_per = ?, recurrence_end_date = ?
+         recurrence_times_per = ?, recurrence_end_date = ?, receiver_account_id = ?
          WHERE id = ? AND project_id = ?"
     )
     .bind(input.payer_id)
@@ -353,6 +384,7 @@ async fn update_payment(
     .bind(input.recurrence_interval)
     .bind(input.recurrence_times_per)
     .bind(&input.recurrence_end_date)
+    .bind(input.receiver_account_id)
     .bind(path.payment_id)
     .bind(member.project_id)
     .execute(&pool)

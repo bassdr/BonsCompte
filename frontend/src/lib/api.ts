@@ -166,6 +166,10 @@ export interface Payment {
     recurrence_interval: number | null;
     recurrence_times_per: number | null;
     recurrence_end_date: string | null;
+    // Internal transfer support
+    // null = external expense (money leaves system, affects settlements)
+    // number = internal transfer to this account (only affects pool ownership)
+    receiver_account_id: number | null;
 }
 
 export interface Contribution {
@@ -205,6 +209,8 @@ export interface PaymentOccurrence {
     occurrence_date: string;
     payer_id: number | null;
     is_recurring: boolean;
+    // Internal transfer support
+    receiver_account_id: number | null;
 }
 
 export interface PairwisePaymentBreakdown {
@@ -373,6 +379,8 @@ export interface CreatePaymentInput {
     recurrence_interval?: number;
     recurrence_times_per?: number;
     recurrence_end_date?: string;
+    // Internal transfer: recipient account (null = external expense)
+    receiver_account_id?: number | null;
 }
 
 export const getPayments = (projectId: number): Promise<PaymentWithContributions[]> =>

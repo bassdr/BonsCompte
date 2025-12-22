@@ -68,14 +68,36 @@ The system can use these weights to divide the cost fairly.
 ### 5. Participant Management
 - Create participants with default weights
 - Participants may or may not have associated user accounts
+- Two account types:
+  - **User accounts**: Regular participants who pay and owe
+  - **Pool accounts**: Shared account per project for tracking collective funds (e.g., house fund, shared bank account)
 - Track contributions by participant across all payments
 
-### 6. Smart Payment Interface
-- View all payments (recurring and one-time) with tags
+### 6. Transfer System
+BonsCompte supports multiple payment types for flexible debt settlement:
+
+- **External expenses**: Regular shared bills (groceries, rent, utilities)
+  - Money leaves the system
+  - Affects settlements between participants
+
+- **Direct transfers**: Payments between participants to settle debts
+  - Use the "Pay back" button to transfer money to a specific person
+  - Reduces debt without creating new expenses
+  - Perfect for settling partial debts
+
+- **Pool deposits/withdrawals**: Move money to/from a shared account
+  - Deposit: "Pay to pool" via the "Deposit" button
+  - Only affects pool ownership, not user-to-user settlements
+  - Useful for managing collective funds
+
+### 7. Smart Payment Interface
+- View all payments (recurring and one-time) with type indicators
 - Edit recent payments with full recalculation
-- Quick action buttons: "Pay back" (single participant) or "Include all" (default participants)
+- Quick action buttons: "Pay back" (direct transfer to person) or "Deposit" (transfer to pool)
+- Include all default participants or customize per-payment weights
 - Future date indication with "from" vs "on" preposition
 - Past/future badges for date context
+- Receipt image storage and viewing
 
 ## Tech Stack
 
@@ -109,12 +131,19 @@ npm run format               # Auto-format with Prettier
 
 ### Data Model
 - **Project**: Owned by a user, contains participants and members
-- **Participant**: Entity that pays/owes (may or may not be a user)
+- **Participant**: Entity that pays/owes (may or may not be a user); has account type (user/pool)
 - **Member**: User's membership in a project with role (owner/editor/viewer)
-- **Payment**: Has payer, amount, date, optional recurrence, contributions
+- **Payment**: Has payer, amount, date, optional recurrence, contributions, optional receiver (for transfers)
 - **Contribution**: Links payment to participant with weight
 
 ### Key Features
+
+**Transfer Types**: Flexible payment handling via optional receiver account
+- **External expense** (no receiver): Normal shared bills, affects settlements
+- **User-to-user transfer** (receiver = user): Direct payment to settle debts
+- **Pool transfer** (receiver = pool): Deposits/withdrawals from shared account
+  - Only affects pool ownership tracking, not user-to-user settlements
+  - Transparent record of who contributed to/withdrew from shared funds
 
 **Weight System**: Fairness through proportional distribution
 - Default weight applies to new payments
@@ -126,6 +155,12 @@ npm run format               # Auto-format with Prettier
 - Either "every X periods" OR "X times per period"
 - Optional end date
 - Debt calculator expands occurrences for future date queries
+
+**Settlement Calculation**: Smart matching for debt resolution
+- Pool accounts excluded from user-to-user settlements
+- Greedy algorithm matches debtors with creditors
+- Direct mode available for settlements involving only direct transactors
+- Automatic recalculation on all changes
 
 **Date Handling**: Timezone-safe with local dates
 - Avoids UTC offset issues with ISO strings

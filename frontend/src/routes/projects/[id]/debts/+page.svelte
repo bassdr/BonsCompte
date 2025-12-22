@@ -79,7 +79,7 @@
         expandedPairwiseMonths = newMap;
     }
 
-    // Group breakdown by year/month
+    // Group breakdown by year/month, newest first
     function groupBreakdownByYearMonth(breakdown: any[]) {
         const yearMap = new Map<string, any>();
 
@@ -111,7 +111,24 @@
             yearData.total += item.amount;
         }
 
-        return yearMap;
+        // Convert to array and sort by year (newest first)
+        const sortedYears = [...yearMap.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+
+        // For each year, sort months (newest first) and items (newest first)
+        const result = new Map<string, any>();
+        for (const [year, yearData] of sortedYears) {
+            const sortedMonths = [...yearData.months.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+
+            yearData.months = new Map();
+            for (const [monthKey, monthData] of sortedMonths) {
+                monthData.items.sort((a: any, b: any) => b.occurrence_date.localeCompare(a.occurrence_date));
+                yearData.months.set(monthKey, monthData);
+            }
+
+            result.set(year, yearData);
+        }
+
+        return result;
     }
 
     // Get pairwise balances for a specific participant

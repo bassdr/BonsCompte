@@ -18,6 +18,10 @@ pub struct Payment {
     pub recurrence_interval: Option<i32>, // every X periods
     pub recurrence_times_per: Option<i32>, // NULL = every X, non-NULL = X times per period
     pub recurrence_end_date: Option<String>,
+    // Internal transfer support
+    // NULL = external expense (money leaves system)
+    // NOT NULL = internal transfer (money moves between accounts, e.g., user → pool)
+    pub receiver_account_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -35,6 +39,8 @@ pub struct CreatePayment {
     pub recurrence_interval: Option<i32>,
     pub recurrence_times_per: Option<i32>,
     pub recurrence_end_date: Option<String>,
+    // Internal transfer: recipient account (NULL = external expense)
+    pub receiver_account_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]

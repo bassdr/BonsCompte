@@ -278,6 +278,18 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         .execute(pool)
         .await?;
 
+    // =====================
+    // Migration 005: Pool Account Support
+    // =====================
+
+    // Add account_type column to participants (user or pool)
+    sqlx::query(
+        "ALTER TABLE participants ADD COLUMN account_type TEXT NOT NULL DEFAULT 'user'"
+    )
+    .execute(pool)
+    .await
+    .ok(); // Ignore error if column already exists
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

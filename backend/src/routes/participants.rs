@@ -70,13 +70,34 @@ async fn create_participant(
     }
 
     let default_weight = input.default_weight.unwrap_or(1.0);
+    let account_type = input.account_type.as_deref().unwrap_or("user");
+
+    // Validate account_type
+    if account_type != "user" && account_type != "pool" {
+        return Err(AppError::BadRequest("account_type must be 'user' or 'pool'".to_string()));
+    }
+
+    // If creating a pool, check that no other pool exists in this project
+    if account_type == "pool" {
+        let existing_pool: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM participants WHERE project_id = ? AND account_type = 'pool'"
+        )
+        .bind(member.project_id)
+        .fetch_optional(&pool)
+        .await?;
+
+        if existing_pool.is_some() {
+            return Err(AppError::BadRequest("Only one pool account allowed per project".to_string()));
+        }
+    }
 
     let result = sqlx::query(
-        "INSERT INTO participants (project_id, name, default_weight) VALUES (?, ?, ?)"
+        "INSERT INTO participants (project_id, name, default_weight, account_type) VALUES (?, ?, ?, ?)"
     )
     .bind(member.project_id)
     .bind(&input.name)
     .bind(default_weight)
+    .bind(account_type)
     .execute(&pool)
     .await?;
 
@@ -108,16 +129,42 @@ async fn update_participant(
     .fetch_optional(&pool)
     .await?;
 
-    if existing.is_none() {
-        return Err(AppError::NotFound("Participant not found".to_string()));
+    let existing = existing.ok_or_else(|| AppError::NotFound("Participant not found".to_string()))?;
+
+    // Validate account_type if provided
+    if let Some(ref account_type) = input.account_type {
+        if account_type != "user" && account_type != "pool" {
+            return Err(AppError::BadRequest("account_type must be 'user' or 'pool'".to_string()));
+        }
+
+        // If changing to pool, check that no other pool exists and that user is not linked
+        if account_type == "pool" && existing.account_type != "pool" {
+            // Prevent linked users from becoming pools
+            if existing.user_id.is_some() {
+                return Err(AppError::BadRequest("Linked users cannot become pool accounts".to_string()));
+            }
+
+            let existing_pool: Option<i64> = sqlx::query_scalar(
+                "SELECT id FROM participants WHERE project_id = ? AND account_type = 'pool'"
+            )
+            .bind(member.project_id)
+            .fetch_optional(&pool)
+            .await?;
+
+            if existing_pool.is_some() {
+                return Err(AppError::BadRequest("Only one pool account allowed per project".to_string()));
+            }
+        }
     }
 
     // Build dynamic update
     let mut updates = Vec::new();
     let mut has_name = false;
     let mut has_weight = false;
+    let mut has_account_type = false;
     let mut name_val = String::new();
     let mut weight_val = 0.0f64;
+    let mut account_type_val = String::new();
 
     if let Some(name) = &input.name {
         updates.push("name = ?");
@@ -128,6 +175,11 @@ async fn update_participant(
         updates.push("default_weight = ?");
         has_weight = true;
         weight_val = weight;
+    }
+    if let Some(account_type) = &input.account_type {
+        updates.push("account_type = ?");
+        has_account_type = true;
+        account_type_val = account_type.clone();
     }
 
     if updates.is_empty() {
@@ -141,6 +193,9 @@ async fn update_participant(
     }
     if has_weight {
         query = query.bind(weight_val);
+    }
+    if has_account_type {
+        query = query.bind(&account_type_val);
     }
     query = query.bind(path.participant_id);
     query.execute(&pool).await?;

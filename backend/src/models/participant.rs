@@ -9,16 +9,19 @@ pub struct Participant {
     pub user_id: Option<i64>,
     pub default_weight: f64,
     pub created_at: String,
+    pub account_type: String, // "user" or "pool"
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CreateParticipant {
     pub name: String,
     pub default_weight: Option<f64>,
+    pub account_type: Option<String>, // defaults to "user"
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateParticipant {
     pub name: Option<String>,
     pub default_weight: Option<f64>,
+    pub account_type: Option<String>,
 }

@@ -108,6 +108,7 @@ export interface Participant {
     user_id: number | null;
     default_weight: number;
     created_at: string;
+    account_type: 'user' | 'pool';
 }
 
 export interface ProjectMember {
@@ -206,11 +207,47 @@ export interface PaymentOccurrence {
     is_recurring: boolean;
 }
 
+export interface PairwisePaymentBreakdown {
+    payment_id: number;
+    description: string;
+    occurrence_date: string;
+    amount: number;
+}
+
+export interface PairwiseBalance {
+    participant_id: number;
+    participant_name: string;
+    other_participant_id: number;
+    other_participant_name: string;
+    amount_paid_for: number;    // Amount this participant paid for other
+    amount_owed_by: number;     // Amount other paid for this participant
+    net: number;                // paid_for - owed_by (positive = they owe you)
+    paid_for_breakdown: PairwisePaymentBreakdown[];  // Details of what we paid for them
+    owed_by_breakdown: PairwisePaymentBreakdown[];   // Details of what they paid for us
+}
+
+export interface PoolOwnershipEntry {
+    participant_id: number;
+    participant_name: string;
+    contributed: number;
+    consumed: number;
+    ownership: number;
+}
+
+export interface PoolOwnership {
+    pool_id: number;
+    pool_name: string;
+    entries: PoolOwnershipEntry[];
+    total_balance: number;
+}
+
 export interface DebtSummary {
     balances: ParticipantBalance[];
     settlements: Debt[];
     target_date: string;
     occurrences: PaymentOccurrence[];
+    pairwise_balances: PairwiseBalance[];
+    pool_ownership: PoolOwnership | null;
 }
 
 // Users
@@ -260,13 +297,13 @@ export const getParticipants = (projectId: number): Promise<Participant[]> =>
 export const getParticipant = (projectId: number, participantId: number): Promise<Participant> =>
     authFetch(`/projects/${projectId}/participants/${participantId}`);
 
-export const createParticipant = (projectId: number, data: { name: string; default_weight?: number }): Promise<Participant> =>
+export const createParticipant = (projectId: number, data: { name: string; default_weight?: number; account_type?: 'user' | 'pool' }): Promise<Participant> =>
     authFetch(`/projects/${projectId}/participants`, {
         method: "POST",
         body: JSON.stringify(data)
     });
 
-export const updateParticipant = (projectId: number, participantId: number, data: { name?: string; default_weight?: number }): Promise<Participant> =>
+export const updateParticipant = (projectId: number, participantId: number, data: { name?: string; default_weight?: number; account_type?: 'user' | 'pool' }): Promise<Participant> =>
     authFetch(`/projects/${projectId}/participants/${participantId}`, {
         method: "PUT",
         body: JSON.stringify(data)

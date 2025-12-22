@@ -11,7 +11,8 @@
       "Bash(curl:*)",
       "Bash(cargo build:*)",
       "Bash(wc:*)",
-      "Bash(docker build:*)"
+      "Bash(docker build:*)",
+      "Bash(find:*)"
     ],
     "deny": [
       "Read(*.csv)",

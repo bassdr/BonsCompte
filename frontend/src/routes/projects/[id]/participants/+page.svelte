@@ -26,13 +26,18 @@
     let showAddForm = $state(false);
     let newName = $state('');
     let newWeight = $state('1');
+    let newAccountType = $state<'user' | 'pool'>('user');
     let adding = $state(false);
 
     // Edit state
     let editingId = $state<number | null>(null);
     let editName = $state('');
     let editWeight = $state('');
+    let editAccountType = $state<'user' | 'pool'>('user');
     let updating = $state(false);
+
+    // Check if a pool already exists in the project
+    let poolExists = $derived($participants.some(p => p.account_type === 'pool'));
 
     let projectId = $derived(parseInt($page.params.id ?? ''));
 
@@ -48,12 +53,14 @@
             const weight = parseFloat(newWeight);
             await createParticipant(projectId, {
                 name: newName.trim(),
-                default_weight: isNaN(weight) ? 1 : weight
+                default_weight: isNaN(weight) ? 1 : weight,
+                account_type: newAccountType
             });
 
             // Reset form
             newName = '';
             newWeight = '1';
+            newAccountType = 'user';
             showAddForm = false;
             success = 'Participant added successfully';
 
@@ -70,12 +77,14 @@
         editingId = p.id;
         editName = p.name;
         editWeight = p.default_weight.toString();
+        editAccountType = p.account_type;
     }
 
     function cancelEdit() {
         editingId = null;
         editName = '';
         editWeight = '';
+        editAccountType = 'user';
     }
 
     async function handleUpdate(e: Event) {
@@ -90,7 +99,8 @@
             const weight = parseFloat(editWeight);
             await updateParticipant(projectId, editingId, {
                 name: editName.trim(),
-                default_weight: isNaN(weight) ? 1 : weight
+                default_weight: isNaN(weight) ? 1 : weight,
+                account_type: editAccountType
             });
 
             cancelEdit();
@@ -265,6 +275,13 @@
                         step="0.5"
                     />
                 </div>
+                <div class="field small">
+                    <label for="accountType">Type</label>
+                    <select id="accountType" bind:value={newAccountType}>
+                        <option value="user">User</option>
+                        <option value="pool" disabled={poolExists}>Pool {poolExists ? '(exists)' : ''}</option>
+                    </select>
+                </div>
             </div>
             <button type="submit" disabled={adding}>
                 {adding ? 'Adding...' : 'Add Participant'}
@@ -296,6 +313,10 @@
                                 step="0.5"
                                 class="small-input"
                             />
+                            <select bind:value={editAccountType} class="small-select">
+                                <option value="user">User</option>
+                                <option value="pool" disabled={poolExists && editAccountType !== 'pool'}>Pool</option>
+                            </select>
                             <button type="submit" disabled={updating}>Save</button>
                             <button type="button" onclick={cancelEdit}>Cancel</button>
                         </form>
@@ -303,6 +324,9 @@
                         <div class="participant-row">
                             <div class="participant-info">
                                 <span class="name">{p.name}</span>
+                                {#if p.account_type === 'pool'}
+                                    <span class="pool-badge">Pool</span>
+                                {/if}
                                 <span class="weight">
                                     {#if p.default_weight === 0}
                                         Weight: 0 (will not participate)
@@ -329,7 +353,7 @@
                             </div>
                         </div>
 
-                        {#if $isAdmin && p.user_id === null}
+                        {#if $isAdmin && p.user_id === null && p.account_type !== 'pool'}
                             <div class="invite-section">
                                 {#if invites[p.id]}
                                     <div class="invite-link-row">
@@ -513,6 +537,34 @@
         padding: 0.25rem 0.5rem;
         border-radius: 4px;
         font-size: 0.75rem;
+    }
+
+    .pool-badge {
+        background: var(--accent, #7b61ff);
+        color: white;
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    select {
+        padding: 0.75rem;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        font-size: 1rem;
+        background: white;
+    }
+
+    select:focus {
+        outline: none;
+        border-color: var(--accent, #7b61ff);
+    }
+
+    .small-select {
+        width: 80px;
+        padding: 0.5rem;
     }
 
     .participant-actions {

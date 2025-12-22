@@ -76,6 +76,7 @@ pub struct PaymentOccurrence {
 pub struct DebtSummary {
     pub balances: Vec<ParticipantBalance>,
     pub settlements: Vec<Debt>,
+    pub direct_settlements: Vec<Debt>,
     pub target_date: String,
     pub occurrences: Vec<PaymentOccurrence>,
     pub pairwise_balances: Vec<PairwiseBalance>,
@@ -326,9 +327,13 @@ pub async fn calculate_debts_at_date(
         None
     };
 
+    // Calculate direct-only settlements based on pairwise relationships
+    let direct_settlements = calculate_direct_settlements(&pairwise_balances, &pool_participants);
+
     Ok(DebtSummary {
         balances,
         settlements,
+        direct_settlements,
         target_date: target_date.to_string(),
         occurrences: all_occurrences,
         pairwise_balances,
@@ -504,6 +509,51 @@ fn calculate_settlements(
             c_idx += 1;
         }
     }
+
+    settlements
+}
+
+/// Calculate direct-only settlements based on pairwise relationships
+/// Only settles debts between participants who have directly transacted
+fn calculate_direct_settlements(
+    pairwise_balances: &[PairwiseBalance],
+    pool_participants: &std::collections::HashSet<i64>,
+) -> Vec<Debt> {
+    let mut settlements = Vec::new();
+
+    for pw in pairwise_balances {
+        // Skip if either participant is a pool account
+        if pool_participants.contains(&pw.participant_id) || pool_participants.contains(&pw.other_participant_id) {
+            continue;
+        }
+
+        // Only create settlement if there's a net debt
+        // pw.net = amount_paid_for - amount_owed_by
+        // If net > 0, other owes this participant
+        // If net < 0, this participant owes other
+        if pw.net > 0.01 {
+            // other_participant owes participant
+            settlements.push(Debt {
+                from_participant_id: pw.other_participant_id,
+                from_participant_name: pw.other_participant_name.clone(),
+                to_participant_id: pw.participant_id,
+                to_participant_name: pw.participant_name.clone(),
+                amount: (pw.net * 100.0).round() / 100.0,
+            });
+        } else if pw.net < -0.01 {
+            // participant owes other_participant
+            settlements.push(Debt {
+                from_participant_id: pw.participant_id,
+                from_participant_name: pw.participant_name.clone(),
+                to_participant_id: pw.other_participant_id,
+                to_participant_name: pw.other_participant_name.clone(),
+                amount: ((-pw.net) * 100.0).round() / 100.0,
+            });
+        }
+    }
+
+    // Sort by amount descending for consistency
+    settlements.sort_by(|a, b| b.amount.partial_cmp(&a.amount).unwrap_or(std::cmp::Ordering::Equal));
 
     settlements
 }

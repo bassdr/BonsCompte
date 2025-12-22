@@ -244,6 +244,7 @@ export interface PoolOwnership {
 export interface DebtSummary {
     balances: ParticipantBalance[];
     settlements: Debt[];
+    direct_settlements: Debt[];
     target_date: string;
     occurrences: PaymentOccurrence[];
     pairwise_balances: PairwiseBalance[];

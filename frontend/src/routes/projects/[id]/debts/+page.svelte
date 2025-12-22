@@ -886,10 +886,12 @@
     <section class="card">
         <div class="settlements-header">
             <h3>Settlements</h3>
+            <!-- TODO: Direct-only settlement mode disabled pending investigation
             <label class="settlement-mode-toggle">
                 <input type="checkbox" bind:checked={useDirectSettlements} />
                 Direct-only (no intermediaries)
             </label>
+            -->
         </div>
         {#if filteredSettlements.length === 0}
             <p class="all-settled">{focusParticipantId !== null ? 'No settlements for this participant' : 'All settled up!'}</p>

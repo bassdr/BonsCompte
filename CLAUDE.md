@@ -99,10 +99,36 @@ frontend/src/
 ## Data Model
 
 - **Project**: Has participants, members (users), and payments
-- **Participant**: Entity that pays/owes (may or may not be linked to a user)
+- **Participant**: Entity that pays/owes (may or may not be linked to a user); has `account_type` ('user' or 'pool')
 - **Member**: User's membership in a project with role (owner/editor/viewer)
-- **Payment**: Has payer, amount, contributions (who owes what), optional recurrence
+- **Payment**: Has payer, amount, contributions, optional recurrence, and optional `receiver_account_id` for transfers
 - **Contribution**: Links payment to participant with weight (determines share)
+
+### Participant Types
+
+- **User account** (`account_type = 'user'`): Regular participant who can owe/be owed money
+- **Pool account** (`account_type = 'pool'`): Shared account (max one per project) for tracking collective funds
+  - Excluded from settlement calculations
+  - Has ownership tracking (who contributed/consumed from pool)
+
+### Payment Types
+
+Determined by `receiver_account_id`:
+
+- **External expense** (`receiver_account_id = NULL`): Normal expense, money leaves the system
+  - Affects settlements: payer's "paid" increases, contributors' "owed" increases
+
+- **User → User transfer** (`receiver_account_id` = another user): Direct payment between users
+  - Affects settlements: payer's "paid" increases, receiver's "owed" increases
+  - Used for "Pay back" functionality to settle debts
+
+- **User → Pool transfer** (`receiver_account_id` = pool): Deposit to shared account
+  - Only affects pool ownership (payer's ownership increases)
+  - Does NOT affect user-to-user settlements
+
+- **Pool → User transfer** (payer = pool): Withdrawal from shared account
+  - Only affects pool ownership (receiver's ownership decreases)
+  - Does NOT affect user-to-user settlements
 
 ### Weight System
 
@@ -115,6 +141,15 @@ frontend/src/
 - Types: daily, weekly, monthly, yearly
 - Either "every X periods" OR "X times per period"
 - Debt calculator expands occurrences up to target date for projection
+
+### Settlement Calculation
+
+Located in `backend/src/services/debt_calculator.rs`:
+
+1. **Balance calculation**: For each participant, compute `net_balance = total_paid - total_owed`
+2. **Pool exclusion**: Pool accounts are excluded from settlement generation
+3. **Greedy matching**: Debtors (negative balance) are matched with creditors (positive balance)
+4. **Direct mode**: Optional mode that only settles between participants who directly transacted
 
 ## Environment Variables
 

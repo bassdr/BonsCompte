@@ -290,6 +290,20 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .await
     .ok(); // Ignore error if column already exists
 
+    // =====================
+    // Migration 006: Internal Transfer Support
+    // =====================
+
+    // Add receiver_account_id to payments for internal transfers
+    // NULL = external expense (money leaves system)
+    // NOT NULL = internal transfer (money moves between accounts)
+    sqlx::query(
+        "ALTER TABLE payments ADD COLUMN receiver_account_id INTEGER REFERENCES participants(id) ON DELETE SET NULL"
+    )
+    .execute(pool)
+    .await
+    .ok(); // Ignore error if column already exists
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

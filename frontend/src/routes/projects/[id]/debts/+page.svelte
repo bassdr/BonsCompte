@@ -14,6 +14,9 @@
     // Focus mode: filter to show only one participant's perspective
     let focusParticipantId = $state<number | null>(null);
 
+    // Settlement mode: false = minimal (default), true = direct-only
+    let useDirectSettlements = $state(false);
+
     function toggleBalanceRow(participantId: number) {
         const newSet = new Set(expandedBalanceRows);
         if (newSet.has(participantId)) {
@@ -76,7 +79,7 @@
         expandedPairwiseMonths = newMap;
     }
 
-    // Group breakdown by year/month
+    // Group breakdown by year/month, newest first
     function groupBreakdownByYearMonth(breakdown: any[]) {
         const yearMap = new Map<string, any>();
 
@@ -108,7 +111,24 @@
             yearData.total += item.amount;
         }
 
-        return yearMap;
+        // Convert to array and sort by year (newest first)
+        const sortedYears = [...yearMap.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+
+        // For each year, sort months (newest first) and items (newest first)
+        const result = new Map<string, any>();
+        for (const [year, yearData] of sortedYears) {
+            const sortedMonths = [...yearData.months.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+
+            yearData.months = new Map();
+            for (const [monthKey, monthData] of sortedMonths) {
+                monthData.items.sort((a: any, b: any) => b.occurrence_date.localeCompare(a.occurrence_date));
+                yearData.months.set(monthKey, monthData);
+            }
+
+            result.set(year, yearData);
+        }
+
+        return result;
     }
 
     // Get pairwise balances for a specific participant
@@ -135,11 +155,17 @@
         return false;
     }
 
+    // Get active settlements based on mode
+    let activeSettlements = $derived.by(() => {
+        if (!debts) return [];
+        return useDirectSettlements ? debts.direct_settlements : debts.settlements;
+    });
+
     // Get filtered settlements based on focus
     let filteredSettlements = $derived.by(() => {
         if (!debts) return [];
-        if (focusParticipantId === null) return debts.settlements;
-        return debts.settlements.filter(s => settlementInvolvesFocus(s));
+        if (focusParticipantId === null) return activeSettlements;
+        return activeSettlements.filter(s => settlementInvolvesFocus(s));
     });
 
     // Get filtered pool ownership entries based on focus
@@ -858,7 +884,15 @@
     </section>
 
     <section class="card">
-        <h3>Settlements</h3>
+        <div class="settlements-header">
+            <h3>Settlements</h3>
+            <!-- TODO: Direct-only settlement mode disabled pending investigation
+            <label class="settlement-mode-toggle">
+                <input type="checkbox" bind:checked={useDirectSettlements} />
+                Direct-only (no intermediaries)
+            </label>
+            -->
+        </div>
         {#if filteredSettlements.length === 0}
             <p class="all-settled">{focusParticipantId !== null ? 'No settlements for this participant' : 'All settled up!'}</p>
         {:else}
@@ -1524,6 +1558,31 @@
     .highlight {
         font-weight: 700;
         color: var(--accent, #7b61ff);
+    }
+
+    .settlements-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+
+    .settlements-header h3 {
+        margin: 0;
+    }
+
+    .settlement-mode-toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.9rem;
+        color: #666;
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .settlement-mode-toggle input[type="checkbox"] {
+        cursor: pointer;
     }
 
     .all-settled {

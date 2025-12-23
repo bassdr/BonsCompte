@@ -14,6 +14,15 @@ pub enum AppError {
     #[error("Invalid credentials")]
     InvalidCredentials,
 
+    #[error("Account pending approval")]
+    AccountPendingApproval,
+
+    #[error("Account revoked")]
+    AccountRevoked,
+
+    #[error("Token expired or invalidated")]
+    TokenInvalidated,
+
     #[error("User already exists")]
     UserExists,
 
@@ -44,6 +53,9 @@ impl IntoResponse for AppError {
         let (status, message) = match &self {
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
             AppError::InvalidCredentials => (StatusCode::UNAUTHORIZED, self.to_string()),
+            AppError::AccountPendingApproval => (StatusCode::FORBIDDEN, self.to_string()),
+            AppError::AccountRevoked => (StatusCode::FORBIDDEN, self.to_string()),
+            AppError::TokenInvalidated => (StatusCode::UNAUTHORIZED, self.to_string()),
             AppError::UserExists => (StatusCode::CONFLICT, self.to_string()),
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),

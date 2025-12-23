@@ -13,7 +13,8 @@
       "Bash(wc:*)",
       "Bash(docker build:*)",
       "Bash(find:*)",
-      "Bash(cargo test:*)"
+      "Bash(cargo test:*)",
+      "Bash(./target/debug/bonscompte-admin:*)"
     ],
     "deny": [
       "Read(*.csv)",

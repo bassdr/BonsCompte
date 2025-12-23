@@ -304,6 +304,26 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .await
     .ok(); // Ignore error if column already exists
 
+    // =====================
+    // Migration 007: User State & Token Versioning
+    // =====================
+
+    // Add user_state column (ACTIVE, PENDING_APPROVAL, REVOKED)
+    sqlx::query(
+        "ALTER TABLE users ADD COLUMN user_state TEXT NOT NULL DEFAULT 'active' CHECK(user_state IN ('active', 'pending_approval', 'revoked'))"
+    )
+    .execute(pool)
+    .await
+    .ok(); // Ignore error if column already exists
+
+    // Add token_version for JWT invalidation
+    sqlx::query(
+        "ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 1"
+    )
+    .execute(pool)
+    .await
+    .ok(); // Ignore error if column already exists
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

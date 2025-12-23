@@ -33,6 +33,7 @@ The goal of BonsCompte is to make it easy for a group of people to fairly manage
 ### 1. User Authentication & Project Management
 - Secure user registration and login with JWT tokens
 - Password hashing with Argon2
+- Human-approved password recovery (no email required) - see [Password Recovery](docs/PASSWORD_RECOVERY.md)
 - Multi-project support with role-based access (owner/editor/viewer)
 - Invite system for adding members to projects
 

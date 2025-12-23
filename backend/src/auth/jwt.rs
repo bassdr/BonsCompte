@@ -6,13 +6,14 @@ use crate::error::AppResult;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: i64,        // user id
+    pub sub: i64,           // user id
     pub username: String,
-    pub exp: i64,        // expiration timestamp
-    pub iat: i64,        // issued at
+    pub exp: i64,           // expiration timestamp
+    pub iat: i64,           // issued at
+    pub token_version: i64, // for invalidation on password reset/revoke
 }
 
-pub fn create_token(user_id: i64, username: &str, secret: &str) -> AppResult<String> {
+pub fn create_token(user_id: i64, username: &str, token_version: i64, secret: &str) -> AppResult<String> {
     let now = Utc::now();
     let exp = now + Duration::hours(24);
 
@@ -21,6 +22,7 @@ pub fn create_token(user_id: i64, username: &str, secret: &str) -> AppResult<Str
         username: username.to_string(),
         exp: exp.timestamp(),
         iat: now.timestamp(),
+        token_version,
     };
 
     let token = encode(

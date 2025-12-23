@@ -1,43 +1,20 @@
-mod auth;
-mod config;
-mod db;
-mod error;
-mod models;
-mod routes;
-mod services;
-
 use axum::{
-    extract::FromRef,
     http::Method,
     middleware,
     routing::get,
     Router,
 };
-use sqlx::SqlitePool;
 use std::net::SocketAddr;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
-use auth::middleware::JwtSecret;
-use config::Config;
-
-#[derive(Clone)]
-pub struct AppState {
-    pub pool: SqlitePool,
-    pub jwt_secret: String,
-}
-
-impl FromRef<AppState> for SqlitePool {
-    fn from_ref(state: &AppState) -> Self {
-        state.pool.clone()
-    }
-}
-
-impl FromRef<AppState> for String {
-    fn from_ref(state: &AppState) -> Self {
-        state.jwt_secret.clone()
-    }
-}
+use bonscompte_backend::{
+    auth::middleware::JwtSecret,
+    config::Config,
+    db,
+    routes,
+    AppState,
+};
 
 /// Middleware to inject JWT secret and pool into request extensions
 async fn inject_extensions(

@@ -2,6 +2,19 @@
 name = "bonscompte-backend"
 version = "0.1.0"
 edition = "2021"
+default-run = "bonscompte-backend"
+
+[lib]
+name = "bonscompte_backend"
+path = "src/lib.rs"
+
+[[bin]]
+name = "bonscompte-backend"
+path = "src/main.rs"
+
+[[bin]]
+name = "bonscompte-admin"
+path = "src/admin.rs"
 
 [dependencies]
 # Web framework
@@ -28,6 +41,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
+clap = { version = "4", features = ["derive"] }
 
 [registries.crates-io]
 protocol = "sparse"

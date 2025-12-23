@@ -36,8 +36,6 @@
     let editAccountType = $state<'user' | 'pool'>('user');
     let updating = $state(false);
 
-    // Check if a pool already exists in the project
-    let poolExists = $derived($participants.some(p => p.account_type === 'pool'));
 
     let projectId = $derived(parseInt($page.params.id ?? ''));
 
@@ -279,7 +277,7 @@
                     <label for="accountType">Type</label>
                     <select id="accountType" bind:value={newAccountType}>
                         <option value="user">User</option>
-                        <option value="pool" disabled={poolExists}>Pool {poolExists ? '(exists)' : ''}</option>
+                        <option value="pool">Pool</option>
                     </select>
                 </div>
             </div>
@@ -315,7 +313,7 @@
                             />
                             <select bind:value={editAccountType} class="small-select">
                                 <option value="user">User</option>
-                                <option value="pool" disabled={poolExists && editAccountType !== 'pool'}>Pool</option>
+                                <option value="pool">Pool</option>
                             </select>
                             <button type="submit" disabled={updating}>Save</button>
                             <button type="button" onclick={cancelEdit}>Cancel</button>

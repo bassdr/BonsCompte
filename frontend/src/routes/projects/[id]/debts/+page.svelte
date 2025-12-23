@@ -11,6 +11,11 @@
     // Track which balance rows are expanded to show pairwise details
     let expandedBalanceRows = $state<Set<number>>(new Set());
 
+    // Track which pool ownership entries are expanded
+    let expandedPoolEntries = $state<Set<number>>(new Set());
+    let expandedPoolYears = $state<Map<number, Set<string>>>(new Map());
+    let expandedPoolMonths = $state<Map<number, Map<string, Set<string>>>>(new Map());
+
     // Focus mode: filter to show only one participant's perspective
     let focusParticipantId = $state<number | null>(null);
 
@@ -25,6 +30,52 @@
             newSet.add(participantId);
         }
         expandedBalanceRows = newSet;
+    }
+
+    function togglePoolEntry(participantId: number) {
+        const newSet = new Set(expandedPoolEntries);
+        if (newSet.has(participantId)) {
+            newSet.delete(participantId);
+        } else {
+            newSet.add(participantId);
+        }
+        expandedPoolEntries = newSet;
+    }
+
+    function isPoolEntryExpanded(participantId: number): boolean {
+        return expandedPoolEntries.has(participantId);
+    }
+
+    function togglePoolYear(participantId: number, year: string) {
+        const newMap = new Map(expandedPoolYears);
+        if (!newMap.has(participantId)) {
+            newMap.set(participantId, new Set());
+        }
+        const yearSet = newMap.get(participantId)!;
+        if (yearSet.has(year)) {
+            yearSet.delete(year);
+        } else {
+            yearSet.add(year);
+        }
+        expandedPoolYears = newMap;
+    }
+
+    function togglePoolMonth(participantId: number, year: string, monthKey: string) {
+        const newMap = new Map(expandedPoolMonths);
+        if (!newMap.has(participantId)) {
+            newMap.set(participantId, new Map());
+        }
+        const yearMap = newMap.get(participantId)!;
+        if (!yearMap.has(year)) {
+            yearMap.set(year, new Set());
+        }
+        const monthSet = yearMap.get(year)!;
+        if (monthSet.has(monthKey)) {
+            monthSet.delete(monthKey);
+        } else {
+            monthSet.add(monthKey);
+        }
+        expandedPoolMonths = newMap;
     }
 
     // Track which pairwise rows are expanded
@@ -168,28 +219,33 @@
         return activeSettlements.filter(s => settlementInvolvesFocus(s));
     });
 
-    // Get filtered pool ownership entries based on focus
-    let filteredPoolOwnership = $derived.by(() => {
-        if (!debts?.pool_ownership) return null;
-        if (focusParticipantId === null) return debts.pool_ownership;
+    // Get filtered pool ownerships based on focus
+    let filteredPoolOwnerships = $derived.by(() => {
+        if (!debts?.pool_ownerships || debts.pool_ownerships.length === 0) return [];
+        if (focusParticipantId === null) return debts.pool_ownerships;
 
-        const filteredEntries = debts.pool_ownership.entries.filter(
-            e => e.participant_id === focusParticipantId
-        );
+        return debts.pool_ownerships.map(pool => {
+            const filteredEntries = pool.entries.filter(
+                e => e.participant_id === focusParticipantId
+            );
+            return {
+                ...pool,
+                entries: filteredEntries,
+                total_balance: filteredEntries.reduce((sum, e) => sum + e.ownership, 0)
+            };
+        }).filter(pool => pool.entries.length > 0);
+    });
 
-        if (filteredEntries.length === 0) return null;
-
-        return {
-            ...debts.pool_ownership,
-            entries: filteredEntries,
-            total_balance: filteredEntries.reduce((sum, e) => sum + e.ownership, 0)
-        };
+    // Get pool IDs for filtering balances
+    let poolIds = $derived.by(() => {
+        if (!debts?.pool_ownerships) return new Set<number>();
+        return new Set(debts.pool_ownerships.map(p => p.pool_id));
     });
 
     // Get non-pool balances for display and selector
     let nonPoolBalances = $derived.by(() => {
         if (!debts) return [];
-        return debts.balances.filter(b => b.participant_id !== debts?.pool_ownership?.pool_id);
+        return debts.balances.filter(b => !poolIds.has(b.participant_id));
     });
 
     // Get filtered balances based on focus
@@ -685,49 +741,163 @@
 {#if loading}
     <p>Loading...</p>
 {:else if debts}
-    <!-- Pool Ownership (only shown when pool exists) -->
-    {#if filteredPoolOwnership}
+    <!-- Pool Ownerships (shown for each pool) -->
+    {#each filteredPoolOwnerships as poolOwnership}
         <section class="card">
-            <h3>Shared Account</h3>
-            {#if filteredPoolOwnership.entries.length === 0}
+            <h3>{poolOwnership.pool_name}</h3>
+            {#if poolOwnership.entries.length === 0}
                 <p class="no-ownership">No pool activity yet</p>
             {:else}
-                <div class="pool-summary-box">
-                    <div class="pool-summary-header">
-                        <span class="pool-label">{filteredPoolOwnership.pool_name}</span>
-                        <span class="pool-total-amount" class:positive={filteredPoolOwnership.total_balance > 0} class:negative={filteredPoolOwnership.total_balance < 0}>
-                            ${filteredPoolOwnership.total_balance.toFixed(2)}
-                        </span>
-                    </div>
-                </div>
-                <div class="ownership-list">
-                    {#each filteredPoolOwnership.entries as entry}
-                        <div class="ownership-entry" class:focused={focusParticipantId === entry.participant_id}>
-                            <span class="owner-name">{entry.participant_name}</span>
-                            <div class="ownership-details">
-                                <span class="contributed">Contributed: ${entry.contributed.toFixed(2)}</span>
-                                <span class="consumed">Used: ${entry.consumed.toFixed(2)}</span>
-                            </div>
-                            <span class="ownership-amount" class:positive={entry.ownership > 0} class:negative={entry.ownership < 0}>
-                                {entry.ownership >= 0 ? '+' : ''}${entry.ownership.toFixed(2)}
-                            </span>
-                        </div>
-                    {/each}
-                </div>
+                <table class="balance-table">
+                    <thead>
+                        <tr>
+                            <th></th>
+                            <th>Participant</th>
+                            <th>Ownership</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {#each poolOwnership.entries as entry}
+                            {@const isExpanded = isPoolEntryExpanded(entry.participant_id)}
+                            {@const poolKey = `${poolOwnership.pool_id}-${entry.participant_id}`}
+                            <tr class="balance-row" class:expanded={isExpanded} class:focused={focusParticipantId === entry.participant_id} onclick={() => togglePoolEntry(entry.participant_id)}>
+                                <td class="expand-cell">
+                                    <span class="expand-icon">{isExpanded ? '▼' : '▶'}</span>
+                                </td>
+                                <td>{entry.participant_name}</td>
+                                <td class:positive={entry.ownership > 0} class:negative={entry.ownership < 0}>
+                                    {entry.ownership >= 0 ? '+' : ''}${entry.ownership.toFixed(2)}
+                                </td>
+                            </tr>
+                            {#if isExpanded}
+                                <tr class="pairwise-row">
+                                    <td colspan="3">
+                                        <div class="pairwise-details">
+                                            {#if entry.contributed > 0.01}
+                                                <div class="detail-section">
+                                                    <div class="detail-header">{entry.participant_name} contributed ${entry.contributed.toFixed(2)} to {poolOwnership.pool_name}</div>
+                                                    {#if entry.contributed_breakdown && entry.contributed_breakdown.length > 0}
+                                                        {@const groupedYears = groupBreakdownByYearMonth(entry.contributed_breakdown)}
+                                                        <div class="breakdown-hierarchy">
+                                                            {#each [...groupedYears.entries()] as [year, yearData]}
+                                                                {@const yearExpanded = expandedPoolYears.get(entry.participant_id)?.has(year) ?? false}
+                                                                <div class="breakdown-year">
+                                                                    <button
+                                                                        class="breakdown-year-btn"
+                                                                        onclick={() => togglePoolYear(entry.participant_id, year)}
+                                                                    >
+                                                                        <span class="expand-icon">{yearExpanded ? '▼' : '▶'}</span>
+                                                                        <span class="year-text">{year}</span>
+                                                                        <span class="year-total">${yearData.total.toFixed(2)}</span>
+                                                                    </button>
+                                                                    {#if yearExpanded}
+                                                                        {#each [...yearData.months.entries()] as [monthKey, monthData]}
+                                                                            {@const monthExpanded = expandedPoolMonths.get(entry.participant_id)?.get(year)?.has(monthKey) ?? false}
+                                                                            <div class="breakdown-month">
+                                                                                <button
+                                                                                    class="breakdown-month-btn"
+                                                                                    onclick={() => togglePoolMonth(entry.participant_id, year, monthKey)}
+                                                                                >
+                                                                                    <span class="expand-icon">{monthExpanded ? '▼' : '▶'}</span>
+                                                                                    <span class="month-text">{monthData.month}</span>
+                                                                                    <span class="month-total">${monthData.total.toFixed(2)}</span>
+                                                                                </button>
+                                                                                {#if monthExpanded}
+                                                                                    <ul class="breakdown-list">
+                                                                                        {#each monthData.items as item}
+                                                                                            <li class="breakdown-item">
+                                                                                                <span class="breakdown-desc">{item.description}</span>
+                                                                                                <span class="breakdown-date">{item.occurrence_date}</span>
+                                                                                                <span class="breakdown-amount">${item.amount.toFixed(2)}</span>
+                                                                                            </li>
+                                                                                        {/each}
+                                                                                    </ul>
+                                                                                {/if}
+                                                                            </div>
+                                                                        {/each}
+                                                                    {/if}
+                                                                </div>
+                                                            {/each}
+                                                        </div>
+                                                    {/if}
+                                                </div>
+                                            {/if}
+                                            {#if entry.consumed > 0.01}
+                                                <div class="detail-section">
+                                                    <div class="detail-header">{entry.participant_name} consumed ${entry.consumed.toFixed(2)} from {poolOwnership.pool_name}</div>
+                                                    {#if entry.consumed_breakdown && entry.consumed_breakdown.length > 0}
+                                                        {@const groupedYears = groupBreakdownByYearMonth(entry.consumed_breakdown)}
+                                                        <div class="breakdown-hierarchy">
+                                                            {#each [...groupedYears.entries()] as [year, yearData]}
+                                                                {@const yearExpanded = expandedPoolYears.get(entry.participant_id)?.has(`${year}-consumed`) ?? false}
+                                                                <div class="breakdown-year">
+                                                                    <button
+                                                                        class="breakdown-year-btn"
+                                                                        onclick={() => togglePoolYear(entry.participant_id, `${year}-consumed`)}
+                                                                    >
+                                                                        <span class="expand-icon">{yearExpanded ? '▼' : '▶'}</span>
+                                                                        <span class="year-text">{year}</span>
+                                                                        <span class="year-total">${yearData.total.toFixed(2)}</span>
+                                                                    </button>
+                                                                    {#if yearExpanded}
+                                                                        {#each [...yearData.months.entries()] as [monthKey, monthData]}
+                                                                            {@const monthExpanded = expandedPoolMonths.get(entry.participant_id)?.get(`${year}-consumed`)?.has(monthKey) ?? false}
+                                                                            <div class="breakdown-month">
+                                                                                <button
+                                                                                    class="breakdown-month-btn"
+                                                                                    onclick={() => togglePoolMonth(entry.participant_id, `${year}-consumed`, monthKey)}
+                                                                                >
+                                                                                    <span class="expand-icon">{monthExpanded ? '▼' : '▶'}</span>
+                                                                                    <span class="month-text">{monthData.month}</span>
+                                                                                    <span class="month-total">${monthData.total.toFixed(2)}</span>
+                                                                                </button>
+                                                                                {#if monthExpanded}
+                                                                                    <ul class="breakdown-list">
+                                                                                        {#each monthData.items as item}
+                                                                                            <li class="breakdown-item">
+                                                                                                <span class="breakdown-desc">{item.description}</span>
+                                                                                                <span class="breakdown-date">{item.occurrence_date}</span>
+                                                                                                <span class="breakdown-amount">${item.amount.toFixed(2)}</span>
+                                                                                            </li>
+                                                                                        {/each}
+                                                                                    </ul>
+                                                                                {/if}
+                                                                            </div>
+                                                                        {/each}
+                                                                    {/if}
+                                                                </div>
+                                                            {/each}
+                                                        </div>
+                                                    {/if}
+                                                </div>
+                                            {/if}
+                                        </div>
+                                    </td>
+                                </tr>
+                            {/if}
+                        {/each}
+                    </tbody>
+                    <tfoot>
+                        <tr class="total-row">
+                            <td></td>
+                            <td><strong>Total</strong></td>
+                            <td class:positive={poolOwnership.total_balance > 0} class:negative={poolOwnership.total_balance < 0}>
+                                <strong>{poolOwnership.total_balance >= 0 ? '+' : ''}${poolOwnership.total_balance.toFixed(2)}</strong>
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
             {/if}
         </section>
-    {/if}
+    {/each}
 
     <section class="card">
         <h3>Balances</h3>
-        <p class="hint">Click a row to see relationship details</p>
         <table class="balance-table">
             <thead>
                 <tr>
                     <th></th>
                     <th>Participant</th>
-                    <th>Paid</th>
-                    <th>Owes</th>
                     <th>Balance</th>
                 </tr>
             </thead>
@@ -740,15 +910,13 @@
                             <span class="expand-icon">{isExpanded ? '▼' : '▶'}</span>
                         </td>
                         <td>{b.participant_name}</td>
-                        <td>${b.total_paid.toFixed(2)}</td>
-                        <td>${b.total_owed.toFixed(2)}</td>
                         <td class:positive={b.net_balance > 0} class:negative={b.net_balance < 0}>
                             {b.net_balance >= 0 ? '+' : ''}${b.net_balance.toFixed(2)}
                         </td>
                     </tr>
                     {#if isExpanded}
                         <tr class="pairwise-row">
-                            <td colspan="5">
+                            <td colspan="3">
                                 <div class="pairwise-details">
                                     {#if pairwise.length === 0}
                                         <p class="no-relationships">No relationships with other participants</p>
@@ -886,12 +1054,10 @@
     <section class="card">
         <div class="settlements-header">
             <h3>Settlements</h3>
-            <!-- TODO: Direct-only settlement mode disabled pending investigation
             <label class="settlement-mode-toggle">
                 <input type="checkbox" bind:checked={useDirectSettlements} />
                 Direct-only (no intermediaries)
             </label>
-            -->
         </div>
         {#if filteredSettlements.length === 0}
             <p class="all-settled">{focusParticipantId !== null ? 'No settlements for this participant' : 'All settled up!'}</p>
@@ -1210,11 +1376,6 @@
         font-weight: 600;
     }
 
-    .hint {
-        font-size: 0.85rem;
-        color: #888;
-        margin-bottom: 0.75rem;
-    }
 
     .balance-row {
         cursor: pointer;
@@ -1230,8 +1391,17 @@
     }
 
     .expand-cell {
-        width: 24px;
-        padding: 0.5rem !important;
+        width: 30px;
+        padding: 0.75rem 0.5rem !important;
+        text-align: center;
+    }
+
+    .balance-table td:last-child {
+        text-align: right;
+    }
+
+    .balance-table th:last-child {
+        text-align: right;
     }
 
     .pairwise-row {
@@ -1426,75 +1596,10 @@
         font-style: italic;
     }
 
-    .ownership-list {
-        display: flex;
-        flex-direction: column;
-        gap: 0.75rem;
-    }
-
-    .ownership-entry {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        padding: 0.75rem;
-        background: #fafafa;
-        border-radius: 8px;
-        flex-wrap: wrap;
-    }
-
-    .owner-name {
-        font-weight: 600;
-        min-width: 120px;
-    }
-
-    .ownership-details {
-        display: flex;
-        flex-direction: column;
-        gap: 0.2rem;
-        flex: 1;
-        min-width: 200px;
-    }
-
-    .contributed {
-        color: #2a9d8f;
-        font-size: 0.85rem;
-    }
-
-    .consumed {
-        color: #e76f51;
-        font-size: 0.85rem;
-    }
-
-    .ownership-amount {
-        font-weight: 700;
-        font-size: 1.1rem;
-        min-width: 100px;
-        text-align: right;
-    }
-
-    .pool-summary-box {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-        padding: 0.75rem 0;
-        border-bottom: 1px solid #f5f5f5;
-    }
-
-    .pool-summary-header {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-    }
-
-    .pool-label {
-        flex: 1;
-        font-weight: 500;
-        font-size: 1.2rem;
-        color: #e76f51;
-    }
-
-    .pool-total-amount {
-        font-size: 1.2rem;
+    /* Total row in table footer */
+    .total-row td {
+        border-top: 2px solid #e0e0e0;
+        padding-top: 0.75rem;
     }
 
     /* Focus mode styles */
@@ -1549,10 +1654,6 @@
 
     .balance-row.focused {
         border-left: 3px solid var(--accent, #7b61ff);
-    }
-
-    .ownership-entry.focused {
-        border: 2px solid var(--accent, #7b61ff);
     }
 
     .highlight {
@@ -1660,7 +1761,9 @@
 
     .expand-icon {
         color: var(--accent, #7b61ff);
-        font-size: 0.8rem;
+        font-size: 0.85rem;
+        display: inline-block;
+        width: 1rem;
     }
 
     .hierarchy-container {

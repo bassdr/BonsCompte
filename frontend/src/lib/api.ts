@@ -238,6 +238,8 @@ export interface PoolOwnershipEntry {
     contributed: number;
     consumed: number;
     ownership: number;
+    contributed_breakdown: PairwisePaymentBreakdown[];
+    consumed_breakdown: PairwisePaymentBreakdown[];
 }
 
 export interface PoolOwnership {
@@ -254,7 +256,7 @@ export interface DebtSummary {
     target_date: string;
     occurrences: PaymentOccurrence[];
     pairwise_balances: PairwiseBalance[];
-    pool_ownership: PoolOwnership | null;
+    pool_ownerships: PoolOwnership[];
 }
 
 // Users

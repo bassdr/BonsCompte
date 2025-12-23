@@ -52,6 +52,8 @@ pub struct PoolOwnershipEntry {
     pub contributed: f64,     // Total deposited to pool
     pub consumed: f64,        // Total share of pool-paid expenses
     pub ownership: f64,       // contributed - consumed
+    pub contributed_breakdown: Vec<PairwisePaymentBreakdown>,  // Details of contributions
+    pub consumed_breakdown: Vec<PairwisePaymentBreakdown>,     // Details of consumption
 }
 
 #[derive(Debug, Serialize)]
@@ -84,7 +86,7 @@ pub struct DebtSummary {
     pub target_date: String,
     pub occurrences: Vec<PaymentOccurrence>,
     pub pairwise_balances: Vec<PairwiseBalance>,
-    pub pool_ownership: Option<PoolOwnership>,
+    pub pool_ownerships: Vec<PoolOwnership>,
 }
 
 /// Calculate debts as of today
@@ -298,12 +300,16 @@ pub async fn calculate_debts_at_date(
         }
     }
 
-    // Calculate pool ownership (if a pool exists)
-    let pool_ownership = if let Some((pool_id, pool_name)) = participants
+    // Calculate pool ownership for all pool accounts
+    let pool_account_list: Vec<(i64, String)> = participants
         .iter()
-        .find(|(_, _, account_type)| account_type == "pool")
+        .filter(|(_, _, account_type)| account_type == "pool")
         .map(|(id, name, _)| (*id, name.clone()))
-    {
+        .collect();
+
+    let mut pool_ownerships: Vec<PoolOwnership> = Vec::new();
+
+    for (pool_id, pool_name) in pool_account_list {
         // Track contributions to pool (deposited) and consumption from pool (expenses)
         //
         // Pool ownership is affected by:
@@ -312,7 +318,9 @@ pub async fn calculate_debts_at_date(
         // 3. INTERNAL transfers TO pool: increases sender's ownership (deposit)
         // 4. INTERNAL transfers FROM pool: decreases receiver's ownership (withdrawal)
 
-        let mut ownership_map: HashMap<i64, (f64, f64)> = HashMap::new(); // (contributed, consumed)
+        // Track ownership amounts and transaction breakdowns
+        // HashMap<participant_id, (contributed_total, consumed_total, contributed_breakdown, consumed_breakdown)>
+        let mut ownership_map: HashMap<i64, (f64, f64, Vec<PairwisePaymentBreakdown>, Vec<PairwisePaymentBreakdown>)> = HashMap::new();
 
         for occurrence in &all_occurrences {
             // Handle internal transfers (receiver_account_id IS NOT NULL)
@@ -320,12 +328,24 @@ pub async fn calculate_debts_at_date(
                 if let Some(payer_id) = occurrence.payer_id {
                     if receiver_id == pool_id && payer_id != pool_id {
                         // Internal transfer TO pool: payer's ownership increases
-                        let entry = ownership_map.entry(payer_id).or_insert((0.0, 0.0));
+                        let entry = ownership_map.entry(payer_id).or_insert((0.0, 0.0, Vec::new(), Vec::new()));
                         entry.0 += occurrence.amount; // contributed (deposited to pool)
+                        entry.2.push(PairwisePaymentBreakdown {
+                            payment_id: occurrence.payment_id,
+                            description: occurrence.description.clone(),
+                            occurrence_date: occurrence.occurrence_date.clone(),
+                            amount: occurrence.amount,
+                        });
                     } else if payer_id == pool_id && receiver_id != pool_id {
                         // Internal transfer FROM pool: receiver's ownership decreases
-                        let entry = ownership_map.entry(receiver_id).or_insert((0.0, 0.0));
+                        let entry = ownership_map.entry(receiver_id).or_insert((0.0, 0.0, Vec::new(), Vec::new()));
                         entry.1 += occurrence.amount; // consumed (withdrawn from pool)
+                        entry.3.push(PairwisePaymentBreakdown {
+                            payment_id: occurrence.payment_id,
+                            description: occurrence.description.clone(),
+                            occurrence_date: occurrence.occurrence_date.clone(),
+                            amount: occurrence.amount,
+                        });
                     }
                 }
                 continue; // Skip contribution-based logic for internal transfers
@@ -341,14 +361,26 @@ pub async fn calculate_debts_at_date(
                         // Pool is the payer: each contributor's ownership decreases
                         for (contributor_id, amount) in contribs {
                             if *contributor_id != pool_id {
-                                let entry = ownership_map.entry(*contributor_id).or_insert((0.0, 0.0));
+                                let entry = ownership_map.entry(*contributor_id).or_insert((0.0, 0.0, Vec::new(), Vec::new()));
                                 entry.1 += amount; // consumed
+                                entry.3.push(PairwisePaymentBreakdown {
+                                    payment_id: occurrence.payment_id,
+                                    description: occurrence.description.clone(),
+                                    occurrence_date: occurrence.occurrence_date.clone(),
+                                    amount: *amount,
+                                });
                             }
                         }
                     } else if let Some((_, pool_amount)) = pool_contrib {
                         // Pool is a contributor: the payer's ownership increases
-                        let entry = ownership_map.entry(payer_id).or_insert((0.0, 0.0));
+                        let entry = ownership_map.entry(payer_id).or_insert((0.0, 0.0, Vec::new(), Vec::new()));
                         entry.0 += pool_amount; // contributed
+                        entry.2.push(PairwisePaymentBreakdown {
+                            payment_id: occurrence.payment_id,
+                            description: occurrence.description.clone(),
+                            occurrence_date: occurrence.occurrence_date.clone(),
+                            amount: *pool_amount,
+                        });
                     }
                 }
             }
@@ -359,7 +391,10 @@ pub async fn calculate_debts_at_date(
             .iter()
             .filter(|(id, _, account_type)| *id != pool_id && account_type != "pool")
             .filter_map(|(id, name, _)| {
-                let (contributed, consumed) = ownership_map.get(id).copied().unwrap_or((0.0, 0.0));
+                let (contributed, consumed, contributed_breakdown, consumed_breakdown) =
+                    ownership_map.get(id)
+                        .map(|(c, con, cb, conb)| (*c, *con, cb.clone(), conb.clone()))
+                        .unwrap_or((0.0, 0.0, Vec::new(), Vec::new()));
                 if contributed > 0.01 || consumed > 0.01 {
                     Some(PoolOwnershipEntry {
                         participant_id: *id,
@@ -367,6 +402,8 @@ pub async fn calculate_debts_at_date(
                         contributed,
                         consumed,
                         ownership: contributed - consumed,
+                        contributed_breakdown,
+                        consumed_breakdown,
                     })
                 } else {
                     None
@@ -379,15 +416,13 @@ pub async fn calculate_debts_at_date(
 
         let total_balance: f64 = entries.iter().map(|e| e.ownership).sum();
 
-        Some(PoolOwnership {
+        pool_ownerships.push(PoolOwnership {
             pool_id,
             pool_name,
             entries,
             total_balance,
-        })
-    } else {
-        None
-    };
+        });
+    }
 
     // Calculate direct-only settlements based on pairwise relationships
     // Pass balances to ensure we respect net balance constraints
@@ -400,7 +435,7 @@ pub async fn calculate_debts_at_date(
         target_date: target_date.to_string(),
         occurrences: all_occurrences,
         pairwise_balances,
-        pool_ownership,
+        pool_ownerships,
     })
 }
 
@@ -579,19 +614,14 @@ fn calculate_settlements(
 }
 
 /// Calculate direct-only settlements based on pairwise relationships
-/// Only settles debts between participants who have directly transacted
-/// Respects net balance constraints: only debtors pay, only creditors receive
+/// Shows ALL pairwise debts directly without intermediary optimization
+/// This means if A owes B based on their direct transactions, A pays B directly,
+/// even if A has a positive overall balance
 fn calculate_direct_settlements(
     pairwise_balances: &[PairwiseBalance],
-    balances: &[ParticipantBalance],
+    _balances: &[ParticipantBalance],
     pool_participants: &std::collections::HashSet<i64>,
 ) -> Vec<Debt> {
-    // Build a map of participant_id -> net_balance
-    let balance_map: HashMap<i64, f64> = balances
-        .iter()
-        .map(|b| (b.participant_id, b.net_balance))
-        .collect();
-
     let mut settlements = Vec::new();
 
     for pw in pairwise_balances {
@@ -607,44 +637,33 @@ fn calculate_direct_settlements(
             continue;
         }
 
-        // Get net balances for both participants
-        let balance_participant = balance_map.get(&pw.participant_id).copied().unwrap_or(0.0);
-        let balance_other = balance_map.get(&pw.other_participant_id).copied().unwrap_or(0.0);
-
-        // Only create settlement if there's a net debt
+        // Create settlement based on pairwise net debt
         // pw.net = amount_paid_for - amount_owed_by
         // If net > 0, other owes this participant
         // If net < 0, this participant owes other
         //
-        // IMPORTANT: Only settle if:
-        // - The payer has negative net balance (actually owes money overall)
-        // - The receiver has positive net balance (actually is owed money overall)
-        // This ensures direct settlements respect the same final balances as minimal mode
+        // In direct-only mode, we show ALL pairwise debts without filtering
+        // by overall balance. This shows the "natural" flow of money based
+        // on who actually paid for whom.
 
         if pw.net > 0.01 {
             // other_participant owes participant
-            // other should pay (needs negative balance), participant receives (needs positive balance)
-            if balance_other < -0.01 && balance_participant > 0.01 {
-                settlements.push(Debt {
-                    from_participant_id: pw.other_participant_id,
-                    from_participant_name: pw.other_participant_name.clone(),
-                    to_participant_id: pw.participant_id,
-                    to_participant_name: pw.participant_name.clone(),
-                    amount: (pw.net * 100.0).round() / 100.0,
-                });
-            }
+            settlements.push(Debt {
+                from_participant_id: pw.other_participant_id,
+                from_participant_name: pw.other_participant_name.clone(),
+                to_participant_id: pw.participant_id,
+                to_participant_name: pw.participant_name.clone(),
+                amount: (pw.net * 100.0).round() / 100.0,
+            });
         } else if pw.net < -0.01 {
             // participant owes other_participant
-            // participant should pay (needs negative balance), other receives (needs positive balance)
-            if balance_participant < -0.01 && balance_other > 0.01 {
-                settlements.push(Debt {
-                    from_participant_id: pw.participant_id,
-                    from_participant_name: pw.participant_name.clone(),
-                    to_participant_id: pw.other_participant_id,
-                    to_participant_name: pw.other_participant_name.clone(),
-                    amount: ((-pw.net) * 100.0).round() / 100.0,
-                });
-            }
+            settlements.push(Debt {
+                from_participant_id: pw.participant_id,
+                from_participant_name: pw.participant_name.clone(),
+                to_participant_id: pw.other_participant_id,
+                to_participant_name: pw.other_participant_name.clone(),
+                amount: ((-pw.net) * 100.0).round() / 100.0,
+            });
         }
     }
 

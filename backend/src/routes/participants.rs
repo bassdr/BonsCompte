@@ -77,20 +77,6 @@ async fn create_participant(
         return Err(AppError::BadRequest("account_type must be 'user' or 'pool'".to_string()));
     }
 
-    // If creating a pool, check that no other pool exists in this project
-    if account_type == "pool" {
-        let existing_pool: Option<i64> = sqlx::query_scalar(
-            "SELECT id FROM participants WHERE project_id = ? AND account_type = 'pool'"
-        )
-        .bind(member.project_id)
-        .fetch_optional(&pool)
-        .await?;
-
-        if existing_pool.is_some() {
-            return Err(AppError::BadRequest("Only one pool account allowed per project".to_string()));
-        }
-    }
-
     let result = sqlx::query(
         "INSERT INTO participants (project_id, name, default_weight, account_type) VALUES (?, ?, ?, ?)"
     )
@@ -137,22 +123,11 @@ async fn update_participant(
             return Err(AppError::BadRequest("account_type must be 'user' or 'pool'".to_string()));
         }
 
-        // If changing to pool, check that no other pool exists and that user is not linked
+        // If changing to pool, check that user is not linked
         if account_type == "pool" && existing.account_type != "pool" {
             // Prevent linked users from becoming pools
             if existing.user_id.is_some() {
                 return Err(AppError::BadRequest("Linked users cannot become pool accounts".to_string()));
-            }
-
-            let existing_pool: Option<i64> = sqlx::query_scalar(
-                "SELECT id FROM participants WHERE project_id = ? AND account_type = 'pool'"
-            )
-            .bind(member.project_id)
-            .fetch_optional(&pool)
-            .await?;
-
-            if existing_pool.is_some() {
-                return Err(AppError::BadRequest("Only one pool account allowed per project".to_string()));
             }
         }
     }

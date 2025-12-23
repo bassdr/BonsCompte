@@ -1,0 +1,2 @@
+[alias]
+admin = "run --bin bonscompte-admin --"

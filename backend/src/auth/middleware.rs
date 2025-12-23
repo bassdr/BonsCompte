@@ -11,24 +11,16 @@ use serde::Deserialize;
 use sqlx::SqlitePool;
 
 use crate::error::AppError;
-use crate::models::Role;
+use crate::models::{Role, UserState};
 
-use super::jwt::{validate_token, Claims};
+use super::jwt::validate_token;
 
 /// Extractor for authenticated users
+/// Validates JWT token and checks user_state and token_version against the database
 #[derive(Debug, Clone)]
 pub struct AuthUser {
     pub user_id: i64,
     pub username: String,
-}
-
-impl From<Claims> for AuthUser {
-    fn from(claims: Claims) -> Self {
-        Self {
-            user_id: claims.sub,
-            username: claims.username,
-        }
-    }
 }
 
 impl<S> FromRequestParts<S> for AuthUser
@@ -50,10 +42,52 @@ where
             .get::<JwtSecret>()
             .ok_or(AppError::Internal("JWT secret not configured".to_string()))?;
 
-        // Validate token
+        // Validate token signature and expiration
         let claims = validate_token(bearer.token(), &jwt_secret.0)?;
 
-        Ok(AuthUser::from(claims))
+        // Get database pool from extensions to validate user state and token version
+        let pool = parts
+            .extensions
+            .get::<SqlitePool>()
+            .ok_or(AppError::Internal("Database pool not configured".to_string()))?;
+
+        // Fetch current user state and token version from database
+        let user_data: Option<(String, i64)> = sqlx::query_as(
+            "SELECT user_state, token_version FROM users WHERE id = ?"
+        )
+        .bind(claims.sub)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| AppError::Internal(format!("Database error: {}", e)))?;
+
+        let (user_state_str, db_token_version) = user_data
+            .ok_or(AppError::Unauthorized)?;
+
+        // Check if token version matches (reject if password was reset or token invalidated)
+        if claims.token_version != db_token_version {
+            return Err(AppError::TokenInvalidated);
+        }
+
+        // Check user state
+        let user_state = UserState::from_str(&user_state_str)
+            .unwrap_or(UserState::Active);
+
+        match user_state {
+            UserState::Active => {
+                // User is active, proceed
+            }
+            UserState::PendingApproval => {
+                return Err(AppError::AccountPendingApproval);
+            }
+            UserState::Revoked => {
+                return Err(AppError::AccountRevoked);
+            }
+        }
+
+        Ok(AuthUser {
+            user_id: claims.sub,
+            username: claims.username,
+        })
     }
 }
 

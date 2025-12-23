@@ -3,7 +3,7 @@ use sqlx::SqlitePool;
 
 use crate::{
     error::{AppError, AppResult},
-    models::{AuthResponse, CreateUser, LoginRequest, User, UserResponse},
+    models::{AuthResponse, CreateUser, LoginRequest, User, UserResponse, UserState},
 };
 
 use super::{jwt::create_token, password::{hash_password, verify_password}};
@@ -37,7 +37,7 @@ pub async fn register(
     let password_hash = hash_password(&input.password)?;
 
     let result = sqlx::query(
-        "INSERT INTO users (username, display_name, password_hash) VALUES (?, ?, ?)"
+        "INSERT INTO users (username, display_name, password_hash, user_state, token_version) VALUES (?, ?, ?, 'active', 1)"
     )
     .bind(&input.username)
     .bind(&input.display_name)
@@ -53,8 +53,8 @@ pub async fn register(
         .fetch_one(&pool)
         .await?;
 
-    // Generate token
-    let token = create_token(user.id, &user.username, &jwt_secret)?;
+    // Generate token with token_version
+    let token = create_token(user.id, &user.username, user.token_version, &jwt_secret)?;
 
     Ok(Json(AuthResponse {
         token,
@@ -77,14 +77,27 @@ pub async fn login(
 
     let user = user.ok_or(AppError::InvalidCredentials)?;
 
+    // Check user state before allowing login
+    match user.state() {
+        UserState::Active => {
+            // User is active, proceed with login
+        }
+        UserState::PendingApproval => {
+            return Err(AppError::AccountPendingApproval);
+        }
+        UserState::Revoked => {
+            return Err(AppError::AccountRevoked);
+        }
+    }
+
     // Verify password
     let valid = verify_password(&input.password, &user.password_hash)?;
     if !valid {
         return Err(AppError::InvalidCredentials);
     }
 
-    // Generate token
-    let token = create_token(user.id, &user.username, &jwt_secret)?;
+    // Generate token with token_version
+    let token = create_token(user.id, &user.username, user.token_version, &jwt_secret)?;
 
     Ok(Json(AuthResponse {
         token,

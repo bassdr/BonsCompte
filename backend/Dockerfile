@@ -11,12 +11,17 @@ RUN apt-get update && apt-get install -y \
 
 # Copy manifests first for layer caching
 COPY Cargo.toml Cargo.lock ./
-RUN mkdir src && echo "fn main() {}" > src/main.rs
+
+# Create dummy source files to cache dependencies
+RUN mkdir src && \
+    echo "fn main() {}" > src/main.rs && \
+    echo "fn main() {}" > src/admin.rs && \
+    echo "" > src/lib.rs
 RUN cargo build --release && rm -rf src
 
 # Copy source and rebuild
 COPY . .
-RUN touch src/main.rs && cargo build --release
+RUN touch src/lib.rs src/main.rs src/admin.rs && cargo build --release
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -33,8 +38,9 @@ RUN useradd -m -u 1000 appuser
 
 WORKDIR /app
 
-# Copy binary and migrations
+# Copy binaries (server and admin CLI)
 COPY --from=builder /app/target/release/bonscompte-backend /usr/local/bin/
+COPY --from=builder /app/target/release/bonscompte-admin /usr/local/bin/
 COPY --from=builder /app/migrations ./migrations
 
 # Create data directory for SQLite

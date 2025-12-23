@@ -7,6 +7,7 @@
     let password = $state('');
     let error = $state('');
     let loading = $state(false);
+    let showForgotPassword = $state(false);
 
     async function handleSubmit(e: Event) {
         e.preventDefault();
@@ -58,7 +59,29 @@
         <button type="submit" disabled={loading}>
             {loading ? 'Logging in...' : 'Login'}
         </button>
+
+        <button
+            type="button"
+            class="forgot-password-btn"
+            onclick={() => showForgotPassword = !showForgotPassword}
+        >
+            Forgot password?
+        </button>
     </form>
+
+    {#if showForgotPassword}
+        <div class="forgot-password-info">
+            <p>
+                Password recovery requires administrator assistance.
+                Contact someone with server access to reset your password.
+            </p>
+            <p class="details-link">
+                <a href="https://github.com/bassdr/BonsCompte/blob/main/docs/PASSWORD_RECOVERY.md" target="_blank" rel="noopener noreferrer">
+                    Learn more about password recovery
+                </a>
+            </p>
+        </div>
+    {/if}
 
     <p class="link">
         Don't have an account? <a href="/register">Register</a>
@@ -136,6 +159,45 @@
 
     .link a {
         color: var(--accent, #7b61ff);
+    }
+
+    .forgot-password-btn {
+        width: 100%;
+        padding: 0.5rem;
+        margin-top: 0.75rem;
+        background: transparent;
+        color: #666;
+        border: none;
+        font-size: 0.9rem;
+        cursor: pointer;
+        text-decoration: underline;
+    }
+
+    .forgot-password-btn:hover {
+        color: var(--accent, #7b61ff);
+    }
+
+    .forgot-password-info {
+        background: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-top: 1rem;
+        font-size: 0.9rem;
+        color: #555;
+    }
+
+    .forgot-password-info p {
+        margin: 0 0 0.75rem 0;
+    }
+
+    .forgot-password-info p:last-child {
+        margin-bottom: 0;
+    }
+
+    .forgot-password-info .details-link a {
+        color: var(--accent, #7b61ff);
+        font-size: 0.85rem;
     }
 
     /* Mobile responsive styles */

@@ -206,29 +206,43 @@ pub async fn calculate_debts_at_date(
 
         // External expense (receiver_account_id IS NULL)
         // Add to paid total for payer
+        let payer_is_pool = occurrence.payer_id
+            .map(|id| pool_participants.contains(&id))
+            .unwrap_or(false);
+
         if let Some(payer_id) = occurrence.payer_id {
             *paid_map.entry(payer_id).or_insert(0.0) += occurrence.amount;
 
             // Track pairwise amounts: how much payer paid for each contributor
-            if let Some(contribs) = contribution_map.get(&occurrence.payment_id) {
-                for (contributor_id, amount) in contribs {
-                    // payer paid this amount for contributor
-                    let entry = pairwise_map.entry((payer_id, *contributor_id)).or_insert((0.0, Vec::new()));
-                    entry.0 += amount;
-                    entry.1.push(PairwisePaymentBreakdown {
-                        payment_id: occurrence.payment_id,
-                        description: occurrence.description.clone(),
-                        occurrence_date: occurrence.occurrence_date.clone(),
-                        amount: *amount,
-                    });
+            // Skip if payer is pool (pool relationships are tracked in pool ownership)
+            if !payer_is_pool {
+                if let Some(contribs) = contribution_map.get(&occurrence.payment_id) {
+                    for (contributor_id, amount) in contribs {
+                        // payer paid this amount for contributor
+                        let entry = pairwise_map.entry((payer_id, *contributor_id)).or_insert((0.0, Vec::new()));
+                        entry.0 += amount;
+                        entry.1.push(PairwisePaymentBreakdown {
+                            payment_id: occurrence.payment_id,
+                            description: occurrence.description.clone(),
+                            occurrence_date: occurrence.occurrence_date.clone(),
+                            amount: *amount,
+                        });
+                    }
                 }
             }
         }
 
         // Add to owed totals from contributions
-        if let Some(contribs) = contribution_map.get(&occurrence.payment_id) {
-            for (participant_id, amount) in contribs {
-                *owed_map.entry(*participant_id).or_insert(0.0) += amount;
+        // IMPORTANT: Only add to owed if the payer is a USER (not pool)
+        // When pool pays for expenses, the debt is owed TO the pool, which is
+        // tracked separately in pool ownership. Including pool-paid debts in
+        // owed_map would create an imbalance in user-to-user settlements since
+        // pool is excluded from settlement calculations.
+        if !payer_is_pool {
+            if let Some(contribs) = contribution_map.get(&occurrence.payment_id) {
+                for (participant_id, amount) in contribs {
+                    *owed_map.entry(*participant_id).or_insert(0.0) += amount;
+                }
             }
         }
     }
@@ -1061,43 +1075,40 @@ mod tests {
         // 1. Pool pays $300 insurance (external), split among Carl, David, Lise ($100 each)
         // 2. Carl pays $150 groceries (external), split among Carl, David, Lise ($50 each)
         //
-        // Balances:
-        // - Carl: paid $150, owes $150 ($100 + $50), net = 0
-        // - David: paid $0, owes $150 ($100 + $50), net = -150
-        // - Lise: paid $0, owes $150 ($100 + $50), net = -150
-        // - Pool: paid $300, owes $0, net = +300
+        // IMPORTANT: Pool-paid expenses should NOT affect user balances for settlements!
+        // The debt to pool is tracked separately in pool ownership.
+        //
+        // Corrected Balances (excluding pool-paid contributions):
+        // - Carl: paid $150, owes $50 (only from Carl's groceries), net = +100
+        // - David: paid $0, owes $50 (only from Carl's groceries), net = -50
+        // - Lise: paid $0, owes $50 (only from Carl's groceries), net = -50
+        // - Pool: paid $300, owes $0, net = +300 (excluded from settlements)
         //
         // Settlements (Pool excluded):
-        // - David owes Carl $50 (from groceries share)
-        // - Lise owes Carl $50 (from groceries share)
-        // - But Carl's net is 0, so he's neither debtor nor creditor!
-        //
-        // Actually with pool excluded:
-        // Creditors: none among users (Carl is 0)
-        // Debtors: David (-150), Lise (-150)
-        // No user-to-user settlements possible (no creditor)
+        // - David owes Carl $50
+        // - Lise owes Carl $50
 
         let balances = vec![
             ParticipantBalance {
                 participant_id: 1,
                 participant_name: "Carl".to_string(),
                 total_paid: 150.0,
-                total_owed: 150.0,
-                net_balance: 0.0,
+                total_owed: 50.0,  // Only Carl's share from his own payment
+                net_balance: 100.0,
             },
             ParticipantBalance {
                 participant_id: 2,
                 participant_name: "David".to_string(),
                 total_paid: 0.0,
-                total_owed: 150.0,
-                net_balance: -150.0,
+                total_owed: 50.0,  // Only David's share from Carl's payment
+                net_balance: -50.0,
             },
             ParticipantBalance {
                 participant_id: 3,
                 participant_name: "Lise".to_string(),
                 total_paid: 0.0,
-                total_owed: 150.0,
-                net_balance: -150.0,
+                total_owed: 50.0,  // Only Lise's share from Carl's payment
+                net_balance: -50.0,
             },
             ParticipantBalance {
                 participant_id: 4,
@@ -1119,8 +1130,16 @@ mod tests {
 
         let settlements = calculate_settlements(&balances, &participant_map, &pool_participants);
 
-        // No user creditors (Carl is 0), so no settlements
-        assert_eq!(settlements.len(), 0);
+        // Carl is creditor, David and Lise are debtors
+        assert_eq!(settlements.len(), 2);
+
+        let total: f64 = settlements.iter().map(|s| s.amount).sum();
+        assert_eq!(total, 100.0);
+
+        // All settlements should go to Carl
+        for s in &settlements {
+            assert_eq!(s.to_participant_id, 1);
+        }
     }
 
     #[test]

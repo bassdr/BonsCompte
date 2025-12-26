@@ -151,6 +151,25 @@ Located in `backend/src/services/debt_calculator.rs`:
 3. **Greedy matching**: Debtors (negative balance) are matched with creditors (positive balance)
 4. **Direct mode**: Optional mode that only settles between participants who directly transacted
 
+#### Critical Invariants (FRAGILE LOGIC)
+
+The settlement calculation has subtle interactions between pool accounts and user accounts. **Any changes to `debt_calculator.rs` must be validated carefully.**
+
+**Key rules that must be preserved:**
+
+1. **Pool transfers are excluded from user settlements**: When `receiver_account_id` points to a pool OR when `payer_id` is a pool, the occurrence is skipped in `paid_map`/`owed_map` calculations. Pool transfers only affect pool ownership tracking.
+
+2. **Pool-paid external expenses do NOT add to user `owed_map`**: When pool pays an external expense (e.g., pool pays $300 insurance split among users), the contributors' shares are NOT added to `owed_map`. This debt is tracked separately in pool ownership. Adding these to `owed_map` would create an imbalance since pool is excluded from settlements.
+
+3. **User-to-user transfers affect both parties**: Payer's "paid" increases, receiver's "owed" increases. This is how "Pay back" functionality settles debts.
+
+4. **Pairwise tracking excludes pool relationships**: `pairwise_map` only tracks user-to-user relationships for the direct settlements view.
+
+**Before modifying this file:**
+- Run `cargo test` in the backend directory and ensure all tests pass
+- If changing behavior, update the tests FIRST to reflect expected new behavior
+- Test manually with scenarios involving: pool + users, transfers, and external expenses
+
 ## Environment Variables
 
 Backend (`.env`):
@@ -165,3 +184,30 @@ Frontend (`.env` or inline):
 ```
 VITE_API_BASE=http://localhost:8000
 ```
+
+## Development Guidelines
+
+### Testing
+
+```bash
+# Backend tests (from /backend)
+cargo test                   # Run all unit tests
+
+# Frontend checks (from /frontend)
+npm run check                # TypeScript + Svelte type checking
+```
+
+### Before Committing Changes
+
+1. **Run backend tests**: `cargo test` - especially important for financial calculations
+2. **Run frontend checks**: `npm run check`
+3. **Test edge cases manually** when modifying:
+   - Settlement calculations (pool + user combinations)
+   - Recurring payment expansion
+   - Transfer functionality (user-to-user, user-to-pool, pool-to-user)
+
+### Critical Files
+
+Files that require extra care when modifying:
+
+- `backend/src/services/debt_calculator.rs` - Complex financial logic with subtle pool/user interactions. Has comprehensive unit tests that MUST pass.

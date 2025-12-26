@@ -335,20 +335,77 @@
         resetForm();
     }
 
-    // Calculate the day before a given date string (YYYY-MM-DD)
-    function getDayBefore(dateStr: string): string {
+    // Parse date string YYYY-MM-DD into Date object
+    function parseDate(dateStr: string): Date {
         const [year, month, day] = dateStr.split('-').map(Number);
-        const date = new Date(year, month - 1, day);
-        date.setDate(date.getDate() - 1);
-        return getLocalDateString(date);
+        return new Date(year, month - 1, day);
     }
 
-    // Calculate the day after a given date string (YYYY-MM-DD)
-    function getDayAfter(dateStr: string): string {
-        const [year, month, day] = dateStr.split('-').map(Number);
-        const date = new Date(year, month - 1, day);
-        date.setDate(date.getDate() + 1);
-        return getLocalDateString(date);
+    // Calculate days between two dates
+    function daysBetween(start: Date, end: Date): number {
+        const oneDay = 24 * 60 * 60 * 1000;
+        return Math.round((end.getTime() - start.getTime()) / oneDay);
+    }
+
+    // Add days to a date
+    function addDays(date: Date, days: number): Date {
+        const result = new Date(date);
+        result.setDate(result.getDate() + days);
+        return result;
+    }
+
+    // Calculate interval in days based on recurrence settings
+    function getRecurrenceDayInterval(type: string, interval: number, timesPer?: number): number {
+        if (timesPer && timesPer > 0) {
+            // X times per period
+            switch (type) {
+                case 'daily': return Math.max(1, Math.floor(1 / timesPer));
+                case 'weekly': return Math.max(1, Math.floor(7 / timesPer));
+                case 'monthly': return Math.max(1, Math.floor(30 / timesPer));
+                case 'yearly': return Math.max(1, Math.floor(365 / timesPer));
+                default: return 30;
+            }
+        } else {
+            // Every X periods
+            switch (type) {
+                case 'daily': return interval;
+                case 'weekly': return interval * 7;
+                case 'monthly': return interval * 30;
+                case 'yearly': return interval * 365;
+                default: return 30;
+            }
+        }
+    }
+
+    // Find the last occurrence on or before a given date
+    function getLastOccurrenceBefore(startDate: Date, beforeDate: Date, recurrenceType: string, recurrenceInterval: number, recurrenceTimesPer?: number): Date | null {
+        const dayInterval = getRecurrenceDayInterval(recurrenceType, recurrenceInterval, recurrenceTimesPer);
+        const daysFromStart = daysBetween(startDate, beforeDate);
+
+        if (daysFromStart < 0) {
+            // beforeDate is before startDate
+            return null;
+        }
+
+        // Calculate how many intervals fit before the date
+        const occurrences = Math.floor(daysFromStart / dayInterval);
+        if (occurrences < 0) return null;
+
+        return addDays(startDate, occurrences * dayInterval);
+    }
+
+    // Find the first occurrence on or after a given date
+    function getFirstOccurrenceFrom(startDate: Date, fromDate: Date, recurrenceType: string, recurrenceInterval: number, recurrenceTimesPer?: number): Date {
+        const dayInterval = getRecurrenceDayInterval(recurrenceType, recurrenceInterval, recurrenceTimesPer);
+        const daysFromStart = daysBetween(startDate, fromDate);
+
+        if (daysFromStart <= 0) {
+            return new Date(startDate);
+        }
+
+        // Calculate how many full intervals have passed
+        const fullIntervals = Math.ceil(daysFromStart / dayInterval);
+        return addDays(startDate, fullIntervals * dayInterval);
     }
 
     async function handleSubmit(e: Event) {
@@ -391,10 +448,73 @@
             }
 
             if (editingPaymentId !== null && useSplitDate && editingPaymentOriginal?.is_recurring) {
-                // Split recurring payment: end original at splitFromDate - 1, create new from splitFromDate
-                const endDateForOriginal = getDayBefore(splitFromDate);
+                // Enhanced split logic: calculate proper recurrence boundaries
+                const originalStartDate = parseDate(editingPaymentOriginal.payment_date.split('T')[0]);
+                const splitDate = parseDate(splitFromDate);
+                const originalEndDate = editingPaymentOriginal.recurrence_end_date
+                    ? parseDate(editingPaymentOriginal.recurrence_end_date.split('T')[0])
+                    : null;
 
-                // Update original payment with ONLY the end date changed
+                // Use edited recurrence settings if changing, otherwise use original
+                const splitRecurrenceType = payload.recurrence_type || (editingPaymentOriginal.recurrence_type as string);
+                const splitRecurrenceInterval = payload.recurrence_interval || editingPaymentOriginal.recurrence_interval || 1;
+                const splitRecurrenceTimesPer = payload.recurrence_times_per || editingPaymentOriginal.recurrence_times_per;
+
+                // Validate: split date must be on or after first occurrence
+                if (splitDate < originalStartDate) {
+                    error = 'Split date cannot be before the original payment start date';
+                    submitting = false;
+                    return;
+                }
+
+                // Validate: split date must be on or before current end date (if edited)
+                const newEndDate = payload.recurrence_end_date ? parseDate(payload.recurrence_end_date) : originalEndDate;
+                if (newEndDate && splitDate > newEndDate) {
+                    error = 'Split date cannot be after the recurrence end date';
+                    submitting = false;
+                    return;
+                }
+
+                // Calculate last occurrence before split date (using edited recurrence if applicable)
+                const lastOccurrenceBeforeSplit = getLastOccurrenceBefore(
+                    originalStartDate,
+                    addDays(splitDate, -1),
+                    splitRecurrenceType,
+                    splitRecurrenceInterval,
+                    splitRecurrenceTimesPer ?? undefined
+                );
+
+                if (!lastOccurrenceBeforeSplit) {
+                    error = 'Split date is before the first recurrence. Please choose a date on or after the first occurrence.';
+                    submitting = false;
+                    return;
+                }
+
+                // Calculate first occurrence from split date (using edited recurrence for new payment)
+                const firstOccurrenceFromSplit = getFirstOccurrenceFrom(
+                    splitDate,
+                    splitDate,
+                    recurrenceType, // Use the new/edited recurrence type
+                    recurrenceInterval || 1,
+                    recurrenceTimesPer
+                );
+
+                const endDateForOriginal = getLocalDateString(lastOccurrenceBeforeSplit);
+                const newPaymentStartDate = getLocalDateString(firstOccurrenceFromSplit);
+
+                // Check if begin date == new end date (remove recurrence for original)
+                let originalShouldRecur = true;
+                if (endDateForOriginal === editingPaymentOriginal.payment_date.split('T')[0]) {
+                    originalShouldRecur = false;
+                }
+
+                // Check if new begin date == end date (remove recurrence for new payment)
+                let newShouldRecur = payload.is_recurring;
+                if (newPaymentStartDate === (payload.recurrence_end_date || '')) {
+                    newShouldRecur = false;
+                }
+
+                // Update original payment
                 const originalPayload: CreatePaymentInput = {
                     payer_id: editingPaymentOriginal.payer_id,
                     amount: editingPaymentOriginal.amount,
@@ -405,19 +525,29 @@
                         weight: c.weight
                     })),
                     receipt_image: editingPaymentOriginal.receipt_image ?? undefined,
-                    is_recurring: true,
-                    recurrence_type: editingPaymentOriginal.recurrence_type as 'daily' | 'weekly' | 'monthly' | 'yearly',
-                    recurrence_interval: editingPaymentOriginal.recurrence_interval ?? undefined,
-                    recurrence_times_per: editingPaymentOriginal.recurrence_times_per ?? undefined,
-                    recurrence_end_date: endDateForOriginal,
+                    is_recurring: originalShouldRecur,
                     receiver_account_id: editingPaymentOriginal.receiver_account_id,
                 };
 
+                if (originalShouldRecur) {
+                    originalPayload.recurrence_type = editingPaymentOriginal.recurrence_type as 'daily' | 'weekly' | 'monthly' | 'yearly';
+                    originalPayload.recurrence_interval = editingPaymentOriginal.recurrence_interval ?? undefined;
+                    originalPayload.recurrence_times_per = editingPaymentOriginal.recurrence_times_per ?? undefined;
+                    originalPayload.recurrence_end_date = endDateForOriginal;
+                }
+
                 await updatePayment(projectId, editingPaymentId, originalPayload);
 
-                // Create new payment from splitFromDate with edited values
-                payload.payment_date = splitFromDate;
-                await createPayment(projectId, payload);
+                // Create new payment only if new payment should have occurrences
+                if (newShouldRecur || !payload.is_recurring) {
+                    payload.payment_date = newPaymentStartDate;
+                    if (newShouldRecur && payload.recurrence_end_date) {
+                        // Keep the end date, but only if it's different from start date
+                    } else if (newShouldRecur && !payload.recurrence_end_date && newEndDate) {
+                        payload.recurrence_end_date = getLocalDateString(newEndDate);
+                    }
+                    await createPayment(projectId, payload);
+                }
             } else if (editingPaymentId !== null) {
                 await updatePayment(projectId, editingPaymentId, payload);
             } else {
@@ -691,11 +821,21 @@
                                     id="split-from-date"
                                     type="date"
                                     bind:value={splitFromDate}
-                                    min={getDayAfter(editingPaymentOriginal.payment_date.split('T')[0])}
+                                    min={editingPaymentOriginal.payment_date.split('T')[0]}
                                     max={editingPaymentOriginal.recurrence_end_date?.split('T')[0] || ''}
                                 />
                                 <p class="split-hint">
-                                    Original payment will end on {getDayBefore(splitFromDate)}, new payment created from {splitFromDate}.
+                                    {#if splitFromDate}
+                                        {@const lastBefore = getLastOccurrenceBefore(parseDate(editingPaymentOriginal.payment_date.split('T')[0]), addDays(parseDate(splitFromDate), -1), (recurrenceType || editingPaymentOriginal.recurrence_type || 'monthly'), (recurrenceInterval || editingPaymentOriginal.recurrence_interval || 1), (recurrenceTimesPer || editingPaymentOriginal.recurrence_times_per) ?? undefined)}
+                                        {@const firstFrom = getFirstOccurrenceFrom(parseDate(splitFromDate), parseDate(splitFromDate), recurrenceType, recurrenceInterval || 1, (recurrenceTimesPer ?? undefined))}
+                                        {#if lastBefore}
+                                            Original payment will end on {formatDate(getLocalDateString(lastBefore))}, new payment will start on {formatDate(getLocalDateString(firstFrom))}.
+                                        {:else}
+                                            <span class="warning">Date is before the first recurrence.</span>
+                                        {/if}
+                                    {:else}
+                                        Choose a date to see the split plan.
+                                    {/if}
                                 </p>
                             </div>
                         {/if}
@@ -952,6 +1092,31 @@
         margin-top: 1rem;
         padding-top: 1rem;
         border-top: 1px solid #eee;
+    }
+
+    .split-date-section {
+        background: #f9f9f9;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .split-date-field {
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid #eee;
+    }
+
+    .split-hint {
+        font-size: 0.85rem;
+        color: #666;
+        margin-top: 0.5rem;
+    }
+
+    .split-hint .warning {
+        display: inline;
+        padding: 0.15rem 0.4rem;
+        margin: 0;
     }
 
     .split-header {

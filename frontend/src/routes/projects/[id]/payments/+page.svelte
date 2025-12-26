@@ -10,6 +10,11 @@
 
     // Edit mode state
     let editingPaymentId = $state<number | null>(null);
+    let editingPaymentOriginal = $state<PaymentWithContributions | null>(null);
+
+    // Split date option for recurring payments
+    let useSplitDate = $state(false);
+    let splitFromDate = $state(getLocalDateString());
 
     // Form state
     let amount = $state('');
@@ -255,6 +260,7 @@
     // Reset form to default state
     function resetForm() {
         editingPaymentId = null;
+        editingPaymentOriginal = null;
         amount = '';
         description = '';
         paymentDate = getLocalDateString();
@@ -267,6 +273,8 @@
         recurrenceTimesPer = 1;
         recurrenceEndDate = '';
         receiverAccountId = null; // Reset internal transfer state
+        useSplitDate = false;
+        splitFromDate = getLocalDateString();
 
         // Reset weights and included to defaults
         for (const p of $participants) {
@@ -283,6 +291,7 @@
     // Start editing a payment
     function startEditing(payment: PaymentWithContributions) {
         editingPaymentId = payment.id;
+        editingPaymentOriginal = payment;
         amount = payment.amount.toString();
         description = payment.description;
         payerId = payment.payer_id;
@@ -291,6 +300,10 @@
         receiptPreview = payment.receipt_image;
         isRecurring = payment.is_recurring;
         receiverAccountId = payment.receiver_account_id; // Load internal transfer state
+
+        // Reset split date option
+        useSplitDate = false;
+        splitFromDate = getLocalDateString();
 
         if (payment.is_recurring) {
             recurrenceType = (payment.recurrence_type as 'daily' | 'weekly' | 'monthly' | 'yearly') || 'monthly';
@@ -320,6 +333,22 @@
 
     function cancelEditing() {
         resetForm();
+    }
+
+    // Calculate the day before a given date string (YYYY-MM-DD)
+    function getDayBefore(dateStr: string): string {
+        const [year, month, day] = dateStr.split('-').map(Number);
+        const date = new Date(year, month - 1, day);
+        date.setDate(date.getDate() - 1);
+        return getLocalDateString(date);
+    }
+
+    // Calculate the day after a given date string (YYYY-MM-DD)
+    function getDayAfter(dateStr: string): string {
+        const [year, month, day] = dateStr.split('-').map(Number);
+        const date = new Date(year, month - 1, day);
+        date.setDate(date.getDate() + 1);
+        return getLocalDateString(date);
     }
 
     async function handleSubmit(e: Event) {
@@ -361,7 +390,35 @@
                 }
             }
 
-            if (editingPaymentId !== null) {
+            if (editingPaymentId !== null && useSplitDate && editingPaymentOriginal?.is_recurring) {
+                // Split recurring payment: end original at splitFromDate - 1, create new from splitFromDate
+                const endDateForOriginal = getDayBefore(splitFromDate);
+
+                // Update original payment with ONLY the end date changed
+                const originalPayload: CreatePaymentInput = {
+                    payer_id: editingPaymentOriginal.payer_id,
+                    amount: editingPaymentOriginal.amount,
+                    description: editingPaymentOriginal.description,
+                    payment_date: editingPaymentOriginal.payment_date.split('T')[0],
+                    contributions: editingPaymentOriginal.contributions.map(c => ({
+                        participant_id: c.participant_id,
+                        weight: c.weight
+                    })),
+                    receipt_image: editingPaymentOriginal.receipt_image ?? undefined,
+                    is_recurring: true,
+                    recurrence_type: editingPaymentOriginal.recurrence_type as 'daily' | 'weekly' | 'monthly' | 'yearly',
+                    recurrence_interval: editingPaymentOriginal.recurrence_interval ?? undefined,
+                    recurrence_times_per: editingPaymentOriginal.recurrence_times_per ?? undefined,
+                    recurrence_end_date: endDateForOriginal,
+                    receiver_account_id: editingPaymentOriginal.receiver_account_id,
+                };
+
+                await updatePayment(projectId, editingPaymentId, originalPayload);
+
+                // Create new payment from splitFromDate with edited values
+                payload.payment_date = splitFromDate;
+                await createPayment(projectId, payload);
+            } else if (editingPaymentId !== null) {
                 await updatePayment(projectId, editingPaymentId, payload);
             } else {
                 await createPayment(projectId, payload);
@@ -619,9 +676,35 @@
                     </tbody>
                 </table>
 
+                <!-- Split date option for recurring payments -->
+                {#if editingPaymentId !== null && editingPaymentOriginal?.is_recurring}
+                    <div class="split-date-section">
+                        <label class="checkbox-label">
+                            <input type="checkbox" bind:checked={useSplitDate} />
+                            Apply changes starting from date
+                        </label>
+
+                        {#if useSplitDate}
+                            <div class="split-date-field">
+                                <label for="split-from-date">Changes start from</label>
+                                <input
+                                    id="split-from-date"
+                                    type="date"
+                                    bind:value={splitFromDate}
+                                    min={getDayAfter(editingPaymentOriginal.payment_date.split('T')[0])}
+                                    max={editingPaymentOriginal.recurrence_end_date?.split('T')[0] || ''}
+                                />
+                                <p class="split-hint">
+                                    Original payment will end on {getDayBefore(splitFromDate)}, new payment created from {splitFromDate}.
+                                </p>
+                            </div>
+                        {/if}
+                    </div>
+                {/if}
+
                 <div class="form-actions">
                     <button type="submit" disabled={submitting || $participants.length === 0}>
-                        {submitting ? 'Saving...' : (editingPaymentId !== null ? 'Update Payment' : 'Add Payment')}
+                        {submitting ? 'Saving...' : (editingPaymentId !== null ? (useSplitDate ? 'Split & Update' : 'Update Payment') : 'Add Payment')}
                     </button>
                     {#if editingPaymentId !== null}
                         <button type="button" class="cancel-btn" onclick={cancelEditing}>Cancel</button>
@@ -1223,5 +1306,37 @@
 
     .transfer-btn:hover {
         background: #c8e6c9 !important;
+    }
+
+    /* Split date section */
+    .split-date-section {
+        background: #fff8e1;
+        border: 1px solid #ffcc80;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .split-date-field {
+        margin-top: 0.75rem;
+        padding-top: 0.75rem;
+        border-top: 1px solid #ffcc80;
+    }
+
+    .split-date-field label {
+        font-size: 0.9rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .split-date-field input[type="date"] {
+        max-width: 200px;
+    }
+
+    .split-hint {
+        margin-top: 0.5rem;
+        margin-bottom: 0;
+        font-size: 0.85rem;
+        color: #6d4c41;
+        font-style: italic;
     }
 </style>

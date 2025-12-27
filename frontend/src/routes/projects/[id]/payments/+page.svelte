@@ -29,11 +29,35 @@
 
     // Recurrence state
     let isRecurring = $state(false);
-    let recurrenceMode = $state<'every' | 'times_per'>('every');
     let recurrenceInterval = $state(1);
     let recurrenceType = $state<'daily' | 'weekly' | 'monthly' | 'yearly'>('monthly');
-    let recurrenceTimesPer = $state(1);
     let recurrenceEndDate = $state('');
+
+    // Enhanced recurrence patterns
+    // For weekly: array of arrays, one per week in cycle - each inner array contains selected weekdays (0=Sun, 6=Sat)
+    let recurrenceWeekdays = $state<number[][]>([]);
+    // For monthly: array of selected day numbers (1-31)
+    let recurrenceMonthdays = $state<number[]>([]);
+    // For yearly: array of selected month numbers (1-12)
+    let recurrenceMonths = $state<number[]>([]);
+
+    // Day and month names for display
+    const WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    // Derived values for UI logic
+    let showWeekdaySelector = $derived(
+        isRecurring && recurrenceType === 'weekly' && recurrenceInterval <= 4
+    );
+    let showMonthdaySelector = $derived(
+        isRecurring && recurrenceType === 'monthly' && recurrenceInterval === 1
+    );
+    let showMonthSelector = $derived(
+        isRecurring && recurrenceType === 'yearly' && recurrenceInterval === 1
+    );
+    let showMonthdayWarning = $derived(
+        recurrenceMonthdays.some(d => d > 28)
+    );
 
     // Internal transfer: receiver_account_id
     // null = external expense (money leaves system)
@@ -110,6 +134,34 @@
                     // Fallback to first participant if user doesn't have a linked participant
                     payerId = $participants[0].id;
                 }
+            }
+        }
+    });
+
+    // Initialize enhanced recurrence patterns when type/interval/date changes
+    $effect(() => {
+        if (!isRecurring) return;
+
+        const defaultWeekday = paymentDate ? getDefaultWeekday(paymentDate) : 0;
+        const defaultMonthDay = paymentDate ? getDefaultMonthDay(paymentDate) : 1;
+        const defaultMonth = paymentDate ? getDefaultMonth(paymentDate) : 1;
+
+        if (recurrenceType === 'weekly' && recurrenceInterval <= 4) {
+            // Initialize weekday arrays if empty or wrong size
+            if (recurrenceWeekdays.length !== recurrenceInterval) {
+                recurrenceWeekdays = initializeWeekdayArrays(recurrenceInterval, defaultWeekday);
+            }
+        }
+
+        if (recurrenceType === 'monthly' && recurrenceInterval === 1) {
+            if (recurrenceMonthdays.length === 0) {
+                recurrenceMonthdays = [defaultMonthDay];
+            }
+        }
+
+        if (recurrenceType === 'yearly' && recurrenceInterval === 1) {
+            if (recurrenceMonths.length === 0) {
+                recurrenceMonths = [defaultMonth];
             }
         }
     });
@@ -267,11 +319,12 @@
         receiptImage = null;
         receiptPreview = null;
         isRecurring = false;
-        recurrenceMode = 'every';
         recurrenceInterval = 1;
         recurrenceType = 'monthly';
-        recurrenceTimesPer = 1;
         recurrenceEndDate = '';
+        recurrenceWeekdays = [];
+        recurrenceMonthdays = [];
+        recurrenceMonths = [];
         receiverAccountId = null; // Reset internal transfer state
         useSplitDate = false;
         splitFromDate = getLocalDateString();
@@ -307,15 +360,39 @@
 
         if (payment.is_recurring) {
             recurrenceType = (payment.recurrence_type as 'daily' | 'weekly' | 'monthly' | 'yearly') || 'monthly';
-            if (payment.recurrence_times_per) {
-                recurrenceMode = 'times_per';
-                recurrenceTimesPer = payment.recurrence_times_per;
-                recurrenceInterval = 1;
-            } else {
-                recurrenceMode = 'every';
-                recurrenceInterval = payment.recurrence_interval || 1;
-            }
+            recurrenceInterval = payment.recurrence_interval || 1;
             recurrenceEndDate = payment.recurrence_end_date || '';
+
+            // Parse enhanced patterns from JSON
+            if (payment.recurrence_weekdays) {
+                try {
+                    recurrenceWeekdays = JSON.parse(payment.recurrence_weekdays);
+                } catch {
+                    recurrenceWeekdays = [];
+                }
+            } else {
+                recurrenceWeekdays = [];
+            }
+
+            if (payment.recurrence_monthdays) {
+                try {
+                    recurrenceMonthdays = JSON.parse(payment.recurrence_monthdays);
+                } catch {
+                    recurrenceMonthdays = [];
+                }
+            } else {
+                recurrenceMonthdays = [];
+            }
+
+            if (payment.recurrence_months) {
+                try {
+                    recurrenceMonths = JSON.parse(payment.recurrence_months);
+                } catch {
+                    recurrenceMonths = [];
+                }
+            } else {
+                recurrenceMonths = [];
+            }
         }
 
         // Set weights and included from contributions
@@ -354,32 +431,125 @@
         return result;
     }
 
-    // Calculate interval in days based on recurrence settings
-    function getRecurrenceDayInterval(type: string, interval: number, timesPer?: number): number {
-        if (timesPer && timesPer > 0) {
-            // X times per period
-            switch (type) {
-                case 'daily': return Math.max(1, Math.floor(1 / timesPer));
-                case 'weekly': return Math.max(1, Math.floor(7 / timesPer));
-                case 'monthly': return Math.max(1, Math.floor(30 / timesPer));
-                case 'yearly': return Math.max(1, Math.floor(365 / timesPer));
-                default: return 30;
+    // Get default weekday from payment date (0=Sunday, 6=Saturday)
+    function getDefaultWeekday(dateStr: string): number {
+        const date = parseDate(dateStr);
+        return date.getDay();
+    }
+
+    // Get default month day from payment date (1-31)
+    function getDefaultMonthDay(dateStr: string): number {
+        const date = parseDate(dateStr);
+        return date.getDate();
+    }
+
+    // Get default month from payment date (1-12)
+    function getDefaultMonth(dateStr: string): number {
+        const date = parseDate(dateStr);
+        return date.getMonth() + 1;
+    }
+
+    // Initialize weekday arrays when interval changes
+    function initializeWeekdayArrays(numWeeks: number, defaultDay: number): number[][] {
+        const result: number[][] = [];
+        for (let i = 0; i < numWeeks; i++) {
+            result.push([defaultDay]);
+        }
+        return result;
+    }
+
+    // Toggle weekday in a specific week
+    function toggleWeekday(weekIndex: number, day: number) {
+        const week = recurrenceWeekdays[weekIndex] || [];
+        const idx = week.indexOf(day);
+        if (idx >= 0) {
+            // Don't allow deselecting if it's the only one
+            if (week.length > 1) {
+                recurrenceWeekdays[weekIndex] = week.filter(d => d !== day);
             }
         } else {
-            // Every X periods
-            switch (type) {
-                case 'daily': return interval;
-                case 'weekly': return interval * 7;
-                case 'monthly': return interval * 30;
-                case 'yearly': return interval * 365;
-                default: return 30;
+            recurrenceWeekdays[weekIndex] = [...week, day].sort((a, b) => a - b);
+        }
+        recurrenceWeekdays = [...recurrenceWeekdays]; // Trigger reactivity
+    }
+
+    // Toggle month day
+    function toggleMonthday(day: number) {
+        const idx = recurrenceMonthdays.indexOf(day);
+        if (idx >= 0) {
+            if (recurrenceMonthdays.length > 1) {
+                recurrenceMonthdays = recurrenceMonthdays.filter(d => d !== day);
             }
+        } else {
+            recurrenceMonthdays = [...recurrenceMonthdays, day].sort((a, b) => a - b);
+        }
+    }
+
+    // Toggle month
+    function toggleMonth(month: number) {
+        const idx = recurrenceMonths.indexOf(month);
+        if (idx >= 0) {
+            if (recurrenceMonths.length > 1) {
+                recurrenceMonths = recurrenceMonths.filter(m => m !== month);
+            }
+        } else {
+            recurrenceMonths = [...recurrenceMonths, month].sort((a, b) => a - b);
+        }
+    }
+
+    // Ordinal suffix for day numbers (1st, 2nd, 3rd, etc.)
+    function ordinal(n: number): string {
+        const s = ['th', 'st', 'nd', 'rd'];
+        const v = n % 100;
+        return n + (s[(v - 20) % 10] || s[v] || s[0]);
+    }
+
+    // Calculate approximate interval in days based on recurrence settings
+    // For enhanced patterns (multiple days/months), returns an estimate
+    function getRecurrenceDayInterval(
+        type: string,
+        interval: number,
+        weekdays?: number[][],
+        monthdays?: number[],
+        months?: number[]
+    ): number {
+        // For enhanced patterns, estimate average interval
+        if (type === 'weekly' && weekdays && weekdays.length > 0) {
+            const totalDays = weekdays.reduce((sum, week) => sum + week.length, 0);
+            if (totalDays > 0) {
+                return Math.max(1, Math.floor((7 * interval) / totalDays));
+            }
+        }
+
+        if (type === 'monthly' && monthdays && monthdays.length > 0) {
+            return Math.max(1, Math.floor(30 / monthdays.length));
+        }
+
+        if (type === 'yearly' && months && months.length > 0) {
+            return Math.max(1, Math.floor(365 / months.length));
+        }
+
+        // Fallback to simple interval calculation
+        switch (type) {
+            case 'daily': return interval;
+            case 'weekly': return interval * 7;
+            case 'monthly': return interval * 30;
+            case 'yearly': return interval * 365;
+            default: return 30;
         }
     }
 
     // Find the last occurrence on or before a given date
-    function getLastOccurrenceBefore(startDate: Date, beforeDate: Date, recurrenceType: string, recurrenceInterval: number, recurrenceTimesPer?: number): Date | null {
-        const dayInterval = getRecurrenceDayInterval(recurrenceType, recurrenceInterval, recurrenceTimesPer);
+    function getLastOccurrenceBefore(
+        startDate: Date,
+        beforeDate: Date,
+        type: string,
+        interval: number,
+        weekdays?: number[][],
+        monthdays?: number[],
+        months?: number[]
+    ): Date | null {
+        const dayInterval = getRecurrenceDayInterval(type, interval, weekdays, monthdays, months);
         const daysFromStart = daysBetween(startDate, beforeDate);
 
         if (daysFromStart < 0) {
@@ -395,8 +565,16 @@
     }
 
     // Find the first occurrence on or after a given date
-    function getFirstOccurrenceFrom(startDate: Date, fromDate: Date, recurrenceType: string, recurrenceInterval: number, recurrenceTimesPer?: number): Date {
-        const dayInterval = getRecurrenceDayInterval(recurrenceType, recurrenceInterval, recurrenceTimesPer);
+    function getFirstOccurrenceFrom(
+        startDate: Date,
+        fromDate: Date,
+        type: string,
+        interval: number,
+        weekdays?: number[][],
+        monthdays?: number[],
+        months?: number[]
+    ): Date {
+        const dayInterval = getRecurrenceDayInterval(type, interval, weekdays, monthdays, months);
         const daysFromStart = daysBetween(startDate, fromDate);
 
         if (daysFromStart <= 0) {
@@ -436,14 +614,21 @@
 
             if (isRecurring) {
                 payload.recurrence_type = recurrenceType;
-                if (recurrenceMode === 'every') {
-                    payload.recurrence_interval = recurrenceInterval;
-                } else {
-                    payload.recurrence_times_per = recurrenceTimesPer;
-                    payload.recurrence_interval = 1;
-                }
+                payload.recurrence_interval = recurrenceInterval;
+
                 if (recurrenceEndDate) {
                     payload.recurrence_end_date = recurrenceEndDate;
+                }
+
+                // Enhanced patterns - only include when applicable
+                if (recurrenceType === 'weekly' && recurrenceInterval <= 4 && recurrenceWeekdays.length > 0) {
+                    payload.recurrence_weekdays = JSON.stringify(recurrenceWeekdays);
+                }
+                if (recurrenceType === 'monthly' && recurrenceInterval === 1 && recurrenceMonthdays.length > 0) {
+                    payload.recurrence_monthdays = JSON.stringify(recurrenceMonthdays);
+                }
+                if (recurrenceType === 'yearly' && recurrenceInterval === 1 && recurrenceMonths.length > 0) {
+                    payload.recurrence_months = JSON.stringify(recurrenceMonths);
                 }
             }
 
@@ -458,7 +643,6 @@
                 // Use edited recurrence settings if changing, otherwise use original
                 const splitRecurrenceType = payload.recurrence_type || (editingPaymentOriginal.recurrence_type as string);
                 const splitRecurrenceInterval = payload.recurrence_interval || editingPaymentOriginal.recurrence_interval || 1;
-                const splitRecurrenceTimesPer = payload.recurrence_times_per || editingPaymentOriginal.recurrence_times_per;
 
                 // Validate: split date must be on or after first occurrence
                 if (splitDate < originalStartDate) {
@@ -480,8 +664,7 @@
                     originalStartDate,
                     addDays(splitDate, -1),
                     splitRecurrenceType,
-                    splitRecurrenceInterval,
-                    splitRecurrenceTimesPer ?? undefined
+                    splitRecurrenceInterval
                 );
 
                 if (!lastOccurrenceBeforeSplit) {
@@ -495,8 +678,7 @@
                     splitDate,
                     splitDate,
                     recurrenceType, // Use the new/edited recurrence type
-                    recurrenceInterval || 1,
-                    recurrenceTimesPer
+                    recurrenceInterval || 1
                 );
 
                 const endDateForOriginal = getLocalDateString(lastOccurrenceBeforeSplit);
@@ -532,8 +714,17 @@
                 if (originalShouldRecur) {
                     originalPayload.recurrence_type = editingPaymentOriginal.recurrence_type as 'daily' | 'weekly' | 'monthly' | 'yearly';
                     originalPayload.recurrence_interval = editingPaymentOriginal.recurrence_interval ?? undefined;
-                    originalPayload.recurrence_times_per = editingPaymentOriginal.recurrence_times_per ?? undefined;
                     originalPayload.recurrence_end_date = endDateForOriginal;
+                    // Preserve enhanced patterns from original
+                    if (editingPaymentOriginal.recurrence_weekdays) {
+                        originalPayload.recurrence_weekdays = editingPaymentOriginal.recurrence_weekdays;
+                    }
+                    if (editingPaymentOriginal.recurrence_monthdays) {
+                        originalPayload.recurrence_monthdays = editingPaymentOriginal.recurrence_monthdays;
+                    }
+                    if (editingPaymentOriginal.recurrence_months) {
+                        originalPayload.recurrence_months = editingPaymentOriginal.recurrence_months;
+                    }
                 }
 
                 await updatePayment(projectId, editingPaymentId, originalPayload);
@@ -595,11 +786,38 @@
         if (!p.is_recurring) return '';
         const type = p.recurrence_type || 'monthly';
         const interval = p.recurrence_interval || 1;
-        const timesPer = p.recurrence_times_per;
 
-        if (timesPer) {
-            return `${timesPer}x per ${type.replace('ly', '')}`;
+        // Enhanced patterns
+        if (type === 'weekly' && p.recurrence_weekdays && interval <= 4) {
+            try {
+                const patterns: number[][] = JSON.parse(p.recurrence_weekdays);
+                const allDays = new Set(patterns.flat());
+                const dayNames = [...allDays].sort((a, b) => a - b).map(d => WEEKDAY_NAMES[d]);
+                if (interval === 1) {
+                    return `${dayNames.join(', ')} weekly`;
+                } else {
+                    return `${dayNames.join(', ')} every ${interval} weeks`;
+                }
+            } catch { /* fall through */ }
         }
+
+        if (type === 'monthly' && p.recurrence_monthdays && interval === 1) {
+            try {
+                const days: number[] = JSON.parse(p.recurrence_monthdays);
+                const formatted = days.map(d => ordinal(d)).join(', ');
+                return `${formatted} monthly`;
+            } catch { /* fall through */ }
+        }
+
+        if (type === 'yearly' && p.recurrence_months && interval === 1) {
+            try {
+                const months: number[] = JSON.parse(p.recurrence_months);
+                const monthNames = months.map(m => MONTH_NAMES[m - 1]);
+                return `${monthNames.join(', ')} yearly`;
+            } catch { /* fall through */ }
+        }
+
+        // Fallback to simple display
         if (interval === 1) {
             return type;
         }
@@ -704,36 +922,90 @@
                     {#if isRecurring}
                         <div class="recurrence-options">
                             <div class="form-row">
-                                <div class="field">
-                                    <label for="recurrence-mode">Mode</label>
-                                    <select id="recurrence-mode" bind:value={recurrenceMode}>
-                                        <option value="every">Every X period</option>
-                                        <option value="times_per">X times per period</option>
-                                    </select>
+                                <div class="field small">
+                                    <label for="recurrence-interval">Every</label>
+                                    <input id="recurrence-interval" type="number" bind:value={recurrenceInterval} min="1" />
                                 </div>
-
-                                {#if recurrenceMode === 'every'}
-                                    <div class="field small">
-                                        <label for="recurrence-interval">Every</label>
-                                        <input id="recurrence-interval" type="number" bind:value={recurrenceInterval} min="1" />
-                                    </div>
-                                {:else}
-                                    <div class="field small">
-                                        <label for="recurrence-times">Times</label>
-                                        <input id="recurrence-times" type="number" bind:value={recurrenceTimesPer} min="1" />
-                                    </div>
-                                {/if}
 
                                 <div class="field">
                                     <label for="recurrence-type">Period</label>
                                     <select id="recurrence-type" bind:value={recurrenceType}>
-                                        <option value="daily">{recurrenceMode === 'every' ? 'Day(s)' : 'Day'}</option>
-                                        <option value="weekly">{recurrenceMode === 'every' ? 'Week(s)' : 'Week'}</option>
-                                        <option value="monthly">{recurrenceMode === 'every' ? 'Month(s)' : 'Month'}</option>
-                                        <option value="yearly">{recurrenceMode === 'every' ? 'Year(s)' : 'Year'}</option>
+                                        <option value="daily">{recurrenceInterval === 1 ? 'Day' : 'Days'}</option>
+                                        <option value="weekly">{recurrenceInterval === 1 ? 'Week' : 'Weeks'}</option>
+                                        <option value="monthly">{recurrenceInterval === 1 ? 'Month' : 'Months'}</option>
+                                        <option value="yearly">{recurrenceInterval === 1 ? 'Year' : 'Years'}</option>
                                     </select>
                                 </div>
                             </div>
+
+                            <!-- Weekly: Weekday selection (1-4 week cycles) -->
+                            {#if showWeekdaySelector}
+                                <div class="weekday-selector" role="group" aria-labelledby="weekday-selector-label">
+                                    <span id="weekday-selector-label" class="selector-label">Select days of the week:</span>
+                                    {#each Array(recurrenceInterval) as _, weekIdx}
+                                        {#if recurrenceInterval > 1}
+                                            <div class="week-label">Week {weekIdx + 1}:</div>
+                                        {/if}
+                                        <div class="weekday-row">
+                                            {#each WEEKDAY_NAMES as day, dayIdx}
+                                                <button
+                                                    type="button"
+                                                    class="weekday-btn"
+                                                    class:selected={recurrenceWeekdays[weekIdx]?.includes(dayIdx)}
+                                                    onclick={() => toggleWeekday(weekIdx, dayIdx)}
+                                                >
+                                                    {day}
+                                                </button>
+                                            {/each}
+                                        </div>
+                                    {/each}
+                                </div>
+                            {/if}
+
+                            <!-- Monthly: Day of month selection -->
+                            {#if showMonthdaySelector}
+                                <div class="monthday-selector" role="group" aria-labelledby="monthday-selector-label">
+                                    <span id="monthday-selector-label" class="selector-label">Select days of the month:</span>
+                                    <div class="monthday-grid">
+                                        {#each Array(31) as _, idx}
+                                            {@const day = idx + 1}
+                                            <button
+                                                type="button"
+                                                class="monthday-btn"
+                                                class:selected={recurrenceMonthdays.includes(day)}
+                                                onclick={() => toggleMonthday(day)}
+                                            >
+                                                {day}
+                                            </button>
+                                        {/each}
+                                    </div>
+                                    {#if showMonthdayWarning}
+                                        <p class="warning-hint">
+                                            Note: For months with fewer days, the last day of the month will be used.
+                                        </p>
+                                    {/if}
+                                </div>
+                            {/if}
+
+                            <!-- Yearly: Month selection -->
+                            {#if showMonthSelector}
+                                <div class="month-selector" role="group" aria-labelledby="month-selector-label">
+                                    <span id="month-selector-label" class="selector-label">Select months:</span>
+                                    <div class="month-grid">
+                                        {#each MONTH_NAMES as monthName, idx}
+                                            {@const month = idx + 1}
+                                            <button
+                                                type="button"
+                                                class="month-btn"
+                                                class:selected={recurrenceMonths.includes(month)}
+                                                onclick={() => toggleMonth(month)}
+                                            >
+                                                {monthName}
+                                            </button>
+                                        {/each}
+                                    </div>
+                                </div>
+                            {/if}
 
                             <div class="field">
                                 <label for="end-date">End date (optional)</label>
@@ -826,8 +1098,8 @@
                                 />
                                 <p class="split-hint">
                                     {#if splitFromDate}
-                                        {@const lastBefore = getLastOccurrenceBefore(parseDate(editingPaymentOriginal.payment_date.split('T')[0]), addDays(parseDate(splitFromDate), -1), (recurrenceType || editingPaymentOriginal.recurrence_type || 'monthly'), (recurrenceInterval || editingPaymentOriginal.recurrence_interval || 1), (recurrenceTimesPer || editingPaymentOriginal.recurrence_times_per) ?? undefined)}
-                                        {@const firstFrom = getFirstOccurrenceFrom(parseDate(splitFromDate), parseDate(splitFromDate), recurrenceType, recurrenceInterval || 1, (recurrenceTimesPer ?? undefined))}
+                                        {@const lastBefore = getLastOccurrenceBefore(parseDate(editingPaymentOriginal.payment_date.split('T')[0]), addDays(parseDate(splitFromDate), -1), (recurrenceType || editingPaymentOriginal.recurrence_type || 'monthly'), (recurrenceInterval || editingPaymentOriginal.recurrence_interval || 1))}
+                                        {@const firstFrom = getFirstOccurrenceFrom(parseDate(splitFromDate), parseDate(splitFromDate), recurrenceType, recurrenceInterval || 1)}
                                         {#if lastBefore}
                                             Original payment will end on {formatDate(getLocalDateString(lastBefore))}, new payment will start on {formatDate(getLocalDateString(firstFrom))}.
                                         {:else}
@@ -1503,5 +1775,86 @@
         font-size: 0.85rem;
         color: #6d4c41;
         font-style: italic;
+    }
+
+    /* Enhanced Recurrence Selectors */
+    .weekday-selector,
+    .monthday-selector,
+    .month-selector {
+        margin-top: 1rem;
+        padding: 1rem;
+        background: #f5f5f5;
+        border-radius: 8px;
+    }
+
+    .selector-label {
+        display: block;
+        margin-bottom: 0.75rem;
+        font-weight: 600;
+    }
+
+    .week-label {
+        font-size: 0.85rem;
+        color: #666;
+        margin: 0.5rem 0 0.25rem;
+    }
+
+    .weekday-row {
+        display: flex;
+        gap: 0.25rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .weekday-btn,
+    .monthday-btn,
+    .month-btn {
+        padding: 0.5rem 0.75rem;
+        border: 1px solid #ddd;
+        background: white;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition: all 0.2s;
+    }
+
+    .weekday-btn:hover,
+    .monthday-btn:hover,
+    .month-btn:hover {
+        border-color: var(--accent, #7b61ff);
+    }
+
+    .weekday-btn.selected,
+    .monthday-btn.selected,
+    .month-btn.selected {
+        background: var(--accent, #7b61ff);
+        color: white;
+        border-color: var(--accent, #7b61ff);
+    }
+
+    .monthday-grid {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 0.25rem;
+    }
+
+    .monthday-btn {
+        aspect-ratio: 1;
+        padding: 0.25rem;
+        min-width: 32px;
+    }
+
+    .month-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.5rem;
+    }
+
+    .warning-hint {
+        margin-top: 0.5rem;
+        padding: 0.5rem;
+        background: #fff3cd;
+        border-radius: 4px;
+        font-size: 0.85rem;
+        color: #856404;
     }
 </style>

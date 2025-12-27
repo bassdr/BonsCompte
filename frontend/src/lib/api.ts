@@ -166,6 +166,10 @@ export interface Payment {
     recurrence_interval: number | null;
     recurrence_times_per: number | null;
     recurrence_end_date: string | null;
+    // Enhanced recurrence patterns (JSON strings)
+    recurrence_weekdays: string | null;   // e.g., "[[1,3],[0,5]]" - weekdays per week in cycle
+    recurrence_monthdays: string | null;  // e.g., "[1, 15, 28]" - days of month
+    recurrence_months: string | null;     // e.g., "[1, 6, 12]" - months (1=Jan, 12=Dec)
     // Internal transfer support
     // null = external expense (money leaves system, affects settlements)
     // number = internal transfer to this account (only affects pool ownership)
@@ -381,6 +385,10 @@ export interface CreatePaymentInput {
     recurrence_interval?: number;
     recurrence_times_per?: number;
     recurrence_end_date?: string;
+    // Enhanced recurrence patterns (JSON strings)
+    recurrence_weekdays?: string;
+    recurrence_monthdays?: string;
+    recurrence_months?: string;
     // Internal transfer: recipient account (null = external expense)
     receiver_account_id?: number | null;
 }

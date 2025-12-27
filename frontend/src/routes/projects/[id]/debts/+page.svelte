@@ -331,6 +331,141 @@
 
         const recurrenceType = payment.recurrence_type || 'monthly';
         const interval = payment.recurrence_interval || 1;
+
+        // Helper to get days in month
+        function getDaysInMonth(year: number, month: number): number {
+            return new Date(year, month + 1, 0).getDate();
+        }
+
+        // Handle enhanced weekly with weekdays pattern
+        if (payment.recurrence_weekdays && recurrenceType === 'weekly') {
+            try {
+                const weekPatterns: number[][] = JSON.parse(payment.recurrence_weekdays);
+                if (weekPatterns.length === 0) return null;
+
+                // Start searching from afterDate
+                const searchStart = new Date(afterDate);
+                searchStart.setDate(searchStart.getDate() + 1); // Day after target
+
+                // Calculate which week in the cycle we're in
+                const startWeekday = startDate.getDay();
+                const weekStart = new Date(startDate);
+                weekStart.setDate(weekStart.getDate() - startWeekday);
+
+                const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+                const cycleWeeks = interval <= 4 ? interval : interval;
+
+                // Search forward from afterDate
+                for (let daysAhead = 0; daysAhead < 365 * 2; daysAhead++) {
+                    const checkDate = new Date(searchStart);
+                    checkDate.setDate(checkDate.getDate() + daysAhead);
+
+                    if (checkDate < startDate) continue;
+
+                    // Check end date
+                    if (payment.recurrence_end_date) {
+                        const endDate = parseLocalDate(payment.recurrence_end_date);
+                        if (checkDate > endDate) return null;
+                    }
+
+                    // Calculate week number from start
+                    const checkWeekStart = new Date(checkDate);
+                    checkWeekStart.setDate(checkWeekStart.getDate() - checkDate.getDay());
+                    const weeksDiff = Math.floor((checkWeekStart.getTime() - weekStart.getTime()) / msPerWeek);
+                    const cycleWeek = ((weeksDiff % weekPatterns.length) + weekPatterns.length) % weekPatterns.length;
+
+                    const weekdays = weekPatterns[cycleWeek];
+                    if (weekdays.includes(checkDate.getDay())) {
+                        return getLocalDateString(checkDate);
+                    }
+                }
+                return null;
+            } catch {
+                // Fall through to legacy logic
+            }
+        }
+
+        // Handle enhanced monthly with monthdays pattern
+        if (payment.recurrence_monthdays && recurrenceType === 'monthly') {
+            try {
+                const monthdays: number[] = JSON.parse(payment.recurrence_monthdays);
+                if (monthdays.length === 0) return null;
+
+                // Start from month of afterDate
+                let year = afterDate.getFullYear();
+                let month = afterDate.getMonth();
+
+                for (let monthsAhead = 0; monthsAhead < 12 * 10; monthsAhead++) {
+                    const daysInMonth = getDaysInMonth(year, month);
+
+                    for (const day of monthdays.sort((a, b) => a - b)) {
+                        const actualDay = Math.min(day, daysInMonth);
+                        const checkDate = new Date(year, month, actualDay);
+
+                        if (checkDate <= afterDate) continue;
+                        if (checkDate < startDate) continue;
+
+                        // Check end date
+                        if (payment.recurrence_end_date) {
+                            const endDate = parseLocalDate(payment.recurrence_end_date);
+                            if (checkDate > endDate) return null;
+                        }
+
+                        return getLocalDateString(checkDate);
+                    }
+
+                    // Move to next month
+                    month++;
+                    if (month > 11) {
+                        month = 0;
+                        year++;
+                    }
+                }
+                return null;
+            } catch {
+                // Fall through to legacy logic
+            }
+        }
+
+        // Handle enhanced yearly with months pattern
+        if (payment.recurrence_months && recurrenceType === 'yearly') {
+            try {
+                const months: number[] = JSON.parse(payment.recurrence_months);
+                if (months.length === 0) return null;
+
+                const baseDay = startDate.getDate();
+                let year = afterDate.getFullYear();
+
+                for (let yearsAhead = 0; yearsAhead < 50; yearsAhead++) {
+                    for (const month of months.sort((a, b) => a - b)) {
+                        if (month < 1 || month > 12) continue;
+
+                        const jsMonth = month - 1; // Convert 1-indexed to 0-indexed
+                        const daysInMonth = getDaysInMonth(year, jsMonth);
+                        const actualDay = Math.min(baseDay, daysInMonth);
+                        const checkDate = new Date(year, jsMonth, actualDay);
+
+                        if (checkDate <= afterDate) continue;
+                        if (checkDate < startDate) continue;
+
+                        // Check end date
+                        if (payment.recurrence_end_date) {
+                            const endDate = parseLocalDate(payment.recurrence_end_date);
+                            if (checkDate > endDate) return null;
+                        }
+
+                        return getLocalDateString(checkDate);
+                    }
+
+                    year++;
+                }
+                return null;
+            } catch {
+                // Fall through to legacy logic
+            }
+        }
+
+        // Legacy simple interval logic
         const timesPer = payment.recurrence_times_per;
 
         // Calculate effective interval in days
@@ -676,38 +811,40 @@
 
 <!-- Date selector -->
 <div class="date-selector card">
-    <button
-        class="nav-btn"
-        onclick={goToPreviousPayment}
-        disabled={!previousPaymentDate}
-        title={previousPaymentDate ? `Go to ${formatDate(previousPaymentDate)}` : 'No earlier payments'}
-    >⟨</button>
+    <div class="date-nav-row">
+        <button
+            class="nav-btn"
+            onclick={goToPreviousPayment}
+            disabled={!previousPaymentDate}
+            title={previousPaymentDate ? `Go to ${formatDate(previousPaymentDate)}` : 'No earlier payments'}
+        >⟨</button>
 
-    <div class="date-display">
-        <input
-            type="date"
-            bind:value={targetDate}
-            class="date-input"
-        />
-        <span class="date-label">
-            {formatDate(targetDate)}
-            {#if relativeDateLabel && !isToday}
-                <span class="relative-label">({relativeDateLabel})</span>
-            {/if}
-            {#if isFuture}
-                <span class="badge future-badge">Future</span>
-            {:else if isPast}
-                <span class="badge past-badge">Past</span>
-            {/if}
-        </span>
+        <div class="date-display">
+            <input
+                type="date"
+                bind:value={targetDate}
+                class="date-input"
+            />
+            <span class="date-label">
+                {formatDate(targetDate)}
+                {#if relativeDateLabel && !isToday}
+                    <span class="relative-label">({relativeDateLabel})</span>
+                {/if}
+                {#if isFuture}
+                    <span class="badge future-badge">Future</span>
+                {:else if isPast}
+                    <span class="badge past-badge">Past</span>
+                {/if}
+            </span>
+        </div>
+
+        <button
+            class="nav-btn"
+            onclick={goToNextPayment}
+            disabled={!nextPaymentDate}
+            title={nextPaymentDate ? `Go to ${formatDate(nextPaymentDate)}` : 'No future payments'}
+        >⟩</button>
     </div>
-
-    <button
-        class="nav-btn"
-        onclick={goToNextPayment}
-        disabled={!nextPaymentDate}
-        title={nextPaymentDate ? `Go to ${formatDate(nextPaymentDate)}` : 'No future payments'}
-    >⟩</button>
 
     <button
         class="today-btn"
@@ -1239,10 +1376,17 @@
     /* Date selector styles */
     .date-selector {
         display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .date-nav-row {
+        display: flex;
         align-items: center;
         justify-content: center;
         gap: 0.5rem;
-        flex-wrap: wrap;
+        width: 100%;
     }
 
     .nav-btn {
@@ -1254,6 +1398,7 @@
         font-size: 1rem;
         cursor: pointer;
         transition: background 0.2s, opacity 0.2s;
+        flex-shrink: 0;
     }
 
     .nav-btn:hover:not(:disabled) {
@@ -1270,7 +1415,8 @@
         flex-direction: column;
         align-items: center;
         gap: 0.25rem;
-        padding: 0 1rem;
+        padding: 0 0.5rem;
+        min-width: 0;
     }
 
     .date-input {
@@ -1329,7 +1475,6 @@
         font-size: 0.9rem;
         cursor: pointer;
         transition: background 0.2s;
-        margin-left: 0.5rem;
     }
 
     .today-btn:hover:not(:disabled) {

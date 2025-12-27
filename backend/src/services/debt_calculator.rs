@@ -1,4 +1,4 @@
-use chrono::{NaiveDate, Months};
+use chrono::{Datelike, NaiveDate, Months};
 use serde::Serialize;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
@@ -484,22 +484,48 @@ fn generate_payment_occurrences(payment: &Payment, target_date: NaiveDate) -> Ve
     // Recurring payment - generate occurrences
     let recurrence_type = payment.recurrence_type.as_deref().unwrap_or("monthly");
     let interval = payment.recurrence_interval.unwrap_or(1) as u32;
-    let times_per = payment.recurrence_times_per;
     let end_date = payment.recurrence_end_date.as_ref()
         .and_then(|d| parse_date(d))
         .unwrap_or(target_date);
-
     let effective_end = end_date.min(target_date);
-    let mut current = start_date;
 
-    // Calculate the effective interval based on times_per
-    // If times_per is set, we divide the period by times_per
+    // Handle enhanced recurrence patterns
+    match recurrence_type {
+        "weekly" => {
+            // Check for weekday selection pattern
+            if let Some(weekdays_json) = &payment.recurrence_weekdays {
+                return generate_weekly_with_weekdays(payment, start_date, effective_end, interval, weekdays_json);
+            }
+        }
+        "monthly" => {
+            // Check for monthday selection pattern (only valid when interval = 1)
+            if interval == 1 {
+                if let Some(monthdays_json) = &payment.recurrence_monthdays {
+                    return generate_monthly_with_monthdays(payment, start_date, effective_end, monthdays_json);
+                }
+            }
+        }
+        "yearly" => {
+            // Check for month selection pattern (only valid when interval = 1)
+            if interval == 1 {
+                if let Some(months_json) = &payment.recurrence_months {
+                    return generate_yearly_with_months(payment, start_date, effective_end, months_json);
+                }
+            }
+        }
+        _ => {}
+    }
+
+    // Legacy/simple recurrence - every X periods
+    // Also handle deprecated times_per for backwards compatibility
+    let times_per = payment.recurrence_times_per;
     let (effective_interval, effective_type) = if let Some(times) = times_per {
         calculate_times_per_interval(recurrence_type, interval, times as u32)
     } else {
         (interval, recurrence_type.to_string())
     };
 
+    let mut current = start_date;
     while current <= effective_end {
         occurrences.push(PaymentOccurrence {
             payment_id: payment.id,
@@ -518,6 +544,252 @@ fn generate_payment_occurrences(payment: &Payment, target_date: NaiveDate) -> Ve
     }
 
     occurrences
+}
+
+/// Generate weekly occurrences with specific weekday selections
+/// weekdays_json format: [[1,3],[5]] - array of arrays, one per week in cycle
+/// Each inner array contains weekday numbers (0=Sun, 1=Mon, ..., 6=Sat)
+fn generate_weekly_with_weekdays(
+    payment: &Payment,
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+    interval: u32,
+    weekdays_json: &str,
+) -> Vec<PaymentOccurrence> {
+    let mut occurrences = Vec::new();
+
+    // Parse weekdays JSON - array of arrays
+    let week_patterns: Vec<Vec<u32>> = match serde_json::from_str(weekdays_json) {
+        Ok(p) => p,
+        Err(_) => return occurrences, // Invalid JSON, return empty
+    };
+
+    if week_patterns.is_empty() {
+        return occurrences;
+    }
+
+    // Calculate the start of the week containing start_date
+    let start_weekday = start_date.weekday().num_days_from_sunday();
+    let week_start = start_date - chrono::Duration::days(start_weekday as i64);
+
+    // Total weeks in the pattern cycle
+    let cycle_weeks = if interval <= 4 { interval } else { interval };
+
+    // Iterate through weeks from start
+    let mut cycle_week = 0u32; // Which week in the cycle (0-indexed)
+    let mut current_week_start = week_start;
+
+    // Maximum iterations to prevent infinite loops (10 years of weeks)
+    let max_iterations = 52 * 10;
+    let mut iterations = 0;
+
+    while current_week_start <= end_date && iterations < max_iterations {
+        iterations += 1;
+
+        // Get the pattern for this week in the cycle
+        let pattern_idx = (cycle_week % week_patterns.len() as u32) as usize;
+        let weekdays = &week_patterns[pattern_idx];
+
+        // Generate occurrences for each selected weekday
+        for &weekday in weekdays {
+            let occurrence_date = current_week_start + chrono::Duration::days(weekday as i64);
+
+            // Must be >= start_date and <= end_date
+            if occurrence_date >= start_date && occurrence_date <= end_date {
+                occurrences.push(PaymentOccurrence {
+                    payment_id: payment.id,
+                    description: payment.description.clone(),
+                    amount: payment.amount,
+                    occurrence_date: occurrence_date.format("%Y-%m-%d").to_string(),
+                    payer_id: payment.payer_id,
+                    is_recurring: true,
+                    receiver_account_id: payment.receiver_account_id,
+                });
+            }
+        }
+
+        // Move to next week
+        cycle_week += 1;
+
+        // After completing the cycle, skip weeks based on interval
+        if cycle_week >= cycle_weeks {
+            cycle_week = 0;
+            // Move forward by cycle_weeks weeks (already processed them)
+        }
+
+        current_week_start = current_week_start + chrono::Duration::weeks(1);
+    }
+
+    // Sort by date
+    occurrences.sort_by(|a, b| a.occurrence_date.cmp(&b.occurrence_date));
+    occurrences
+}
+
+/// Generate monthly occurrences on specific days
+/// monthdays_json format: [1, 15, 28] - array of day numbers
+fn generate_monthly_with_monthdays(
+    payment: &Payment,
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+    monthdays_json: &str,
+) -> Vec<PaymentOccurrence> {
+    let mut occurrences = Vec::new();
+
+    // Parse monthdays JSON - array of day numbers
+    let monthdays: Vec<u32> = match serde_json::from_str(monthdays_json) {
+        Ok(d) => d,
+        Err(_) => return occurrences,
+    };
+
+    if monthdays.is_empty() {
+        return occurrences;
+    }
+
+    // Start from the month of start_date
+    let mut current_year = start_date.year();
+    let mut current_month = start_date.month();
+
+    // Maximum iterations (20 years of months)
+    let max_iterations = 12 * 20;
+    let mut iterations = 0;
+
+    while iterations < max_iterations {
+        iterations += 1;
+
+        // Get the last day of current month
+        let days_in_month = get_days_in_month(current_year, current_month);
+
+        // Generate occurrences for each selected day
+        for &day in &monthdays {
+            // Clamp day to valid range (handle dates > 28 for short months)
+            let actual_day = day.min(days_in_month);
+
+            if let Some(occurrence_date) = NaiveDate::from_ymd_opt(current_year, current_month, actual_day) {
+                // Must be >= start_date and <= end_date
+                if occurrence_date >= start_date && occurrence_date <= end_date {
+                    occurrences.push(PaymentOccurrence {
+                        payment_id: payment.id,
+                        description: payment.description.clone(),
+                        amount: payment.amount,
+                        occurrence_date: occurrence_date.format("%Y-%m-%d").to_string(),
+                        payer_id: payment.payer_id,
+                        is_recurring: true,
+                        receiver_account_id: payment.receiver_account_id,
+                    });
+                }
+            }
+        }
+
+        // Check if we've passed end_date
+        if let Some(first_of_next) = NaiveDate::from_ymd_opt(current_year, current_month, 1)
+            .and_then(|d| d.checked_add_months(Months::new(1)))
+        {
+            if first_of_next > end_date {
+                break;
+            }
+            current_year = first_of_next.year();
+            current_month = first_of_next.month();
+        } else {
+            break;
+        }
+    }
+
+    // Sort by date
+    occurrences.sort_by(|a, b| a.occurrence_date.cmp(&b.occurrence_date));
+    occurrences
+}
+
+/// Generate yearly occurrences in specific months
+/// months_json format: [1, 6, 12] - array of month numbers (1-12)
+fn generate_yearly_with_months(
+    payment: &Payment,
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+    months_json: &str,
+) -> Vec<PaymentOccurrence> {
+    let mut occurrences = Vec::new();
+
+    // Parse months JSON - array of month numbers
+    let months: Vec<u32> = match serde_json::from_str(months_json) {
+        Ok(m) => m,
+        Err(_) => return occurrences,
+    };
+
+    if months.is_empty() {
+        return occurrences;
+    }
+
+    // Get the day from start_date to use for all occurrences
+    let base_day = start_date.day();
+
+    // Start from the year of start_date
+    let mut current_year = start_date.year();
+
+    // Maximum iterations (50 years)
+    let max_iterations = 50;
+    let mut iterations = 0;
+
+    while iterations < max_iterations {
+        iterations += 1;
+
+        // Generate occurrences for each selected month
+        for &month in &months {
+            if month < 1 || month > 12 {
+                continue;
+            }
+
+            // Get the last day of this month
+            let days_in_month = get_days_in_month(current_year, month);
+            let actual_day = base_day.min(days_in_month);
+
+            if let Some(occurrence_date) = NaiveDate::from_ymd_opt(current_year, month, actual_day) {
+                // Must be >= start_date and <= end_date
+                if occurrence_date >= start_date && occurrence_date <= end_date {
+                    occurrences.push(PaymentOccurrence {
+                        payment_id: payment.id,
+                        description: payment.description.clone(),
+                        amount: payment.amount,
+                        occurrence_date: occurrence_date.format("%Y-%m-%d").to_string(),
+                        payer_id: payment.payer_id,
+                        is_recurring: true,
+                        receiver_account_id: payment.receiver_account_id,
+                    });
+                }
+            }
+        }
+
+        // Move to next year
+        current_year += 1;
+
+        // Check if we've passed end_date
+        if let Some(jan_first) = NaiveDate::from_ymd_opt(current_year, 1, 1) {
+            if jan_first > end_date {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    // Sort by date
+    occurrences.sort_by(|a, b| a.occurrence_date.cmp(&b.occurrence_date));
+    occurrences
+}
+
+/// Get the number of days in a month
+fn get_days_in_month(year: i32, month: u32) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            if (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0) {
+                29 // Leap year
+            } else {
+                28
+            }
+        }
+        _ => 30, // Invalid month, default to 30
+    }
 }
 
 /// Calculate effective interval for "X times per period"

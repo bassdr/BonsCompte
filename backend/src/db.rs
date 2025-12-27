@@ -324,6 +324,36 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .await
     .ok(); // Ignore error if column already exists
 
+    // =====================
+    // Migration 008: Enhanced Recurrence Patterns
+    // =====================
+    // Store selected weekdays for weekly recurrence (JSON array of arrays)
+    // Example: [[1,3],[0,5]] means week 1: Mon/Wed, week 2: Sun/Fri
+    sqlx::query(
+        "ALTER TABLE payments ADD COLUMN recurrence_weekdays TEXT"
+    )
+    .execute(pool)
+    .await
+    .ok();
+
+    // Store selected days for monthly recurrence (JSON array)
+    // Example: [1, 15] means 1st and 15th of each month
+    sqlx::query(
+        "ALTER TABLE payments ADD COLUMN recurrence_monthdays TEXT"
+    )
+    .execute(pool)
+    .await
+    .ok();
+
+    // Store selected months for yearly recurrence (JSON array)
+    // Example: [1, 6, 12] means January, June, December
+    sqlx::query(
+        "ALTER TABLE payments ADD COLUMN recurrence_months TEXT"
+    )
+    .execute(pool)
+    .await
+    .ok();
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

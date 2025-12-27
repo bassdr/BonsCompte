@@ -41,6 +41,11 @@
     // For yearly: array of selected month numbers (1-12)
     let recurrenceMonths = $state<number[]>([]);
 
+    // Track if user has manually modified recurrence selections
+    let userModifiedWeekdays = $state(false);
+    let userModifiedMonthdays = $state(false);
+    let userModifiedMonths = $state(false);
+
     // Day and month names for display
     const WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -147,8 +152,12 @@
         const defaultMonth = paymentDate ? getDefaultMonth(paymentDate) : 1;
 
         if (recurrenceType === 'weekly' && recurrenceInterval <= 4) {
-            // Initialize weekday arrays if empty or wrong size
+            // Initialize weekday arrays if empty, wrong size, or date changed and user hasn't modified
             if (recurrenceWeekdays.length !== recurrenceInterval) {
+                recurrenceWeekdays = initializeWeekdayArrays(recurrenceInterval, defaultWeekday);
+                userModifiedWeekdays = false;
+            } else if (!userModifiedWeekdays) {
+                // Update to match new date's weekday if user hasn't manually changed selection
                 recurrenceWeekdays = initializeWeekdayArrays(recurrenceInterval, defaultWeekday);
             }
         }
@@ -156,11 +165,19 @@
         if (recurrenceType === 'monthly' && recurrenceInterval === 1) {
             if (recurrenceMonthdays.length === 0) {
                 recurrenceMonthdays = [defaultMonthDay];
+                userModifiedMonthdays = false;
+            } else if (!userModifiedMonthdays && recurrenceMonthdays.length === 1) {
+                // Update single-day selection to match new date if user hasn't modified
+                recurrenceMonthdays = [defaultMonthDay];
             }
         }
 
         if (recurrenceType === 'yearly' && recurrenceInterval === 1) {
             if (recurrenceMonths.length === 0) {
+                recurrenceMonths = [defaultMonth];
+                userModifiedMonths = false;
+            } else if (!userModifiedMonths && recurrenceMonths.length === 1) {
+                // Update single-month selection to match new date if user hasn't modified
                 recurrenceMonths = [defaultMonth];
             }
         }
@@ -325,6 +342,9 @@
         recurrenceWeekdays = [];
         recurrenceMonthdays = [];
         recurrenceMonths = [];
+        userModifiedWeekdays = false;
+        userModifiedMonthdays = false;
+        userModifiedMonths = false;
         receiverAccountId = null; // Reset internal transfer state
         useSplitDate = false;
         splitFromDate = getLocalDateString();
@@ -367,31 +387,40 @@
             if (payment.recurrence_weekdays) {
                 try {
                     recurrenceWeekdays = JSON.parse(payment.recurrence_weekdays);
+                    userModifiedWeekdays = true; // Treat loaded patterns as user-set
                 } catch {
                     recurrenceWeekdays = [];
+                    userModifiedWeekdays = false;
                 }
             } else {
                 recurrenceWeekdays = [];
+                userModifiedWeekdays = false;
             }
 
             if (payment.recurrence_monthdays) {
                 try {
                     recurrenceMonthdays = JSON.parse(payment.recurrence_monthdays);
+                    userModifiedMonthdays = true;
                 } catch {
                     recurrenceMonthdays = [];
+                    userModifiedMonthdays = false;
                 }
             } else {
                 recurrenceMonthdays = [];
+                userModifiedMonthdays = false;
             }
 
             if (payment.recurrence_months) {
                 try {
                     recurrenceMonths = JSON.parse(payment.recurrence_months);
+                    userModifiedMonths = true;
                 } catch {
                     recurrenceMonths = [];
+                    userModifiedMonths = false;
                 }
             } else {
                 recurrenceMonths = [];
+                userModifiedMonths = false;
             }
         }
 
@@ -460,6 +489,7 @@
 
     // Toggle weekday in a specific week
     function toggleWeekday(weekIndex: number, day: number) {
+        userModifiedWeekdays = true;
         const week = recurrenceWeekdays[weekIndex] || [];
         const idx = week.indexOf(day);
         if (idx >= 0) {
@@ -475,6 +505,7 @@
 
     // Toggle month day
     function toggleMonthday(day: number) {
+        userModifiedMonthdays = true;
         const idx = recurrenceMonthdays.indexOf(day);
         if (idx >= 0) {
             if (recurrenceMonthdays.length > 1) {
@@ -487,6 +518,7 @@
 
     // Toggle month
     function toggleMonth(month: number) {
+        userModifiedMonths = true;
         const idx = recurrenceMonths.indexOf(month);
         if (idx >= 0) {
             if (recurrenceMonths.length > 1) {
@@ -912,6 +944,64 @@
                     </div>
                 </div>
 
+                {#if isInternalTransfer}
+                    {@const receiver = $participants.find(p => p.id === receiverAccountId)}
+                    <div class="internal-transfer-banner">
+                        <span class="transfer-icon">↗</span>
+                        <span class="transfer-text">Internal Transfer to {receiver?.name ?? 'Unknown'}</span>
+                        <button type="button" class="clear-transfer-btn" onclick={() => { receiverAccountId = null; includeAll(); }}>Cancel</button>
+                    </div>
+                {/if}
+
+                <div class="split-header">
+                    <h4>Split between</h4>
+                    <button type="button" class="small-btn" onclick={includeAll}>Include all</button>
+                </div>
+                <table class="split-table">
+                    <thead>
+                        <tr>
+                            <th>Participant</th>
+                            <th>Include</th>
+                            <th>Weight</th>
+                            <th>Share</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {#each $participants as p}
+                            <tr>
+                                <td>{p.name}</td>
+                                <td>
+                                    <input
+                                        type="checkbox"
+                                        checked={included[p.id]}
+                                        onchange={(e) => handleIncludedChange(p.id, e.currentTarget.checked)}
+                                    />
+                                </td>
+                                <td>
+                                    <input
+                                        type="number"
+                                        value={weights[p.id]}
+                                        oninput={(e) => handleWeightChange(p.id, parseFloat(e.currentTarget.value) || 0)}
+                                        min="0"
+                                        step="0.5"
+                                        disabled={!included[p.id]}
+                                    />
+                                </td>
+                                <td class="share">${shares[p.id]?.toFixed(2) ?? '0.00'}</td>
+                                <td>
+                                    <button
+                                        type="button"
+                                        class="payback-btn transfer-btn"
+                                        onclick={() => transferTo(p.id)}
+                                        title={p.account_type === 'pool' ? 'Deposit to pool' : 'Transfer money to this person'}
+                                    >{p.account_type === 'pool' ? 'Deposit' : 'Pay back'}</button>
+                                </td>
+                            </tr>
+                        {/each}
+                    </tbody>
+                </table>
+
                 <!-- Recurrence Section -->
                 <div class="recurrence-section">
                     <label class="checkbox-label">
@@ -1019,64 +1109,6 @@
                         </div>
                     {/if}
                 </div>
-
-                {#if isInternalTransfer}
-                    {@const receiver = $participants.find(p => p.id === receiverAccountId)}
-                    <div class="internal-transfer-banner">
-                        <span class="transfer-icon">↗</span>
-                        <span class="transfer-text">Internal Transfer to {receiver?.name ?? 'Unknown'}</span>
-                        <button type="button" class="clear-transfer-btn" onclick={() => { receiverAccountId = null; includeAll(); }}>Cancel</button>
-                    </div>
-                {/if}
-
-                <div class="split-header">
-                    <h4>Split between</h4>
-                    <button type="button" class="small-btn" onclick={includeAll}>Include all</button>
-                </div>
-                <table class="split-table">
-                    <thead>
-                        <tr>
-                            <th>Participant</th>
-                            <th>Include</th>
-                            <th>Weight</th>
-                            <th>Share</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {#each $participants as p}
-                            <tr>
-                                <td>{p.name}</td>
-                                <td>
-                                    <input
-                                        type="checkbox"
-                                        checked={included[p.id]}
-                                        onchange={(e) => handleIncludedChange(p.id, e.currentTarget.checked)}
-                                    />
-                                </td>
-                                <td>
-                                    <input
-                                        type="number"
-                                        value={weights[p.id]}
-                                        oninput={(e) => handleWeightChange(p.id, parseFloat(e.currentTarget.value) || 0)}
-                                        min="0"
-                                        step="0.5"
-                                        disabled={!included[p.id]}
-                                    />
-                                </td>
-                                <td class="share">${shares[p.id]?.toFixed(2) ?? '0.00'}</td>
-                                <td>
-                                    <button
-                                        type="button"
-                                        class="payback-btn transfer-btn"
-                                        onclick={() => transferTo(p.id)}
-                                        title={p.account_type === 'pool' ? 'Deposit to pool' : 'Transfer money to this person'}
-                                    >{p.account_type === 'pool' ? 'Deposit' : 'Pay back'}</button>
-                                </td>
-                            </tr>
-                        {/each}
-                    </tbody>
-                </table>
 
                 <!-- Split date option for recurring payments -->
                 {#if editingPaymentId !== null && editingPaymentOriginal?.is_recurring}
@@ -1833,14 +1865,15 @@
 
     .monthday-grid {
         display: grid;
-        grid-template-columns: repeat(7, 1fr);
-        gap: 0.25rem;
+        grid-template-columns: repeat(7, minmax(28px, 36px));
+        gap: 0.2rem;
+        justify-content: start;
     }
 
     .monthday-btn {
         aspect-ratio: 1;
-        padding: 0.25rem;
-        min-width: 32px;
+        padding: 0.15rem;
+        font-size: 0.75rem;
     }
 
     .month-grid {

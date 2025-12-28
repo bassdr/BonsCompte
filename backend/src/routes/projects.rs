@@ -10,7 +10,8 @@ use sqlx::SqlitePool;
 use crate::{
     auth::{AuthUser, ProjectMember, AdminMember},
     error::{AppError, AppResult},
-    models::{Project, ProjectWithRole, CreateProject, UpdateProject, JoinProject, UpdateProjectSettings},
+    models::{Project, ProjectWithRole, CreateProject, UpdateProject, JoinProject, UpdateProjectSettings, EntityType},
+    services::HistoryService,
     AppState,
 };
 
@@ -128,6 +129,12 @@ async fn update_project(
 ) -> AppResult<Json<Project>> {
     let member = admin.0;
 
+    // Capture before state for history
+    let before: Project = sqlx::query_as("SELECT * FROM projects WHERE id = ?")
+        .bind(member.project_id)
+        .fetch_one(&pool)
+        .await?;
+
     // Build dynamic update
     let mut updates = Vec::new();
     let mut binds: Vec<String> = Vec::new();
@@ -157,6 +164,20 @@ async fn update_project(
         .bind(member.project_id)
         .fetch_one(&pool)
         .await?;
+
+    // Log the update to history
+    let correlation_id = HistoryService::new_correlation_id();
+    let _ = HistoryService::log_update(
+        &pool,
+        &correlation_id,
+        member.user_id,
+        member.project_id,
+        EntityType::Project,
+        member.project_id,
+        &before,
+        &project,
+    )
+    .await;
 
     Ok(Json(project))
 }
@@ -203,6 +224,12 @@ async fn update_project_settings(
 ) -> AppResult<Json<Project>> {
     let member = admin.0;
 
+    // Capture before state for history
+    let before: Project = sqlx::query_as("SELECT * FROM projects WHERE id = ?")
+        .bind(member.project_id)
+        .fetch_one(&pool)
+        .await?;
+
     // Build dynamic update
     let mut updates = Vec::new();
     let mut bool_binds: Vec<bool> = Vec::new();
@@ -232,6 +259,20 @@ async fn update_project_settings(
         .bind(member.project_id)
         .fetch_one(&pool)
         .await?;
+
+    // Log the update to history
+    let correlation_id = HistoryService::new_correlation_id();
+    let _ = HistoryService::log_update(
+        &pool,
+        &correlation_id,
+        member.user_id,
+        member.project_id,
+        EntityType::Project,
+        member.project_id,
+        &before,
+        &project,
+    )
+    .await;
 
     Ok(Json(project))
 }

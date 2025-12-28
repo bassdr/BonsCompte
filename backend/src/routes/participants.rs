@@ -10,7 +10,8 @@ use sqlx::SqlitePool;
 use crate::{
     auth::{ProjectMember, AdminMember},
     error::{AppError, AppResult},
-    models::{Participant, CreateParticipant, UpdateParticipant},
+    models::{Participant, CreateParticipant, UpdateParticipant, EntityType},
+    services::HistoryService,
     AppState,
 };
 
@@ -91,6 +92,19 @@ async fn create_participant(
         .bind(result.last_insert_rowid())
         .fetch_one(&pool)
         .await?;
+
+    // Log the creation to history
+    let correlation_id = HistoryService::new_correlation_id();
+    let _ = HistoryService::log_create(
+        &pool,
+        &correlation_id,
+        member.user_id,
+        member.project_id,
+        EntityType::Participant,
+        participant.id,
+        &participant,
+    )
+    .await;
 
     Ok(Json(participant))
 }
@@ -180,6 +194,20 @@ async fn update_participant(
         .fetch_one(&pool)
         .await?;
 
+    // Log the update to history
+    let correlation_id = HistoryService::new_correlation_id();
+    let _ = HistoryService::log_update(
+        &pool,
+        &correlation_id,
+        member.user_id,
+        member.project_id,
+        EntityType::Participant,
+        path.participant_id,
+        &existing,
+        &participant,
+    )
+    .await;
+
     Ok(Json(participant))
 }
 
@@ -190,6 +218,17 @@ async fn delete_participant(
 ) -> AppResult<Json<serde_json::Value>> {
     let member = admin.0;
 
+    // Capture before state for history
+    let existing: Option<Participant> = sqlx::query_as(
+        "SELECT * FROM participants WHERE id = ? AND project_id = ?"
+    )
+    .bind(path.participant_id)
+    .bind(member.project_id)
+    .fetch_optional(&pool)
+    .await?;
+
+    let existing = existing.ok_or_else(|| AppError::NotFound("Participant not found".to_string()))?;
+
     let result = sqlx::query("DELETE FROM participants WHERE id = ? AND project_id = ?")
         .bind(path.participant_id)
         .bind(member.project_id)
@@ -199,6 +238,19 @@ async fn delete_participant(
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("Participant not found".to_string()));
     }
+
+    // Log the deletion to history
+    let correlation_id = HistoryService::new_correlation_id();
+    let _ = HistoryService::log_delete(
+        &pool,
+        &correlation_id,
+        member.user_id,
+        member.project_id,
+        EntityType::Participant,
+        path.participant_id,
+        &existing,
+    )
+    .await;
 
     Ok(Json(serde_json::json!({ "deleted": true })))
 }

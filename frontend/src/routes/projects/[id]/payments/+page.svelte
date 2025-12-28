@@ -157,8 +157,11 @@
                 recurrenceWeekdays = initializeWeekdayArrays(recurrenceInterval, defaultWeekday);
                 userModifiedWeekdays = false;
             } else if (!userModifiedWeekdays) {
-                // Update to match new date's weekday if user hasn't manually changed selection
-                recurrenceWeekdays = initializeWeekdayArrays(recurrenceInterval, defaultWeekday);
+                // Only update if the value actually changed (avoid infinite loop)
+                const newWeekdays = initializeWeekdayArrays(recurrenceInterval, defaultWeekday);
+                if (JSON.stringify(recurrenceWeekdays) !== JSON.stringify(newWeekdays)) {
+                    recurrenceWeekdays = newWeekdays;
+                }
             }
         }
 
@@ -167,8 +170,10 @@
                 recurrenceMonthdays = [defaultMonthDay];
                 userModifiedMonthdays = false;
             } else if (!userModifiedMonthdays && recurrenceMonthdays.length === 1) {
-                // Update single-day selection to match new date if user hasn't modified
-                recurrenceMonthdays = [defaultMonthDay];
+                // Only update if the value actually changed (avoid infinite loop)
+                if (recurrenceMonthdays[0] !== defaultMonthDay) {
+                    recurrenceMonthdays = [defaultMonthDay];
+                }
             }
         }
 
@@ -177,8 +182,10 @@
                 recurrenceMonths = [defaultMonth];
                 userModifiedMonths = false;
             } else if (!userModifiedMonths && recurrenceMonths.length === 1) {
-                // Update single-month selection to match new date if user hasn't modified
-                recurrenceMonths = [defaultMonth];
+                // Only update if the value actually changed (avoid infinite loop)
+                if (recurrenceMonths[0] !== defaultMonth) {
+                    recurrenceMonths = [defaultMonth];
+                }
             }
         }
     });

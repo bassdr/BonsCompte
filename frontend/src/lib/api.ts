@@ -419,3 +419,55 @@ export const getDebts = (projectId: number, targetDate?: string): Promise<DebtSu
     const params = targetDate ? `?date=${targetDate}` : '';
     return authFetch(`/projects/${projectId}/debts${params}`);
 };
+
+// History
+export interface HistoryEntry {
+    id: number;
+    created_at: string;
+    correlation_id: string;
+    actor_user_id: number | null;
+    actor_name: string | null;
+    project_id: number | null;
+    entity_type: string;
+    entity_id: number | null;
+    action: 'CREATE' | 'UPDATE' | 'DELETE' | 'UNDO';
+    payload_before: unknown | null;
+    payload_after: unknown | null;
+    reason: string | null;
+    undoes_history_id: number | null;
+    is_undone: boolean;
+}
+
+export interface HistoryQuery {
+    limit?: number;
+    offset?: number;
+    entity_type?: string;
+}
+
+export interface ChainVerification {
+    is_valid: boolean;
+    total_entries: number;
+    first_broken_id: number | null;
+    message: string;
+}
+
+export const getProjectHistory = (projectId: number, query?: HistoryQuery): Promise<HistoryEntry[]> => {
+    const params = new URLSearchParams();
+    if (query?.limit) params.set('limit', query.limit.toString());
+    if (query?.offset) params.set('offset', query.offset.toString());
+    if (query?.entity_type) params.set('entity_type', query.entity_type);
+    const queryString = params.toString();
+    return authFetch(`/projects/${projectId}/history${queryString ? '?' + queryString : ''}`);
+};
+
+export const getEntityHistory = (projectId: number, entityType: string, entityId: number): Promise<HistoryEntry[]> =>
+    authFetch(`/projects/${projectId}/history/${entityType}/${entityId}`);
+
+export const undoHistoryEntry = (projectId: number, historyId: number, reason?: string): Promise<HistoryEntry> =>
+    authFetch(`/projects/${projectId}/history/${historyId}/undo`, {
+        method: "POST",
+        body: JSON.stringify({ reason })
+    });
+
+export const verifyHistoryChain = (projectId: number): Promise<ChainVerification> =>
+    authFetch(`/projects/${projectId}/history/verify`);

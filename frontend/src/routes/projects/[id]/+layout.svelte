@@ -60,6 +60,9 @@
                 <a href="/projects/{$page.params.id}/members" class:active={$page.url.pathname.includes('/members')}>
                     Members
                 </a>
+                <a href="/projects/{$page.params.id}/history" class:active={$page.url.pathname.includes('/history')}>
+                    History
+                </a>
                 {#if $isAdmin}
                     <a href="/projects/{$page.params.id}/settings" class:active={$page.url.pathname.includes('/settings')}>
                         Settings

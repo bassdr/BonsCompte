@@ -32,6 +32,7 @@
     let recurrenceInterval = $state(1);
     let recurrenceType = $state<'daily' | 'weekly' | 'monthly' | 'yearly'>('monthly');
     let recurrenceEndDate = $state('');
+    let recurrenceCount = $state<number | null>(null);
 
     // Enhanced recurrence patterns
     // For weekly: array of arrays, one per week in cycle - each inner array contains selected weekdays (0=Sun, 6=Sat)
@@ -63,6 +64,37 @@
     let showMonthdayWarning = $derived(
         recurrenceMonthdays.some(d => d > 28)
     );
+
+    // Computed end date from occurrence count
+    let endDateFromCount = $derived.by(() => {
+        if (!isRecurring || !recurrenceCount || recurrenceCount < 1 || !paymentDate) return null;
+        return computeNthOccurrenceDate(
+            paymentDate,
+            recurrenceCount,
+            recurrenceType,
+            recurrenceInterval,
+            recurrenceWeekdays.length > 0 ? recurrenceWeekdays : undefined,
+            recurrenceMonthdays.length > 0 ? recurrenceMonthdays : undefined,
+            recurrenceMonths.length > 0 ? recurrenceMonths : undefined
+        );
+    });
+
+    // Determine which end constraint wins (most restrictive = earlier date)
+    let effectiveEndDate = $derived.by(() => {
+        if (!recurrenceEndDate && !endDateFromCount) return null;
+        if (!recurrenceEndDate) return endDateFromCount;
+        if (!endDateFromCount) return recurrenceEndDate;
+        // Return the earlier (more restrictive) date
+        return recurrenceEndDate < endDateFromCount ? recurrenceEndDate : endDateFromCount;
+    });
+
+    // Show warning when both constraints are set and they differ
+    let endDateConflict = $derived.by(() => {
+        if (!recurrenceEndDate || !endDateFromCount) return null;
+        if (recurrenceEndDate === endDateFromCount) return null;
+        // Return which one wins
+        return recurrenceEndDate < endDateFromCount ? 'date' : 'count';
+    });
 
     // Internal transfer: receiver_account_id
     // null = external expense (money leaves system)
@@ -346,6 +378,7 @@
         recurrenceInterval = 1;
         recurrenceType = 'monthly';
         recurrenceEndDate = '';
+        recurrenceCount = null;
         recurrenceWeekdays = [];
         recurrenceMonthdays = [];
         recurrenceMonths = [];
@@ -625,6 +658,176 @@
         return addDays(startDate, fullIntervals * dayInterval);
     }
 
+    // Add months to a date, clamping to valid day if needed
+    function addMonths(date: Date, months: number): Date {
+        const result = new Date(date);
+        const targetMonth = result.getMonth() + months;
+        result.setMonth(targetMonth);
+        // Handle month overflow (e.g., Jan 31 + 1 month should be Feb 28/29, not Mar 3)
+        if (result.getMonth() !== ((targetMonth % 12) + 12) % 12) {
+            result.setDate(0); // Go to last day of previous month
+        }
+        return result;
+    }
+
+    // Add years to a date, handling Feb 29 -> Feb 28 for non-leap years
+    function addYears(date: Date, years: number): Date {
+        const result = new Date(date);
+        result.setFullYear(result.getFullYear() + years);
+        // Handle Feb 29 in non-leap years
+        if (date.getMonth() === 1 && date.getDate() === 29 && result.getDate() !== 29) {
+            result.setDate(28);
+        }
+        return result;
+    }
+
+    // Compute the date of the Nth occurrence (1-indexed: count=1 means the start date itself)
+    function computeNthOccurrenceDate(
+        startDateStr: string,
+        count: number,
+        type: string,
+        interval: number,
+        weekdays?: number[][],
+        monthdays?: number[],
+        months?: number[]
+    ): string | null {
+        if (count < 1) return null;
+
+        const startDate = parseDate(startDateStr);
+
+        // For enhanced patterns, we need to iterate through occurrences
+        if (type === 'weekly' && weekdays && weekdays.length > 0 && interval <= 4) {
+            return computeNthWeeklyOccurrence(startDate, count, interval, weekdays);
+        }
+
+        if (type === 'monthly' && monthdays && monthdays.length > 0 && interval === 1) {
+            return computeNthMonthlyOccurrence(startDate, count, monthdays);
+        }
+
+        if (type === 'yearly' && months && months.length > 0 && interval === 1) {
+            return computeNthYearlyOccurrence(startDate, count, months);
+        }
+
+        // Simple recurrence: just add (count-1) intervals
+        let result: Date;
+        switch (type) {
+            case 'daily':
+                result = addDays(startDate, (count - 1) * interval);
+                break;
+            case 'weekly':
+                result = addDays(startDate, (count - 1) * interval * 7);
+                break;
+            case 'monthly':
+                result = addMonths(startDate, (count - 1) * interval);
+                break;
+            case 'yearly':
+                result = addYears(startDate, (count - 1) * interval);
+                break;
+            default:
+                return null;
+        }
+
+        return getLocalDateString(result);
+    }
+
+    // Compute Nth occurrence for weekly pattern with specific weekdays
+    function computeNthWeeklyOccurrence(
+        startDate: Date,
+        count: number,
+        interval: number,
+        weekdays: number[][]
+    ): string {
+        let occurrenceCount = 0;
+        let currentWeekStart = new Date(startDate);
+        // Move to start of week (Sunday)
+        currentWeekStart.setDate(currentWeekStart.getDate() - currentWeekStart.getDay());
+        let cycleWeek = 0;
+
+        // Iterate through weeks
+        for (let weeks = 0; weeks < 1000; weeks++) { // Safety limit
+            const weekDays = weekdays[cycleWeek] || [];
+            for (const dayOfWeek of weekDays.sort((a, b) => a - b)) {
+                const occurrenceDate = addDays(currentWeekStart, dayOfWeek);
+                if (occurrenceDate >= startDate) {
+                    occurrenceCount++;
+                    if (occurrenceCount === count) {
+                        return getLocalDateString(occurrenceDate);
+                    }
+                }
+            }
+            // Move to next week in cycle
+            currentWeekStart = addDays(currentWeekStart, 7);
+            cycleWeek = (cycleWeek + 1) % interval;
+        }
+        // Fallback (shouldn't reach here)
+        return getLocalDateString(addDays(startDate, count * 7));
+    }
+
+    // Compute Nth occurrence for monthly pattern with specific days
+    function computeNthMonthlyOccurrence(
+        startDate: Date,
+        count: number,
+        monthdays: number[]
+    ): string {
+        let occurrenceCount = 0;
+        const startDay = startDate.getDate();
+        let currentYear = startDate.getFullYear();
+        let currentMonth = startDate.getMonth();
+
+        for (let m = 0; m < 1000; m++) { // Safety limit
+            const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+            for (const day of monthdays.sort((a, b) => a - b)) {
+                const effectiveDay = Math.min(day, daysInMonth);
+                const occurrenceDate = new Date(currentYear, currentMonth, effectiveDay);
+                // Only count if >= start date
+                if (occurrenceDate >= startDate) {
+                    occurrenceCount++;
+                    if (occurrenceCount === count) {
+                        return getLocalDateString(occurrenceDate);
+                    }
+                }
+            }
+            // Move to next month
+            currentMonth++;
+            if (currentMonth > 11) {
+                currentMonth = 0;
+                currentYear++;
+            }
+        }
+        // Fallback
+        return getLocalDateString(addMonths(startDate, count));
+    }
+
+    // Compute Nth occurrence for yearly pattern with specific months
+    function computeNthYearlyOccurrence(
+        startDate: Date,
+        count: number,
+        months: number[]
+    ): string {
+        let occurrenceCount = 0;
+        const dayOfMonth = startDate.getDate();
+        let currentYear = startDate.getFullYear();
+
+        for (let y = 0; y < 1000; y++) { // Safety limit
+            for (const month of months.sort((a, b) => a - b)) {
+                const monthIndex = month - 1; // Convert 1-12 to 0-11
+                const daysInMonth = new Date(currentYear, monthIndex + 1, 0).getDate();
+                const effectiveDay = Math.min(dayOfMonth, daysInMonth);
+                const occurrenceDate = new Date(currentYear, monthIndex, effectiveDay);
+                // Only count if >= start date
+                if (occurrenceDate >= startDate) {
+                    occurrenceCount++;
+                    if (occurrenceCount === count) {
+                        return getLocalDateString(occurrenceDate);
+                    }
+                }
+            }
+            currentYear++;
+        }
+        // Fallback
+        return getLocalDateString(addYears(startDate, count));
+    }
+
     async function handleSubmit(e: Event) {
         e.preventDefault();
         if (!amount || parseFloat(amount) <= 0) return;
@@ -655,8 +858,9 @@
                 payload.recurrence_type = recurrenceType;
                 payload.recurrence_interval = recurrenceInterval;
 
-                if (recurrenceEndDate) {
-                    payload.recurrence_end_date = recurrenceEndDate;
+                // Use effectiveEndDate which respects both end date and count (most restrictive wins)
+                if (effectiveEndDate) {
+                    payload.recurrence_end_date = effectiveEndDate;
                 }
 
                 // Enhanced patterns - only include when applicable
@@ -1104,15 +1308,41 @@
                                 </div>
                             {/if}
 
-                            <div class="field">
-                                <label for="end-date">End date (optional)</label>
-                                <input
-                                    id="end-date"
-                                    type="date"
-                                    bind:value={recurrenceEndDate}
-                                    min={paymentDate}
-                                />
+                            <div class="recurrence-limits">
+                                <div class="field">
+                                    <label for="end-date">End date (optional)</label>
+                                    <input
+                                        id="end-date"
+                                        type="date"
+                                        bind:value={recurrenceEndDate}
+                                        min={paymentDate}
+                                    />
+                                </div>
+
+                                <div class="field">
+                                    <label for="recurrence-count">Number of occurrences (optional)</label>
+                                    <input
+                                        id="recurrence-count"
+                                        type="number"
+                                        bind:value={recurrenceCount}
+                                        min="1"
+                                        placeholder="e.g., 12"
+                                    />
+                                    {#if endDateFromCount}
+                                        <span class="count-hint">Last occurrence: {formatDate(endDateFromCount)}</span>
+                                    {/if}
+                                </div>
                             </div>
+
+                            {#if endDateConflict}
+                                <div class="recurrence-conflict-warning">
+                                    {#if endDateConflict === 'date'}
+                                        End date ({formatDate(recurrenceEndDate)}) is more restrictive than {recurrenceCount} occurrences — end date will be used.
+                                    {:else}
+                                        {recurrenceCount} occurrences (ending {formatDate(endDateFromCount ?? '')}) is more restrictive than end date — count will be used.
+                                    {/if}
+                                </div>
+                            {/if}
                         </div>
                     {/if}
                 </div>
@@ -1403,6 +1633,35 @@
         margin-top: 1rem;
         padding-top: 1rem;
         border-top: 1px solid #eee;
+    }
+
+    .recurrence-limits {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin-top: 1rem;
+    }
+
+    .recurrence-limits .field {
+        flex: 1;
+        min-width: 150px;
+    }
+
+    .count-hint {
+        display: block;
+        font-size: 0.8rem;
+        color: #666;
+        margin-top: 0.25rem;
+    }
+
+    .recurrence-conflict-warning {
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+        color: #856404;
+        padding: 0.75rem;
+        border-radius: 8px;
+        margin-top: 0.75rem;
+        font-size: 0.9rem;
     }
 
     .split-date-section {

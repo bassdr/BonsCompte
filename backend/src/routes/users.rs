@@ -35,7 +35,6 @@ struct DeleteAccountRequest {
 
 #[derive(Deserialize)]
 struct UpdatePreferencesRequest {
-    language: Option<String>,
     date_format: Option<String>,
     decimal_separator: Option<String>,
     currency_symbol: Option<String>,
@@ -257,11 +256,6 @@ async fn get_preferences(
 }
 
 fn validate_preferences(req: &UpdatePreferencesRequest) -> Result<(), AppError> {
-    if let Some(ref lang) = req.language {
-        if !["en", "fr"].contains(&lang.as_str()) {
-            return Err(AppError::Validation("Invalid language. Supported: en, fr".to_string()));
-        }
-    }
     if let Some(ref df) = req.date_format {
         if !["mdy", "dmy", "ymd", "iso"].contains(&df.as_str()) {
             return Err(AppError::Validation("Invalid date format. Supported: mdy, dmy, ymd, iso".to_string()));
@@ -293,10 +287,6 @@ async fn update_preferences(
     let mut updates = Vec::new();
     let mut bindings: Vec<Option<String>> = Vec::new();
 
-    if let Some(ref v) = req.language {
-        updates.push("language = ?");
-        bindings.push(Some(v.clone()));
-    }
     if let Some(ref v) = req.date_format {
         updates.push("date_format = ?");
         bindings.push(Some(v.clone()));

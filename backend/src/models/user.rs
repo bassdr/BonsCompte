@@ -49,8 +49,6 @@ pub struct User {
     pub token_version: i64,
     // User preferences (nullable, defaults applied in UserPreferences)
     #[serde(skip_serializing)]
-    pub language: Option<String>,
-    #[serde(skip_serializing)]
     pub date_format: Option<String>,
     #[serde(skip_serializing)]
     pub decimal_separator: Option<String>,
@@ -88,7 +86,6 @@ pub struct LoginRequest {
 /// User preferences with server-side defaults applied
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserPreferences {
-    pub language: String,
     pub date_format: String,
     pub decimal_separator: String,
     pub currency_symbol: String,
@@ -98,7 +95,6 @@ pub struct UserPreferences {
 impl Default for UserPreferences {
     fn default() -> Self {
         Self {
-            language: "en".to_string(),
             date_format: "mdy".to_string(),
             decimal_separator: ".".to_string(),
             currency_symbol: "$".to_string(),
@@ -112,7 +108,6 @@ impl UserPreferences {
     pub fn from_user(user: &User) -> Self {
         let defaults = Self::default();
         Self {
-            language: user.language.clone().unwrap_or(defaults.language),
             date_format: user.date_format.clone().unwrap_or(defaults.date_format),
             decimal_separator: user.decimal_separator.clone().unwrap_or(defaults.decimal_separator),
             currency_symbol: user.currency_symbol.clone().unwrap_or(defaults.currency_symbol),

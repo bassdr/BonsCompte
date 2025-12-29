@@ -2,7 +2,6 @@ import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
 
 export interface UserPreferences {
-    language: string;
     date_format: string;
     decimal_separator: string;
     currency_symbol: string;
@@ -57,7 +56,6 @@ function createAuthStore() {
                                 username: payload.username,
                                 display_name: null,
                                 preferences: {
-                                    language: 'en',
                                     date_format: 'mdy',
                                     decimal_separator: '.',
                                     currency_symbol: '$',

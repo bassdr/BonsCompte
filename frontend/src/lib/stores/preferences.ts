@@ -1,9 +1,7 @@
 import { writable, get } from 'svelte/store';
 import { browser } from '$app/environment';
-import { setLocale } from '$lib/i18n';
 
 export interface UserPreferences {
-	language: string;
 	date_format: string; // 'mdy' | 'dmy' | 'ymd' | 'iso'
 	decimal_separator: string; // '.' | ','
 	currency_symbol: string;
@@ -11,7 +9,6 @@ export interface UserPreferences {
 }
 
 const DEFAULTS: UserPreferences = {
-	language: 'en',
 	date_format: 'mdy',
 	decimal_separator: '.',
 	currency_symbol: '$',
@@ -52,7 +49,6 @@ function createPreferencesStore() {
 		 */
 		initFromUser(prefs: UserPreferences) {
 			set(prefs);
-			setLocale(prefs.language);
 			saveToStorage(prefs);
 		},
 
@@ -63,12 +59,6 @@ function createPreferencesStore() {
 			update((current) => {
 				const updated = { ...current, [key]: value };
 				saveToStorage(updated);
-
-				// If language changed, update i18n locale
-				if (key === 'language') {
-					setLocale(value as string);
-				}
-
 				return updated;
 			});
 		},
@@ -78,7 +68,6 @@ function createPreferencesStore() {
 		 */
 		setAll(prefs: UserPreferences) {
 			set(prefs);
-			setLocale(prefs.language);
 			saveToStorage(prefs);
 		},
 

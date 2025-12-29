@@ -4,7 +4,6 @@
     import { auth, type UserPreferences } from '$lib/auth';
     import { _ } from '$lib/i18n';
     import { preferences } from '$lib/stores/preferences';
-    import { supportedLanguages, setLocale } from '$lib/i18n';
 
     // Password change state
     let currentPassword = $state('');
@@ -22,7 +21,6 @@
     let deleteResult = $state<DeleteAccountResponse | null>(null);
 
     // Preferences state
-    let prefsLanguage = $state($preferences.language);
     let prefsDateFormat = $state($preferences.date_format);
     let prefsDecimalSeparator = $state($preferences.decimal_separator);
     let prefsCurrencySymbol = $state($preferences.currency_symbol);
@@ -33,7 +31,6 @@
 
     // Sync preferences state when store changes
     $effect(() => {
-        prefsLanguage = $preferences.language;
         prefsDateFormat = $preferences.date_format;
         prefsDecimalSeparator = $preferences.decimal_separator;
         prefsCurrencySymbol = $preferences.currency_symbol;
@@ -47,7 +44,6 @@
 
         try {
             const updatedPrefs = await updatePreferences({
-                language: prefsLanguage,
                 date_format: prefsDateFormat,
                 decimal_separator: prefsDecimalSeparator,
                 currency_symbol: prefsCurrencySymbol,
@@ -61,13 +57,6 @@
         } finally {
             prefsSaving = false;
         }
-    }
-
-    function handleLanguageChange(e: Event) {
-        const value = (e.target as HTMLSelectElement).value;
-        prefsLanguage = value;
-        // Immediately update locale for preview
-        setLocale(value);
     }
 
     async function handleChangePassword(e: Event) {
@@ -125,7 +114,7 @@
 </script>
 
 <div class="settings-container">
-    <a href="/" class="back-link">{$_('settings.backToProjects')}</a>
+    <button type="button" class="back-link" onclick={() => history.back()}>{$_('common.back')}</button>
     <h1>{$_('settings.title')}</h1>
 
     {#if $auth.user}
@@ -157,15 +146,6 @@
         {/if}
 
         <div class="prefs-grid">
-            <div class="field">
-                <label for="pref-language">{$_('settings.language')}</label>
-                <select id="pref-language" value={prefsLanguage} onchange={handleLanguageChange}>
-                    {#each supportedLanguages as lang}
-                        <option value={lang.code}>{lang.name}</option>
-                    {/each}
-                </select>
-            </div>
-
             <div class="field">
                 <label for="pref-dateformat">{$_('settings.dateFormat')}</label>
                 <select id="pref-dateformat" bind:value={prefsDateFormat}>
@@ -319,11 +299,16 @@
 
     .back-link {
         display: block;
+        background: none;
+        border: none;
+        padding: 0;
         color: var(--accent, #7b61ff);
         text-decoration: none;
         font-size: 0.95rem;
         font-weight: 500;
         margin-bottom: 1rem;
+        cursor: pointer;
+        text-align: left;
     }
 
     .back-link:hover {

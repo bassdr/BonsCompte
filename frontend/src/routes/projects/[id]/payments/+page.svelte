@@ -7,7 +7,6 @@
     import { get } from 'svelte/store';
     import { formatDate as formatDateI18n, formatDateWithWeekday } from '$lib/format/date';
     import { formatCurrency, formatNumber } from '$lib/format/currency';
-    import DateInput from '$lib/components/DateInput.svelte';
 
     let payments: PaymentWithContributions[] = $state([]);
     let loading = $state(true);
@@ -1131,8 +1130,9 @@
 
                     <div class="field">
                         <label for="payment-date">{$_('payments.date')}</label>
-                        <DateInput
+                        <input
                             id="payment-date"
+                            type="date"
                             bind:value={paymentDate}
                             required
                         />
@@ -1325,8 +1325,9 @@
                             <div class="recurrence-limits">
                                 <div class="field">
                                     <label for="end-date">{$_('payments.endDateOptional')}</label>
-                                    <DateInput
+                                    <input
                                         id="end-date"
+                                        type="date"
                                         bind:value={recurrenceEndDate}
                                         min={paymentDate}
                                     />
@@ -1371,8 +1372,9 @@
                         {#if useSplitDate}
                             <div class="split-date-field">
                                 <label for="split-from-date">Changes start from</label>
-                                <DateInput
+                                <input
                                     id="split-from-date"
+                                    type="date"
                                     bind:value={splitFromDate}
                                     min={editingPaymentOriginal.payment_date.split('T')[0]}
                                     max={editingPaymentOriginal.recurrence_end_date?.split('T')[0] || ''}
@@ -2075,7 +2077,7 @@
         margin-bottom: 0.5rem;
     }
 
-    .split-date-field :global(input) {
+    .split-date-field input[type="date"] {
         max-width: 200px;
     }
 

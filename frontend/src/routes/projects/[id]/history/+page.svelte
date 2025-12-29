@@ -4,6 +4,7 @@
     import { isAdmin } from '$lib/stores/project';
     import { _ } from '$lib/i18n';
     import { formatDate, formatDateWithWeekday } from '$lib/format/date';
+    import { formatCurrency } from '$lib/format/currency';
 
     let entries: HistoryEntry[] = $state([]);
     let loading = $state(true);
@@ -214,10 +215,10 @@
         if (entry.entity_type === 'payment') {
             const p = data.payment as Record<string, unknown> | undefined;
             if (p) {
-                return `$${p.amount} - ${p.description || 'No description'}`;
+                return `${formatCurrency(Number(p.amount))} - ${p.description || 'No description'}`;
             }
             if (data.amount !== undefined) {
-                return `$${data.amount} - ${data.description || 'No description'}`;
+                return `${formatCurrency(Number(data.amount))} - ${data.description || 'No description'}`;
             }
         }
 
@@ -614,6 +615,7 @@
         gap: 0.75rem;
         cursor: pointer;
         flex-wrap: wrap;
+        padding-right: 6rem; /* Make room for undo button */
     }
 
     .expand-icon {
@@ -892,6 +894,7 @@
 
         .entry-header {
             flex-wrap: wrap;
+            padding-right: 0; /* Remove padding on mobile since button is not absolute */
         }
 
         .entry-summary {

@@ -74,6 +74,7 @@
 	"settings.currencyAfter": "Après le montant",
 	"settings.preferencesSaved": "Préférences enregistrées",
 	"settings.savingPreferences": "Enregistrement...",
+	"settings.preferencesNotice": "Note : Ces paramètres affectent uniquement l'affichage des nombres et des dates. BonsCompte n'effectue pas de conversion de devises.",
 
 	"projects.title": "Mes projets",
 	"projects.newProject": "+ Nouveau projet",

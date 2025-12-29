@@ -138,6 +138,10 @@
     <section class="section">
         <h2>{$_('settings.preferences')}</h2>
 
+        <div class="info-notice">
+            {$_('settings.preferencesNotice')}
+        </div>
+
         {#if prefsError}
             <div class="error">{prefsError}</div>
         {/if}
@@ -353,9 +357,19 @@
         font-weight: 500;
     }
 
+    .info-notice {
+        background: #e7f3ff;
+        color: #004085;
+        padding: 0.75rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        font-size: 0.9rem;
+        border-left: 4px solid #0066cc;
+    }
+
     .prefs-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
         gap: 1rem;
         margin-bottom: 1rem;
     }
@@ -366,7 +380,7 @@
     }
 
     .field {
-        margin-bottom: 1rem;
+        margin-bottom: 0;
     }
 
     label {

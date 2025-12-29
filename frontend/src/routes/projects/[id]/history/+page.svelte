@@ -310,7 +310,13 @@
                 class:undone={entry.is_undone}
                 class:is-undo={entry.action === 'UNDO'}
             >
-                <div class="entry-header" onclick={() => toggleExpanded(entry.id)}>
+                <div
+                    class="entry-header"
+                    role="button"
+                    tabindex="0"
+                    onclick={() => toggleExpanded(entry.id)}
+                    onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleExpanded(entry.id)}
+                >
                     <span class="expand-icon">{isExpanded ? '▼' : '▶'}</span>
                     <span class="action-badge" style="background: {getActionColor(entry.action)}">
                         {getActionLabel(entry.action)}
@@ -391,9 +397,22 @@
 
 <!-- Undo Confirmation Dialog -->
 {#if showUndoDialog && entryToUndo}
-    <div class="dialog-overlay" onclick={closeUndoDialog}>
-        <div class="dialog" onclick={(e) => e.stopPropagation()}>
-            <h3>{$_('history.confirmUndo')}</h3>
+    <div
+        class="dialog-overlay"
+        role="presentation"
+        onclick={closeUndoDialog}
+        onkeydown={(e) => e.key === 'Escape' && closeUndoDialog()}
+    >
+        <div
+            class="dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="undo-dialog-title"
+            tabindex="-1"
+            onclick={(e) => e.stopPropagation()}
+            onkeydown={(e) => e.stopPropagation()}
+        >
+            <h3 id="undo-dialog-title">{$_('history.confirmUndo')}</h3>
             <p>
                 {$_('history.confirmUndoQuestion')}
             </p>

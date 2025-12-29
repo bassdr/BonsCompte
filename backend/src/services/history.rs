@@ -443,3 +443,483 @@ impl HistoryService {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    async fn setup_test_db() -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("Failed to create test database");
+
+        // Create history_log table
+        sqlx::query(
+            r#"
+            CREATE TABLE history_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+                correlation_id TEXT NOT NULL,
+                actor_user_id INTEGER,
+                project_id INTEGER,
+                entity_type TEXT NOT NULL,
+                entity_id INTEGER,
+                action TEXT NOT NULL,
+                payload_before TEXT,
+                payload_after TEXT,
+                reason TEXT,
+                undoes_history_id INTEGER,
+                previous_hash TEXT,
+                entry_hash TEXT NOT NULL
+            )
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .expect("Failed to create history_log table");
+
+        // Create append-only triggers
+        sqlx::query(
+            r#"
+            CREATE TRIGGER history_no_update
+            BEFORE UPDATE ON history_log
+            BEGIN
+                SELECT RAISE(FAIL, 'history_log is append-only');
+            END
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .expect("Failed to create update trigger");
+
+        sqlx::query(
+            r#"
+            CREATE TRIGGER history_no_delete
+            BEFORE DELETE ON history_log
+            BEGIN
+                SELECT RAISE(FAIL, 'history_log is append-only');
+            END
+            "#,
+        )
+        .execute(&pool)
+        .await
+        .expect("Failed to create delete trigger");
+
+        pool
+    }
+
+    #[tokio::test]
+    async fn test_trigger_blocks_update() {
+        let pool = setup_test_db().await;
+
+        // Insert a valid entry
+        HistoryService::log_event(
+            &pool,
+            "test-correlation",
+            Some(1),
+            Some(1),
+            "payment",
+            Some(1),
+            "CREATE",
+            None,
+            Some(r#"{"amount":100}"#),
+            None,
+            None,
+        )
+        .await
+        .expect("Failed to insert entry");
+
+        // Attempt to UPDATE - should fail
+        let result = sqlx::query("UPDATE history_log SET action = 'HACKED' WHERE id = 1")
+            .execute(&pool)
+            .await;
+
+        assert!(result.is_err(), "UPDATE should be blocked by trigger");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("append-only"),
+            "Error should mention append-only: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_trigger_blocks_delete() {
+        let pool = setup_test_db().await;
+
+        // Insert a valid entry
+        HistoryService::log_event(
+            &pool,
+            "test-correlation",
+            Some(1),
+            Some(1),
+            "payment",
+            Some(1),
+            "CREATE",
+            None,
+            Some(r#"{"amount":100}"#),
+            None,
+            None,
+        )
+        .await
+        .expect("Failed to insert entry");
+
+        // Attempt to DELETE - should fail
+        let result = sqlx::query("DELETE FROM history_log WHERE id = 1")
+            .execute(&pool)
+            .await;
+
+        assert!(result.is_err(), "DELETE should be blocked by trigger");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("append-only"),
+            "Error should mention append-only: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_valid_chain_passes_verification() {
+        let pool = setup_test_db().await;
+
+        // Insert multiple entries with proper hash chaining
+        HistoryService::log_event(
+            &pool,
+            "corr-1",
+            Some(1),
+            Some(1),
+            "payment",
+            Some(1),
+            "CREATE",
+            None,
+            Some(r#"{"amount":100}"#),
+            None,
+            None,
+        )
+        .await
+        .expect("Failed to insert entry 1");
+
+        HistoryService::log_event(
+            &pool,
+            "corr-2",
+            Some(1),
+            Some(1),
+            "payment",
+            Some(1),
+            "UPDATE",
+            Some(r#"{"amount":100}"#),
+            Some(r#"{"amount":200}"#),
+            None,
+            None,
+        )
+        .await
+        .expect("Failed to insert entry 2");
+
+        HistoryService::log_event(
+            &pool,
+            "corr-3",
+            Some(1),
+            Some(1),
+            "payment",
+            Some(1),
+            "DELETE",
+            Some(r#"{"amount":200}"#),
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("Failed to insert entry 3");
+
+        // Verify chain
+        let verification = HistoryService::verify_chain(&pool)
+            .await
+            .expect("Failed to verify chain");
+
+        assert!(verification.is_valid, "Valid chain should pass verification");
+        assert_eq!(verification.total_entries, 3);
+        assert!(verification.first_broken_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_tampered_hash_detected() {
+        let pool = setup_test_db().await;
+
+        // Insert entries normally
+        HistoryService::log_event(
+            &pool,
+            "corr-1",
+            Some(1),
+            Some(1),
+            "payment",
+            Some(1),
+            "CREATE",
+            None,
+            Some(r#"{"amount":100}"#),
+            None,
+            None,
+        )
+        .await
+        .expect("Failed to insert entry 1");
+
+        HistoryService::log_event(
+            &pool,
+            "corr-2",
+            Some(1),
+            Some(1),
+            "payment",
+            Some(1),
+            "UPDATE",
+            None,
+            Some(r#"{"amount":200}"#),
+            None,
+            None,
+        )
+        .await
+        .expect("Failed to insert entry 2");
+
+        // Drop trigger temporarily to simulate bypass attack
+        sqlx::query("DROP TRIGGER history_no_update")
+            .execute(&pool)
+            .await
+            .expect("Failed to drop trigger");
+
+        // Tamper with entry_hash directly (simulating file-level corruption)
+        sqlx::query("UPDATE history_log SET entry_hash = 'TAMPERED_HASH' WHERE id = 2")
+            .execute(&pool)
+            .await
+            .expect("Failed to tamper with entry");
+
+        // Verify chain - should detect tampering
+        let verification = HistoryService::verify_chain(&pool)
+            .await
+            .expect("Failed to verify chain");
+
+        assert!(
+            !verification.is_valid,
+            "Tampered chain should fail verification"
+        );
+        assert_eq!(
+            verification.first_broken_id,
+            Some(2),
+            "Should identify tampered entry"
+        );
+        assert!(
+            verification.message.contains("Hash mismatch"),
+            "Should report hash mismatch: {}",
+            verification.message
+        );
+    }
+
+    #[tokio::test]
+    async fn test_tampered_payload_detected() {
+        let pool = setup_test_db().await;
+
+        // Insert entries normally
+        HistoryService::log_event(
+            &pool,
+            "corr-1",
+            Some(1),
+            Some(1),
+            "payment",
+            Some(1),
+            "CREATE",
+            None,
+            Some(r#"{"amount":100}"#),
+            None,
+            None,
+        )
+        .await
+        .expect("Failed to insert entry");
+
+        // Drop trigger to simulate bypass
+        sqlx::query("DROP TRIGGER history_no_update")
+            .execute(&pool)
+            .await
+            .expect("Failed to drop trigger");
+
+        // Tamper with payload (without updating hash)
+        sqlx::query(
+            r#"UPDATE history_log SET payload_after = '{"amount":9999999}' WHERE id = 1"#,
+        )
+        .execute(&pool)
+        .await
+        .expect("Failed to tamper with payload");
+
+        // Verify chain - should detect tampering
+        let verification = HistoryService::verify_chain(&pool)
+            .await
+            .expect("Failed to verify chain");
+
+        assert!(
+            !verification.is_valid,
+            "Payload tampering should be detected"
+        );
+        assert_eq!(verification.first_broken_id, Some(1));
+    }
+
+    #[tokio::test]
+    async fn test_broken_chain_link_detected() {
+        let pool = setup_test_db().await;
+
+        // Insert entries normally
+        HistoryService::log_event(
+            &pool,
+            "corr-1",
+            Some(1),
+            Some(1),
+            "payment",
+            Some(1),
+            "CREATE",
+            None,
+            Some(r#"{"amount":100}"#),
+            None,
+            None,
+        )
+        .await
+        .expect("Failed to insert entry 1");
+
+        HistoryService::log_event(
+            &pool,
+            "corr-2",
+            Some(1),
+            Some(1),
+            "payment",
+            Some(1),
+            "UPDATE",
+            None,
+            Some(r#"{"amount":200}"#),
+            None,
+            None,
+        )
+        .await
+        .expect("Failed to insert entry 2");
+
+        // Drop trigger to simulate bypass
+        sqlx::query("DROP TRIGGER history_no_update")
+            .execute(&pool)
+            .await
+            .expect("Failed to drop trigger");
+
+        // Corrupt the previous_hash link
+        sqlx::query("UPDATE history_log SET previous_hash = 'WRONG_PREVIOUS' WHERE id = 2")
+            .execute(&pool)
+            .await
+            .expect("Failed to corrupt chain link");
+
+        // Verify chain - should detect broken link
+        let verification = HistoryService::verify_chain(&pool)
+            .await
+            .expect("Failed to verify chain");
+
+        assert!(!verification.is_valid, "Broken chain should be detected");
+        assert_eq!(verification.first_broken_id, Some(2));
+        assert!(
+            verification.message.contains("Previous hash mismatch")
+                || verification.message.contains("Chain broken"),
+            "Should report chain break: {}",
+            verification.message
+        );
+    }
+
+    #[tokio::test]
+    async fn test_deleted_entry_detected() {
+        let pool = setup_test_db().await;
+
+        // Insert 3 entries
+        for i in 1..=3 {
+            HistoryService::log_event(
+                &pool,
+                &format!("corr-{}", i),
+                Some(1),
+                Some(1),
+                "payment",
+                Some(i),
+                "CREATE",
+                None,
+                Some(&format!(r#"{{"id":{}}}"#, i)),
+                None,
+                None,
+            )
+            .await
+            .expect("Failed to insert entry");
+        }
+
+        // Verify initial chain is valid
+        let initial = HistoryService::verify_chain(&pool)
+            .await
+            .expect("Failed initial verification");
+        assert!(initial.is_valid, "Initial chain should be valid");
+
+        // Drop trigger to simulate bypass
+        sqlx::query("DROP TRIGGER history_no_delete")
+            .execute(&pool)
+            .await
+            .expect("Failed to drop trigger");
+
+        // Delete middle entry (simulating malicious removal)
+        sqlx::query("DELETE FROM history_log WHERE id = 2")
+            .execute(&pool)
+            .await
+            .expect("Failed to delete entry");
+
+        // Verify chain - should detect deletion via broken link
+        let verification = HistoryService::verify_chain(&pool)
+            .await
+            .expect("Failed to verify chain");
+
+        assert!(
+            !verification.is_valid,
+            "Deletion should be detected via broken chain"
+        );
+        // Entry 3 now has wrong previous_hash (points to deleted entry 2's hash)
+        assert_eq!(
+            verification.first_broken_id,
+            Some(3),
+            "Should detect break at entry after deletion"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_empty_log_is_valid() {
+        let pool = setup_test_db().await;
+
+        let verification = HistoryService::verify_chain(&pool)
+            .await
+            .expect("Failed to verify chain");
+
+        assert!(verification.is_valid, "Empty log should be valid");
+        assert_eq!(verification.total_entries, 0);
+    }
+
+    #[tokio::test]
+    async fn test_single_entry_is_valid() {
+        let pool = setup_test_db().await;
+
+        HistoryService::log_event(
+            &pool,
+            "corr-1",
+            Some(1),
+            Some(1),
+            "payment",
+            Some(1),
+            "CREATE",
+            None,
+            Some(r#"{"amount":100}"#),
+            None,
+            None,
+        )
+        .await
+        .expect("Failed to insert entry");
+
+        let verification = HistoryService::verify_chain(&pool)
+            .await
+            .expect("Failed to verify chain");
+
+        assert!(verification.is_valid, "Single entry should be valid");
+        assert_eq!(verification.total_entries, 1);
+    }
+}

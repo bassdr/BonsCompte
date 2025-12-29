@@ -9,8 +9,8 @@ use sqlx::SqlitePool;
 use crate::{
     auth::ProjectMember,
     error::{AppError, AppResult},
-    models::{ContributionWithParticipant, CreatePayment, Payment, PaymentWithContributions},
-    services::validate_image_base64,
+    models::{ContributionWithParticipant, CreatePayment, EntityType, Payment, PaymentWithContributions},
+    services::{validate_image_base64, HistoryService},
     AppState,
 };
 
@@ -267,11 +267,26 @@ async fn create_payment(
         None
     };
 
-    Ok(Json(PaymentWithContributions {
+    let result = PaymentWithContributions {
         payment,
         payer_name,
         contributions,
-    }))
+    };
+
+    // Log the creation to history
+    let correlation_id = HistoryService::new_correlation_id();
+    let _ = HistoryService::log_create(
+        &pool,
+        &correlation_id,
+        member.user_id,
+        member.project_id,
+        EntityType::Payment,
+        payment_id,
+        &result,
+    )
+    .await;
+
+    Ok(Json(result))
 }
 
 async fn update_payment(
@@ -286,17 +301,40 @@ async fn update_payment(
     }
 
     // Verify payment exists and belongs to project
-    let existing: Option<Payment> = sqlx::query_as(
+    let existing: Payment = sqlx::query_as(
         "SELECT * FROM payments WHERE id = ? AND project_id = ?"
     )
     .bind(path.payment_id)
     .bind(member.project_id)
     .fetch_optional(&pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Payment not found".to_string()))?;
+
+    // Capture before state for history (including contributions)
+    let existing_contributions: Vec<ContributionWithParticipant> = sqlx::query_as(
+        "SELECT c.id, c.participant_id, p.name as participant_name, c.payment_id, c.amount, c.weight
+         FROM contributions c
+         JOIN participants p ON c.participant_id = p.id
+         WHERE c.payment_id = ?"
+    )
+    .bind(path.payment_id)
+    .fetch_all(&pool)
     .await?;
 
-    if existing.is_none() {
-        return Err(AppError::NotFound("Payment not found".to_string()));
-    }
+    let existing_payer_name: Option<String> = if let Some(payer_id) = existing.payer_id {
+        sqlx::query_scalar("SELECT name FROM participants WHERE id = ?")
+            .bind(payer_id)
+            .fetch_optional(&pool)
+            .await?
+    } else {
+        None
+    };
+
+    let before_state = PaymentWithContributions {
+        payment: existing,
+        payer_name: existing_payer_name,
+        contributions: existing_contributions,
+    };
 
     // Validate
     if input.amount <= 0.0 {
@@ -451,11 +489,27 @@ async fn update_payment(
         None
     };
 
-    Ok(Json(PaymentWithContributions {
+    let after_state = PaymentWithContributions {
         payment,
         payer_name,
         contributions,
-    }))
+    };
+
+    // Log the update to history
+    let correlation_id = HistoryService::new_correlation_id();
+    let _ = HistoryService::log_update(
+        &pool,
+        &correlation_id,
+        member.user_id,
+        member.project_id,
+        EntityType::Payment,
+        path.payment_id,
+        &before_state,
+        &after_state,
+    )
+    .await;
+
+    Ok(Json(after_state))
 }
 
 async fn delete_payment(
@@ -468,6 +522,51 @@ async fn delete_payment(
         return Err(AppError::Forbidden("Editor access required".to_string()));
     }
 
+    // Capture the before state for history
+    let existing: Option<Payment> = sqlx::query_as(
+        "SELECT * FROM payments WHERE id = ? AND project_id = ?"
+    )
+    .bind(path.payment_id)
+    .bind(member.project_id)
+    .fetch_optional(&pool)
+    .await?;
+
+    let existing = existing.ok_or_else(|| AppError::NotFound("Payment not found".to_string()))?;
+
+    // Get contributions before deletion
+    let existing_contributions: Vec<ContributionWithParticipant> = sqlx::query_as(
+        "SELECT c.id, c.participant_id, p.name as participant_name, c.payment_id, c.amount, c.weight
+         FROM contributions c
+         JOIN participants p ON c.participant_id = p.id
+         WHERE c.payment_id = ?"
+    )
+    .bind(path.payment_id)
+    .fetch_all(&pool)
+    .await?;
+
+    // Get payer name for complete before state
+    let payer_name: Option<String> = if let Some(payer_id) = existing.payer_id {
+        sqlx::query_scalar("SELECT name FROM participants WHERE id = ?")
+            .bind(payer_id)
+            .fetch_optional(&pool)
+            .await?
+    } else {
+        None
+    };
+
+    let before_state = PaymentWithContributions {
+        payment: existing,
+        payer_name,
+        contributions: existing_contributions,
+    };
+
+    // Delete contributions first (cascade should handle this, but be explicit)
+    sqlx::query("DELETE FROM contributions WHERE payment_id = ?")
+        .bind(path.payment_id)
+        .execute(&pool)
+        .await?;
+
+    // Delete the payment
     let result = sqlx::query("DELETE FROM payments WHERE id = ? AND project_id = ?")
         .bind(path.payment_id)
         .bind(member.project_id)
@@ -477,6 +576,19 @@ async fn delete_payment(
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("Payment not found".to_string()));
     }
+
+    // Log the deletion to history
+    let correlation_id = HistoryService::new_correlation_id();
+    let _ = HistoryService::log_delete(
+        &pool,
+        &correlation_id,
+        member.user_id,
+        member.project_id,
+        EntityType::Payment,
+        path.payment_id,
+        &before_state,
+    )
+    .await;
 
     Ok(Json(serde_json::json!({ "deleted": true })))
 }

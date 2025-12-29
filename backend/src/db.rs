@@ -354,6 +354,75 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .await
     .ok();
 
+    // =====================
+    // Migration 009: Immutable History Log
+    // =====================
+    // Append-only audit log for all state-changing operations
+    // Hash-chained for tamper detection
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS history_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+            correlation_id TEXT NOT NULL,
+            actor_user_id INTEGER,
+            project_id INTEGER,
+            entity_type TEXT NOT NULL,
+            entity_id INTEGER,
+            action TEXT NOT NULL,
+            payload_before TEXT,
+            payload_after TEXT,
+            reason TEXT,
+            undoes_history_id INTEGER,
+            previous_hash TEXT,
+            entry_hash TEXT NOT NULL
+        )"
+    )
+    .execute(pool)
+    .await?;
+
+    // Append-only enforcement: prevent UPDATE
+    sqlx::query(
+        "CREATE TRIGGER IF NOT EXISTS history_no_update
+        BEFORE UPDATE ON history_log
+        BEGIN
+            SELECT RAISE(FAIL, 'history_log is append-only');
+        END"
+    )
+    .execute(pool)
+    .await?;
+
+    // Append-only enforcement: prevent DELETE
+    sqlx::query(
+        "CREATE TRIGGER IF NOT EXISTS history_no_delete
+        BEFORE DELETE ON history_log
+        BEGIN
+            SELECT RAISE(FAIL, 'history_log is append-only');
+        END"
+    )
+    .execute(pool)
+    .await?;
+
+    // Indexes for efficient querying
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_history_project ON history_log(project_id)")
+        .execute(pool)
+        .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_history_entity ON history_log(entity_type, entity_id)")
+        .execute(pool)
+        .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_history_correlation ON history_log(correlation_id)")
+        .execute(pool)
+        .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_history_created ON history_log(created_at)")
+        .execute(pool)
+        .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_history_undoes ON history_log(undoes_history_id)")
+        .execute(pool)
+        .await?;
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

@@ -5,3 +5,4 @@ pub mod participants;
 pub mod members;
 pub mod payments;
 pub mod debts;
+pub mod history;

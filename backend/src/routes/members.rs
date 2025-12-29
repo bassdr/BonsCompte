@@ -9,7 +9,8 @@ use sqlx::SqlitePool;
 use crate::{
     auth::{AdminMember, ProjectMember},
     error::{AppError, AppResult},
-    models::{ProjectMemberResponse, Role, UpdateMemberRole, SetMemberParticipant},
+    models::{ProjectMemberResponse, Role, UpdateMemberRole, SetMemberParticipant, EntityType},
+    services::HistoryService,
     AppState,
 };
 
@@ -106,18 +107,20 @@ async fn update_member_role(
     let new_role = Role::from_str(&input.role)
         .ok_or_else(|| AppError::BadRequest("Invalid role".to_string()))?;
 
-    // Verify target is a member
-    let target_exists: Option<i64> = sqlx::query_scalar(
-        "SELECT id FROM project_members WHERE project_id = ? AND user_id = ?"
+    // Capture before state
+    let before: Option<ProjectMemberResponse> = sqlx::query_as(
+        "SELECT pm.id, pm.project_id, pm.user_id, u.username, u.display_name, pm.role, pm.participant_id, p.name as participant_name, pm.joined_at, pm.status
+         FROM project_members pm
+         JOIN users u ON pm.user_id = u.id
+         LEFT JOIN participants p ON pm.participant_id = p.id
+         WHERE pm.project_id = ? AND pm.user_id = ?"
     )
     .bind(member.project_id)
     .bind(path.user_id)
     .fetch_optional(&pool)
     .await?;
 
-    if target_exists.is_none() {
-        return Err(AppError::NotFound("Member not found".to_string()));
-    }
+    let before = before.ok_or_else(|| AppError::NotFound("Member not found".to_string()))?;
 
     sqlx::query("UPDATE project_members SET role = ? WHERE project_id = ? AND user_id = ?")
         .bind(new_role.as_str())
@@ -138,6 +141,20 @@ async fn update_member_role(
     .fetch_one(&pool)
     .await?;
 
+    // Log the update to history
+    let correlation_id = HistoryService::new_correlation_id();
+    let _ = HistoryService::log_update(
+        &pool,
+        &correlation_id,
+        member.user_id,
+        member.project_id,
+        EntityType::ProjectMember,
+        path.user_id,
+        &before,
+        &updated,
+    )
+    .await;
+
     Ok(Json(updated))
 }
 
@@ -152,6 +169,21 @@ async fn remove_member(
     if path.user_id == member.user_id {
         return Err(AppError::BadRequest("Cannot remove yourself".to_string()));
     }
+
+    // Capture before state for history
+    let before: Option<ProjectMemberResponse> = sqlx::query_as(
+        "SELECT pm.id, pm.project_id, pm.user_id, u.username, u.display_name, pm.role, pm.participant_id, p.name as participant_name, pm.joined_at, pm.status
+         FROM project_members pm
+         JOIN users u ON pm.user_id = u.id
+         LEFT JOIN participants p ON pm.participant_id = p.id
+         WHERE pm.project_id = ? AND pm.user_id = ?"
+    )
+    .bind(member.project_id)
+    .bind(path.user_id)
+    .fetch_optional(&pool)
+    .await?;
+
+    let before = before.ok_or_else(|| AppError::NotFound("Member not found".to_string()))?;
 
     let result = sqlx::query("DELETE FROM project_members WHERE project_id = ? AND user_id = ?")
         .bind(member.project_id)
@@ -169,6 +201,19 @@ async fn remove_member(
         .bind(path.user_id)
         .execute(&pool)
         .await?;
+
+    // Log the deletion to history
+    let correlation_id = HistoryService::new_correlation_id();
+    let _ = HistoryService::log_delete(
+        &pool,
+        &correlation_id,
+        member.user_id,
+        member.project_id,
+        EntityType::ProjectMember,
+        path.user_id,
+        &before,
+    )
+    .await;
 
     Ok(Json(serde_json::json!({ "deleted": true })))
 }

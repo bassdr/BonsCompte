@@ -31,22 +31,22 @@
     let projectId = $derived(parseInt($page.params.id ?? ''));
 
     // Entity type options
-    const entityTypes = [
-        { value: '', label: 'All Types' },
-        { value: 'payment', label: 'Payments' },
-        { value: 'participant', label: 'Participants' },
-        { value: 'project_member', label: 'Members' },
-        { value: 'project', label: 'Project' },
-    ];
+    let entityTypes = $derived([
+        { value: '', label: $_('history.entities.all') },
+        { value: 'payment', label: $_('history.entities.payment') },
+        { value: 'participant', label: $_('history.entities.participant') },
+        { value: 'project_member', label: $_('history.entities.project_member') },
+        { value: 'project', label: $_('history.entities.project') },
+    ]);
 
     // Action type options
-    const actionTypes = [
-        { value: '', label: 'All Actions' },
-        { value: 'CREATE', label: 'Created' },
-        { value: 'UPDATE', label: 'Updated' },
-        { value: 'DELETE', label: 'Deleted' },
-        { value: 'UNDO', label: 'Undone' },
-    ];
+    let actionTypes = $derived([
+        { value: '', label: $_('history.actions.all') },
+        { value: 'CREATE', label: $_('history.actions.CREATE') },
+        { value: 'UPDATE', label: $_('history.actions.UPDATE') },
+        { value: 'DELETE', label: $_('history.actions.DELETE') },
+        { value: 'UNDO', label: $_('history.actions.UNDO') },
+    ]);
 
     // Filtered entries
     let filteredEntries = $derived.by(() => {
@@ -174,15 +174,17 @@
     }
 
     function getEntityTypeLabel(type: string): string {
-        switch (type) {
-            case 'payment': return 'Payment';
-            case 'participant': return 'Participant';
-            case 'project_member': return 'Member';
-            case 'project': return 'Project';
-            case 'contribution': return 'Contribution';
-            case 'participant_invite': return 'Invite';
-            default: return type;
-        }
+        const key = `history.entities.${type}`;
+        const translated = $_(key);
+        // If translation key not found, return the type as-is
+        return translated === key ? type : translated;
+    }
+
+    function getActionLabel(action: string): string {
+        const key = `history.actions.${action}`;
+        const translated = $_(key);
+        // If translation key not found, return the action as-is
+        return translated === key ? action : translated;
     }
 
     function canUndo(entry: HistoryEntry): boolean {
@@ -311,7 +313,7 @@
                 <div class="entry-header" onclick={() => toggleExpanded(entry.id)}>
                     <span class="expand-icon">{isExpanded ? '▼' : '▶'}</span>
                     <span class="action-badge" style="background: {getActionColor(entry.action)}">
-                        {entry.action}
+                        {getActionLabel(entry.action)}
                     </span>
                     <span class="entity-type">{getEntityTypeLabel(entry.entity_type)}</span>
                     {#if entry.entity_id}
@@ -397,7 +399,7 @@
             </p>
             <div class="dialog-summary">
                 <span class="action-badge" style="background: {getActionColor(entryToUndo.action)}">
-                    {entryToUndo.action}
+                    {getActionLabel(entryToUndo.action)}
                 </span>
                 <span>{getEntityTypeLabel(entryToUndo.entity_type)}</span>
                 {#if entryToUndo.entity_id}
@@ -786,6 +788,7 @@
     .dialog-summary {
         display: flex;
         align-items: center;
+        flex-wrap: wrap;
         gap: 0.5rem;
         padding: 0.75rem;
         background: #f5f5f5;

@@ -618,12 +618,16 @@
         const interval = payment.recurrence_interval || 1;
         const timesPer = payment.recurrence_times_per;
 
+        // Get translated recurrence type
+        const typeKey = `payments.recurrence.${type}`;
+        const translatedType = $_(typeKey);
+
         if (timesPer) {
-            return `${timesPer}×/${type}`;
+            return `${timesPer}×/${translatedType}`;
         } else if (interval === 1) {
-            return type;
+            return translatedType;
         } else {
-            return `every ${interval} ${type}`;
+            return `${$_('payments.recurrence.every')} ${interval} ${translatedType}`;
         }
     }
 
@@ -1307,17 +1311,17 @@
                                                                 </div>
                                                                 <div class="trans-meta">
                                                                     {#if payment}
-                                                                        Paid by {payment.payer_name ?? 'Unknown'}
+                                                                        {$_('debts.paidBy')} {payment.payer_name ?? $_('common.unknown')}
                                                                         {#if payment.is_recurring && payment.recurrence_end_date}
-                                                                            from {formatDate(payment.payment_date)} to {formatDate(payment.recurrence_end_date)}
+                                                                            {$_('debts.from')} {formatDate(payment.payment_date)} {$_('debts.to')} {formatDate(payment.recurrence_end_date)}
                                                                         {:else}
-                                                                            {isFutureDate(occ.occurrence_date) ? 'from' : 'on'} {formatDate(occ.occurrence_date)}
+                                                                            {isFutureDate(occ.occurrence_date) ? $_('debts.from') : $_('debts.on')} {formatDate(occ.occurrence_date)}
                                                                         {/if}
                                                                         {#if payment.is_recurring}
                                                                             <span class="recurrence-badge">{formatRecurrence(payment)}</span>
                                                                         {/if}
                                                                     {:else}
-                                                                        on {formatDate(occ.occurrence_date)}
+                                                                        {$_('debts.on')} {formatDate(occ.occurrence_date)}
                                                                     {/if}
                                                                     {#if occRelative}
                                                                         <span class="trans-relative">({occRelative})</span>

@@ -48,6 +48,9 @@
     // Track if user has manually modified recurrence selections
     let userModifiedWeekdays = $state(false);
     let userModifiedMonthdays = $state(false);
+
+    // Pre-computed i18n labels for use in nested blocks (Svelte 5 limitation)
+    let weekLabel = $derived($_('payments.week'));
     let userModifiedMonths = $state(false);
 
     // Day and month names for display
@@ -1248,7 +1251,7 @@
                                     <span id="weekday-selector-label" class="selector-label">{$_('payments.selectDaysOfWeek')}</span>
                                     {#each Array(recurrenceInterval) as _, weekIdx}
                                         {#if recurrenceInterval > 1}
-                                            <div class="week-label">{$_('payments.week')} {weekIdx + 1}:</div>
+                                            <div class="week-label">{weekLabel} {weekIdx + 1}:</div>
                                         {/if}
                                         <div class="weekday-row">
                                             {#each WEEKDAY_NAMES as day, dayIdx}

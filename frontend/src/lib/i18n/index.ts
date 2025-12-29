@@ -1,4 +1,4 @@
-import { register, init, getLocaleFromNavigator, locale, _ } from 'svelte-i18n';
+import { register, init, getLocaleFromNavigator, locale, _, isLoading as i18nIsLoading } from 'svelte-i18n';
 import { derived } from 'svelte/store';
 import { browser } from '$app/environment';
 
@@ -9,6 +9,13 @@ const DEFAULT_LANGUAGE = 'en';
 // Register translations (lazy loaded)
 register('en', () => import('./translations/en.json'));
 register('fr', () => import('./translations/fr.json'));
+
+// Initialize immediately with default locale to prevent "locale not set" errors during SSR/hydration
+// The actual locale will be set properly when setupI18n() is called
+init({
+	fallbackLocale: DEFAULT_LANGUAGE,
+	initialLocale: DEFAULT_LANGUAGE
+});
 
 /**
  * Determine initial locale based on precedence:
@@ -42,13 +49,14 @@ export function getInitialLocale(userLanguage?: string | null): string {
 }
 
 /**
- * Initialize svelte-i18n with the determined locale
+ * Set the locale after initialization (init is called at module load time)
  */
 export function setupI18n(initialLocale: string = DEFAULT_LANGUAGE) {
-	init({
-		fallbackLocale: DEFAULT_LANGUAGE,
-		initialLocale
-	});
+	// init() was already called at module load time with DEFAULT_LANGUAGE
+	// Just update the locale if different
+	if (initialLocale !== DEFAULT_LANGUAGE) {
+		locale.set(initialLocale);
+	}
 }
 
 /**
@@ -88,5 +96,8 @@ export const supportedLanguages = [
 	{ code: 'fr', name: 'Français' }
 ];
 
-// Derived store to check if i18n is ready
-export const isLocaleLoaded = derived(locale, ($locale) => typeof $locale === 'string');
+// Derived store to check if i18n is ready (locale is set AND translations are loaded)
+export const isLocaleLoaded = derived(
+	[locale, i18nIsLoading],
+	([$locale, $isLoading]) => typeof $locale === 'string' && !$isLoading
+);

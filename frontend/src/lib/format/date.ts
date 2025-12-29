@@ -27,10 +27,18 @@ export function getLocalDateString(date: Date = new Date()): string {
  * Format a date according to user preferences
  */
 export function formatDate(dateStr: string | Date): string {
+	if (!dateStr) return '';
+
 	const prefs = preferences.get();
 	const lang = getCurrentLocale();
 
 	const date = typeof dateStr === 'string' ? parseLocalDate(dateStr) : dateStr;
+
+	// Handle invalid dates
+	if (isNaN(date.getTime())) {
+		return String(dateStr);
+	}
+
 	const format = (prefs.date_format as DateFormatType) || 'mdy';
 
 	if (format === 'iso') {

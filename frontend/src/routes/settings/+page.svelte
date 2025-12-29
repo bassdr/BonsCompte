@@ -125,6 +125,7 @@
 </script>
 
 <div class="settings-container">
+    <a href="/" class="back-link">{$_('settings.backToProjects')}</a>
     <h1>{$_('settings.title')}</h1>
 
     {#if $auth.user}
@@ -314,6 +315,19 @@
         max-width: 600px;
         margin: 2rem auto;
         padding: 2rem;
+    }
+
+    .back-link {
+        display: block;
+        color: var(--accent, #7b61ff);
+        text-decoration: none;
+        font-size: 0.95rem;
+        font-weight: 500;
+        margin-bottom: 1rem;
+    }
+
+    .back-link:hover {
+        text-decoration: underline;
     }
 
     h1 {

@@ -256,6 +256,8 @@
 	"history.entities.contribution": "Contribution",
 	"history.entities.participant_invite": "Invite",
 
+	"settings.backToProjects": "← Back to projects",
+
 	"projectSettings.backToProject": "← Back to project",
 	"projectSettings.title": "Project Settings",
 	"projectSettings.needAdminPermissions": "You need admin permissions to access settings.",

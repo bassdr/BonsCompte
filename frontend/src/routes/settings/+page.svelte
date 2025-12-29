@@ -369,18 +369,26 @@
 
     .prefs-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        grid-template-columns: 1fr;
         gap: 1rem;
         margin-bottom: 1rem;
+    }
+
+    @media (min-width: 600px) {
+        .prefs-grid {
+            grid-template-columns: 1fr 1fr;
+        }
     }
 
     .prefs-grid select,
     .prefs-grid input {
         width: 100%;
+        box-sizing: border-box;
     }
 
     .field {
         margin-bottom: 0;
+        min-width: 0;
     }
 
     label {
@@ -396,6 +404,11 @@
         border: 1px solid #ddd;
         border-radius: 8px;
         font-size: 1rem;
+        box-sizing: border-box;
+    }
+
+    select {
+        box-sizing: border-box;
     }
 
     input:focus {

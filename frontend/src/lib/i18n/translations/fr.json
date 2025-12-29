@@ -132,6 +132,7 @@
 	"debts.paidBy": "Payé par",
 	"debts.on": "le",
 	"debts.from": "du",
+	"debts.to": "au",
 
 	"payments.title": "Paiements",
 	"payments.addPayment": "Ajouter un paiement",

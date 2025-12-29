@@ -132,6 +132,7 @@
 	"debts.paidBy": "Paid by",
 	"debts.on": "on",
 	"debts.from": "from",
+	"debts.to": "to",
 
 	"payments.title": "Payments",
 	"payments.addPayment": "Add Payment",

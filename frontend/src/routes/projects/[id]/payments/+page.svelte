@@ -3,9 +3,11 @@
     import { getPayments, createPayment, updatePayment, deletePayment, type PaymentWithContributions, type CreatePaymentInput } from "$lib/api";
     import { participants, currentProject, canEdit, members } from '$lib/stores/project';
     import { auth } from '$lib/auth';
-    import { _ } from '$lib/i18n';
+    import { _, locale } from '$lib/i18n';
+    import { get } from 'svelte/store';
     import { formatDate as formatDateI18n, formatDateWithWeekday } from '$lib/format/date';
     import { formatCurrency, formatNumber } from '$lib/format/currency';
+    import DateInput from '$lib/components/DateInput.svelte';
 
     let payments: PaymentWithContributions[] = $state([]);
     let loading = $state(true);
@@ -577,6 +579,12 @@
 
     // Ordinal suffix for day numbers (1st, 2nd, 3rd, etc.)
     function ordinal(n: number): string {
+        // For French, just return the number (no suffix except for 1er which we handle separately)
+        const currentLocale = get(locale);
+        if (currentLocale === 'fr') {
+            return n === 1 ? '1er' : n.toString();
+        }
+        // For English, use traditional ordinal suffixes
         const s = ['th', 'st', 'nd', 'rd'];
         const v = n % 100;
         return n + (s[(v - 20) % 10] || s[v] || s[0]);
@@ -1043,9 +1051,9 @@
                 const allDays = new Set(patterns.flat());
                 const dayNames = [...allDays].sort((a, b) => a - b).map(d => WEEKDAY_NAMES[d]);
                 if (interval === 1) {
-                    return `${dayNames.join(', ')} weekly`;
+                    return `${dayNames.join(', ')} ${$_('payments.recurrence.weekly')}`;
                 } else {
-                    return `${dayNames.join(', ')} every ${interval} weeks`;
+                    return `${dayNames.join(', ')} ${$_('payments.recurrence.every')} ${interval} ${$_('payments.weeks').toLowerCase()}`;
                 }
             } catch { /* fall through */ }
         }
@@ -1054,7 +1062,7 @@
             try {
                 const days: number[] = JSON.parse(p.recurrence_monthdays);
                 const formatted = days.map(d => ordinal(d)).join(', ');
-                return `${formatted} monthly`;
+                return `${formatted} ${$_('payments.recurrence.monthly')}`;
             } catch { /* fall through */ }
         }
 
@@ -1062,15 +1070,16 @@
             try {
                 const months: number[] = JSON.parse(p.recurrence_months);
                 const monthNames = months.map(m => MONTH_NAMES[m - 1]);
-                return `${monthNames.join(', ')} yearly`;
+                return `${monthNames.join(', ')} ${$_('payments.recurrence.yearly')}`;
             } catch { /* fall through */ }
         }
 
         // Fallback to simple display
         if (interval === 1) {
-            return type;
+            return $_(`payments.recurrence.${type}`);
         }
-        return `every ${interval} ${type.replace('ly', '')}s`;
+        const periodKey = type === 'daily' ? 'days' : type === 'weekly' ? 'weeks' : type === 'monthly' ? 'months' : 'years';
+        return `${$_('payments.recurrence.every')} ${interval} ${$_(`payments.${periodKey}`).toLowerCase()}`;
     }
 
     function openImageModal(image: string) {
@@ -1122,9 +1131,8 @@
 
                     <div class="field">
                         <label for="payment-date">{$_('payments.date')}</label>
-                        <input
+                        <DateInput
                             id="payment-date"
-                            type="date"
                             bind:value={paymentDate}
                             required
                         />
@@ -1317,9 +1325,8 @@
                             <div class="recurrence-limits">
                                 <div class="field">
                                     <label for="end-date">{$_('payments.endDateOptional')}</label>
-                                    <input
+                                    <DateInput
                                         id="end-date"
-                                        type="date"
                                         bind:value={recurrenceEndDate}
                                         min={paymentDate}
                                     />
@@ -1364,9 +1371,8 @@
                         {#if useSplitDate}
                             <div class="split-date-field">
                                 <label for="split-from-date">Changes start from</label>
-                                <input
+                                <DateInput
                                     id="split-from-date"
-                                    type="date"
                                     bind:value={splitFromDate}
                                     min={editingPaymentOriginal.payment_date.split('T')[0]}
                                     max={editingPaymentOriginal.recurrence_end_date?.split('T')[0] || ''}
@@ -1453,9 +1459,9 @@
                             {$_('payments.paidBy')} {p.payer_name ?? $_('common.unknown')}
                         {/if}
                         {#if p.is_recurring && p.recurrence_end_date}
-                            from {formatDate(p.payment_date)} to {formatDate(p.recurrence_end_date)}
+                            {$_('debts.from')} {formatDate(p.payment_date)} {$_('debts.to')} {formatDate(p.recurrence_end_date)}
                         {:else}
-                            {isFutureDate(p.payment_date) ? 'from' : 'on'} {formatDate(p.payment_date)}
+                            {isFutureDate(p.payment_date) ? $_('debts.from') : $_('debts.on')} {formatDate(p.payment_date)}
                         {/if}
                         {#if p.is_recurring}
                             <span class="recurrence-badge">{formatRecurrence(p)}</span>
@@ -2069,7 +2075,7 @@
         margin-bottom: 0.5rem;
     }
 
-    .split-date-field input[type="date"] {
+    .split-date-field :global(input) {
         max-width: 200px;
     }
 

@@ -4,6 +4,7 @@
     import { _ } from '$lib/i18n';
     import { formatDate as formatDateI18n, formatDateWithWeekday, formatMonthYear as formatMonthYearI18n } from '$lib/format/date';
     import { formatCurrency } from '$lib/format/currency';
+    import DateInput from '$lib/components/DateInput.svelte';
 
     let debts: DebtSummary | null = $state(null);
     let allPayments: PaymentWithContributions[] = $state([]);
@@ -820,8 +821,7 @@
         >⟨</button>
 
         <div class="date-display">
-            <input
-                type="date"
+            <DateInput
                 bind:value={targetDate}
                 class="date-input"
             />
@@ -1417,20 +1417,6 @@
         gap: 0.25rem;
         padding: 0 0.5rem;
         min-width: 0;
-    }
-
-    .date-input {
-        border: 1px solid #ddd;
-        border-radius: 8px;
-        padding: 0.5rem;
-        font-size: 1rem;
-        background: white;
-        cursor: pointer;
-    }
-
-    .date-input:focus {
-        outline: none;
-        border-color: var(--accent, #7b61ff);
     }
 
     .date-label {

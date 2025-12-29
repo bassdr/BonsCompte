@@ -96,6 +96,47 @@ frontend/src/
 - **API calls**: All through `lib/api.ts` using `authFetch()` wrapper that handles token + 401 redirect
 - **Routing**: SvelteKit file-based with `[id]` for dynamic segments
 
+### Internationalization (i18n)
+
+The app supports multiple languages (EN/FR) with user preferences for formatting.
+
+**Key Concepts:**
+- **UI Language** (i18n): Text translations via `svelte-i18n`, stored in JSON files
+- **Formatting Preferences**: Date/currency/number formatting via user settings, NOT tied to language
+
+**File Structure:**
+```
+frontend/src/lib/
+├── i18n/
+│   ├── index.ts              # i18n setup, locale management
+│   └── translations/
+│       ├── en.json           # English translations (flat keys)
+│       └── fr.json           # French translations
+├── format/
+│   ├── date.ts               # formatDate(), formatDateWithWeekday()
+│   └── currency.ts           # formatCurrency(), formatNumber()
+└── stores/
+    └── preferences.ts        # User preferences store
+```
+
+**Adding a New Language:**
+1. Create `frontend/src/lib/i18n/translations/{lang}.json`
+2. Add to `register()` in `frontend/src/lib/i18n/index.ts`
+3. Add to `supportedLanguages` array
+4. Add to backend validation in `backend/src/routes/users.rs`
+
+**Translation Keys:** Use flat dot-notation (e.g., `auth.login`, `nav.projects`). No logic in translation files.
+
+**Formatting:** Always use helpers from `lib/format/` instead of hardcoded formatting:
+- `formatDate(dateStr)` - respects user's date_format preference
+- `formatCurrency(amount)` - respects user's currency_symbol, position, decimal_separator
+
+**Language Precedence (highest wins):**
+1. Authenticated user preference (from backend)
+2. localStorage `bonscompte_language`
+3. Browser language
+4. Default: 'en'
+
 ## Data Model
 
 - **Project**: Has participants, members (users), and payments

@@ -12,6 +12,7 @@
         type ProjectMember
     } from "$lib/api";
     import { currentProject, loadProject, isAdmin } from '$lib/stores/project';
+    import { _ } from '$lib/i18n';
 
     let error = $state('');
     let success = $state('');
@@ -174,10 +175,10 @@
     }
 </script>
 
-<h2>Project Settings</h2>
+<h2>{$_('projectSettings.title')}</h2>
 
 {#if !$isAdmin}
-    <div class="error">You need admin permissions to access settings.</div>
+    <div class="error">{$_('projectSettings.needAdminPermissions')}</div>
 {:else}
     {#if error}
         <div class="error">{error}</div>
@@ -188,10 +189,10 @@
     {/if}
 
     <section class="card">
-        <h3>Project Details</h3>
+        <h3>{$_('projectSettings.projectDetails')}</h3>
         <form onsubmit={handleSave}>
             <div class="field">
-                <label for="name">Project Name</label>
+                <label for="name">{$_('projectSettings.projectName')}</label>
                 <input
                     id="name"
                     type="text"
@@ -200,57 +201,57 @@
                 />
             </div>
             <div class="field">
-                <label for="description">Description</label>
+                <label for="description">{$_('projectSettings.description')}</label>
                 <textarea
                     id="description"
                     bind:value={description}
                     rows="3"
-                    placeholder="Optional description"
+                    placeholder={$_('projectSettings.descriptionPlaceholder')}
                 ></textarea>
             </div>
             <button type="submit" disabled={saving}>
-                {saving ? 'Saving...' : 'Save Changes'}
+                {saving ? $_('common.saving') : $_('projectSettings.saveChanges')}
             </button>
         </form>
     </section>
 
     <section class="card">
-        <h3>Invite Code</h3>
-        <p>Share this code with others to let them join the project.</p>
+        <h3>{$_('projectSettings.inviteCode')}</h3>
+        <p>{$_('projectSettings.shareCodeHint')}</p>
         <div class="invite-row">
             <code>{$currentProject?.invite_code}</code>
             <button class="btn-secondary" onclick={handleRegenerateCode}>
-                Regenerate Code
+                {$_('projectSettings.regenerateCode')}
             </button>
         </div>
     </section>
 
     <section class="card">
-        <h3>Invite Settings</h3>
+        <h3>{$_('projectSettings.inviteSettings')}</h3>
         <div class="setting-row">
             <label class="toggle-label">
                 <input type="checkbox" bind:checked={invitesEnabled} />
-                <span class="toggle-text">Allow new members to join via invite code</span>
+                <span class="toggle-text">{$_('projectSettings.allowNewMembers')}</span>
             </label>
         </div>
         <div class="setting-row">
             <label class="toggle-label">
                 <input type="checkbox" bind:checked={requireApproval} />
-                <span class="toggle-text">Require admin approval for new members</span>
+                <span class="toggle-text">{$_('projectSettings.requireApproval')}</span>
             </label>
         </div>
         <button class="btn-secondary" onclick={handleSaveSettings} disabled={savingSettings}>
-            {savingSettings ? 'Saving...' : 'Save Settings'}
+            {savingSettings ? $_('common.saving') : $_('projectSettings.saveSettings')}
         </button>
     </section>
 
     {#if requireApproval}
         <section class="card">
-            <h3>Pending Member Requests</h3>
+            <h3>{$_('projectSettings.pendingRequests')}</h3>
             {#if loadingPending}
-                <p class="muted">Loading...</p>
+                <p class="muted">{$_('common.loading')}</p>
             {:else if pendingMembers.length === 0}
-                <p class="muted">No pending member requests.</p>
+                <p class="muted">{$_('projectSettings.noPendingRequests')}</p>
             {:else}
                 <ul class="pending-list">
                     {#each pendingMembers as member}
@@ -265,14 +266,14 @@
                                     onclick={() => handleApproveMember(member.user_id)}
                                     disabled={processingMember === member.user_id}
                                 >
-                                    Approve
+                                    {$_('projectSettings.approve')}
                                 </button>
                                 <button
                                     class="btn-reject"
                                     onclick={() => handleRejectMember(member.user_id)}
                                     disabled={processingMember === member.user_id}
                                 >
-                                    Reject
+                                    {$_('projectSettings.reject')}
                                 </button>
                             </div>
                         </li>
@@ -283,29 +284,29 @@
     {/if}
 
     <section class="card danger-zone">
-        <h3>Danger Zone</h3>
+        <h3>{$_('projectSettings.dangerZone')}</h3>
         {#if !showDeleteConfirm}
-            <p>Deleting the project will permanently remove all payments, participants, and members.</p>
+            <p>{$_('projectSettings.deleteWarning')}</p>
             <button class="btn-danger" onclick={() => showDeleteConfirm = true}>
-                Delete Project
+                {$_('projectSettings.deleteProject')}
             </button>
         {:else}
-            <p>Type the project name to confirm deletion: <strong>{$currentProject?.name}</strong></p>
+            <p>{$_('projectSettings.typeNameToConfirm')}: <strong>{$currentProject?.name}</strong></p>
             <div class="delete-confirm">
                 <input
                     type="text"
                     bind:value={deleteConfirmText}
-                    placeholder="Project name"
+                    placeholder={$_('projectSettings.projectNamePlaceholder')}
                 />
                 <button
                     class="btn-danger"
                     onclick={handleDelete}
                     disabled={deleting || deleteConfirmText !== $currentProject?.name}
                 >
-                    {deleting ? 'Deleting...' : 'Confirm Delete'}
+                    {deleting ? $_('projectSettings.deleting') : $_('projectSettings.confirmDelete')}
                 </button>
                 <button class="btn-secondary" onclick={() => { showDeleteConfirm = false; deleteConfirmText = ''; }}>
-                    Cancel
+                    {$_('common.cancel')}
                 </button>
             </div>
         {/if}

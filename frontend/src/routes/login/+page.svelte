@@ -2,6 +2,8 @@
     import { goto } from '$app/navigation';
     import { login } from '$lib/api';
     import { auth } from '$lib/auth';
+    import { _ } from '$lib/i18n';
+    import { preferences } from '$lib/stores/preferences';
 
     let username = $state('');
     let password = $state('');
@@ -17,9 +19,11 @@
         try {
             const response = await login(username, password);
             auth.setAuth(response.token, response.user);
+            // Sync preferences from backend
+            preferences.initFromUser(response.user.preferences);
             goto('/');
         } catch (err) {
-            error = err instanceof Error ? err.message : 'Login failed';
+            error = err instanceof Error ? err.message : $_('auth.loginFailed');
         } finally {
             loading = false;
         }
@@ -27,7 +31,7 @@
 </script>
 
 <div class="auth-container">
-    <h1>Login</h1>
+    <h1>{$_('auth.login')}</h1>
 
     <form onsubmit={handleSubmit}>
         {#if error}
@@ -35,7 +39,7 @@
         {/if}
 
         <div class="field">
-            <label for="username">Username</label>
+            <label for="username">{$_('auth.username')}</label>
             <input
                 id="username"
                 type="text"
@@ -46,7 +50,7 @@
         </div>
 
         <div class="field">
-            <label for="password">Password</label>
+            <label for="password">{$_('auth.password')}</label>
             <input
                 id="password"
                 type="password"
@@ -57,7 +61,7 @@
         </div>
 
         <button type="submit" disabled={loading}>
-            {loading ? 'Logging in...' : 'Login'}
+            {loading ? $_('auth.loggingIn') : $_('auth.login')}
         </button>
 
         <button
@@ -65,26 +69,25 @@
             class="forgot-password-btn"
             onclick={() => showForgotPassword = !showForgotPassword}
         >
-            Forgot password?
+            {$_('auth.forgotPassword')}
         </button>
     </form>
 
     {#if showForgotPassword}
         <div class="forgot-password-info">
             <p>
-                Password recovery requires administrator assistance.
-                Contact someone with server access to reset your password.
+                {$_('auth.passwordRecoveryInfo')}
             </p>
             <p class="details-link">
                 <a href="https://github.com/bassdr/BonsCompte/blob/main/docs/PASSWORD_RECOVERY.md" target="_blank" rel="noopener noreferrer">
-                    Learn more about password recovery
+                    {$_('auth.passwordRecoveryLink')}
                 </a>
             </p>
         </div>
     {/if}
 
     <p class="link">
-        Don't have an account? <a href="/register">Register</a>
+        {$_('auth.noAccount')} <a href="/register">{$_('auth.register')}</a>
     </p>
 </div>
 

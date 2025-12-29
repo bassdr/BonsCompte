@@ -15,7 +15,8 @@
       "Bash(find:*)",
       "Bash(cargo test:*)",
       "Bash(./target/debug/bonscompte-admin:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(git diff:*)"
     ],
     "deny": [
       "Read(*.csv)",

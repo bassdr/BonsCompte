@@ -1,6 +1,9 @@
 <script lang="ts">
     import { page } from '$app/stores';
     import { getDebts, getPayments, type DebtSummary, type PaymentWithContributions, type PairwiseBalance } from "$lib/api";
+    import { _ } from '$lib/i18n';
+    import { formatDate as formatDateI18n, formatDateWithWeekday, formatMonthYear as formatMonthYearI18n } from '$lib/format/date';
+    import { formatCurrency } from '$lib/format/currency';
 
     let debts: DebtSummary | null = $state(null);
     let allPayments: PaymentWithContributions[] = $state([]);
@@ -580,13 +583,7 @@
     }
 
     function formatDate(dateStr: string): string {
-        const date = parseLocalDate(dateStr);
-        return date.toLocaleDateString('en-US', {
-            weekday: 'short',
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric'
-        });
+        return formatDateWithWeekday(dateStr);
     }
 
     // Calculate days difference
@@ -601,11 +598,11 @@
     // Get relative date label
     function getRelativeDateLabel(dateStr: string): string {
         const days = getDaysDiff(dateStr);
-        if (days === 0) return 'Today';
-        if (days === 1) return 'Tomorrow';
-        if (days === -1) return 'Yesterday';
-        if (days > 0 && days <= 7) return `in ${days} days`;
-        if (days < 0 && days >= -7) return `${Math.abs(days)} days ago`;
+        if (days === 0) return $_('debts.today');
+        if (days === 1) return $_('debts.tomorrow');
+        if (days === -1) return $_('debts.yesterday');
+        if (days > 0 && days <= 7) return $_('debts.inDays', { values: { days } });
+        if (days < 0 && days >= -7) return $_('debts.daysAgo', { values: { days: Math.abs(days) } });
         return '';
     }
 
@@ -662,8 +659,7 @@
 
     // Helper to format month display (e.g., "December 2025")
     function formatMonthYear(dateStr: string): string {
-        const date = parseLocalDate(dateStr);
-        return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        return formatMonthYearI18n(dateStr);
     }
 
     // Group occurrences by year/month/date, filtered by focus participant
@@ -807,7 +803,7 @@
     }
 </script>
 
-<h2>Debts Summary</h2>
+<h2>{$_('debts.summary')}</h2>
 
 <!-- Date selector -->
 <div class="date-selector card">
@@ -831,9 +827,9 @@
                     <span class="relative-label">({relativeDateLabel})</span>
                 {/if}
                 {#if isFuture}
-                    <span class="badge future-badge">Future</span>
+                    <span class="badge future-badge">{$_('debts.future')}</span>
                 {:else if isPast}
-                    <span class="badge past-badge">Past</span>
+                    <span class="badge past-badge">{$_('debts.past')}</span>
                 {/if}
             </span>
         </div>
@@ -851,22 +847,22 @@
         onclick={goToToday}
         disabled={isToday}
     >
-        Today
+        {$_('debts.today')}
     </button>
 </div>
 
 <!-- Focus mode selector -->
 {#if debts}
     <div class="focus-selector">
-        <label for="focus-participant">Focus on:</label>
+        <label for="focus-participant">{$_('debts.focusOn')}</label>
         <select id="focus-participant" bind:value={focusParticipantId}>
-            <option value={null}>All Participants</option>
+            <option value={null}>{$_('debts.allParticipants')}</option>
             {#each nonPoolBalances as b}
                 <option value={b.participant_id}>{b.participant_name}</option>
             {/each}
         </select>
         {#if focusParticipantId !== null}
-            <button class="clear-focus" onclick={() => focusParticipantId = null}>Clear</button>
+            <button class="clear-focus" onclick={() => focusParticipantId = null}>{$_('common.clear')}</button>
         {/if}
     </div>
 {/if}
@@ -876,21 +872,21 @@
 {/if}
 
 {#if loading}
-    <p>Loading...</p>
+    <p>{$_('common.loading')}</p>
 {:else if debts}
     <!-- Pool Ownerships (shown for each pool) -->
     {#each filteredPoolOwnerships as poolOwnership}
         <section class="card">
             <h3>{poolOwnership.pool_name}</h3>
             {#if poolOwnership.entries.length === 0}
-                <p class="no-ownership">No pool activity yet</p>
+                <p class="no-ownership">{$_('debts.noPoolActivity')}</p>
             {:else}
                 <table class="balance-table">
                     <thead>
                         <tr>
                             <th></th>
-                            <th>Participant</th>
-                            <th>Ownership</th>
+                            <th>{$_('debts.participant')}</th>
+                            <th>{$_('debts.ownership')}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -903,7 +899,7 @@
                                 </td>
                                 <td>{entry.participant_name}</td>
                                 <td class:positive={entry.ownership > 0} class:negative={entry.ownership < 0}>
-                                    {entry.ownership >= 0 ? '+' : ''}${entry.ownership.toFixed(2)}
+                                    {entry.ownership >= 0 ? '+' : ''}{formatCurrency(entry.ownership)}
                                 </td>
                             </tr>
                             {#if isExpanded}
@@ -912,7 +908,7 @@
                                         <div class="pairwise-details">
                                             {#if entry.contributed > 0.01}
                                                 <div class="detail-section">
-                                                    <div class="detail-header">{entry.participant_name} contributed ${entry.contributed.toFixed(2)} to {poolOwnership.pool_name}</div>
+                                                    <div class="detail-header">{entry.participant_name} contributed {formatCurrency(entry.contributed)} to {poolOwnership.pool_name}</div>
                                                     {#if entry.contributed_breakdown && entry.contributed_breakdown.length > 0}
                                                         {@const groupedYears = groupBreakdownByYearMonth(entry.contributed_breakdown)}
                                                         <div class="breakdown-hierarchy">
@@ -925,7 +921,7 @@
                                                                     >
                                                                         <span class="expand-icon">{yearExpanded ? '▼' : '▶'}</span>
                                                                         <span class="year-text">{year}</span>
-                                                                        <span class="year-total">${yearData.total.toFixed(2)}</span>
+                                                                        <span class="year-total">{formatCurrency(yearData.total)}</span>
                                                                     </button>
                                                                     {#if yearExpanded}
                                                                         {#each [...yearData.months.entries()] as [monthKey, monthData]}
@@ -937,7 +933,7 @@
                                                                                 >
                                                                                     <span class="expand-icon">{monthExpanded ? '▼' : '▶'}</span>
                                                                                     <span class="month-text">{monthData.month}</span>
-                                                                                    <span class="month-total">${monthData.total.toFixed(2)}</span>
+                                                                                    <span class="month-total">{formatCurrency(monthData.total)}</span>
                                                                                 </button>
                                                                                 {#if monthExpanded}
                                                                                     <ul class="breakdown-list">
@@ -945,7 +941,7 @@
                                                                                             <li class="breakdown-item">
                                                                                                 <span class="breakdown-desc">{item.description}</span>
                                                                                                 <span class="breakdown-date">{item.occurrence_date}</span>
-                                                                                                <span class="breakdown-amount">${item.amount.toFixed(2)}</span>
+                                                                                                <span class="breakdown-amount">{formatCurrency(item.amount)}</span>
                                                                                             </li>
                                                                                         {/each}
                                                                                     </ul>
@@ -961,7 +957,7 @@
                                             {/if}
                                             {#if entry.consumed > 0.01}
                                                 <div class="detail-section">
-                                                    <div class="detail-header">{entry.participant_name} consumed ${entry.consumed.toFixed(2)} from {poolOwnership.pool_name}</div>
+                                                    <div class="detail-header">{entry.participant_name} consumed {formatCurrency(entry.consumed)} from {poolOwnership.pool_name}</div>
                                                     {#if entry.consumed_breakdown && entry.consumed_breakdown.length > 0}
                                                         {@const groupedYears = groupBreakdownByYearMonth(entry.consumed_breakdown)}
                                                         <div class="breakdown-hierarchy">
@@ -974,7 +970,7 @@
                                                                     >
                                                                         <span class="expand-icon">{yearExpanded ? '▼' : '▶'}</span>
                                                                         <span class="year-text">{year}</span>
-                                                                        <span class="year-total">${yearData.total.toFixed(2)}</span>
+                                                                        <span class="year-total">{formatCurrency(yearData.total)}</span>
                                                                     </button>
                                                                     {#if yearExpanded}
                                                                         {#each [...yearData.months.entries()] as [monthKey, monthData]}
@@ -986,7 +982,7 @@
                                                                                 >
                                                                                     <span class="expand-icon">{monthExpanded ? '▼' : '▶'}</span>
                                                                                     <span class="month-text">{monthData.month}</span>
-                                                                                    <span class="month-total">${monthData.total.toFixed(2)}</span>
+                                                                                    <span class="month-total">{formatCurrency(monthData.total)}</span>
                                                                                 </button>
                                                                                 {#if monthExpanded}
                                                                                     <ul class="breakdown-list">
@@ -994,7 +990,7 @@
                                                                                             <li class="breakdown-item">
                                                                                                 <span class="breakdown-desc">{item.description}</span>
                                                                                                 <span class="breakdown-date">{item.occurrence_date}</span>
-                                                                                                <span class="breakdown-amount">${item.amount.toFixed(2)}</span>
+                                                                                                <span class="breakdown-amount">{formatCurrency(item.amount)}</span>
                                                                                             </li>
                                                                                         {/each}
                                                                                     </ul>
@@ -1017,9 +1013,9 @@
                     <tfoot>
                         <tr class="total-row">
                             <td></td>
-                            <td><strong>Total</strong></td>
+                            <td><strong>{$_('common.total')}</strong></td>
                             <td class:positive={poolOwnership.total_balance > 0} class:negative={poolOwnership.total_balance < 0}>
-                                <strong>{poolOwnership.total_balance >= 0 ? '+' : ''}${poolOwnership.total_balance.toFixed(2)}</strong>
+                                <strong>{poolOwnership.total_balance >= 0 ? '+' : ''}{formatCurrency(poolOwnership.total_balance)}</strong>
                             </td>
                         </tr>
                     </tfoot>
@@ -1029,13 +1025,13 @@
     {/each}
 
     <section class="card">
-        <h3>Balances</h3>
+        <h3>{$_('debts.balances')}</h3>
         <table class="balance-table">
             <thead>
                 <tr>
                     <th></th>
-                    <th>Participant</th>
-                    <th>Balance</th>
+                    <th>{$_('debts.participant')}</th>
+                    <th>{$_('debts.balance')}</th>
                 </tr>
             </thead>
             <tbody>
@@ -1048,7 +1044,7 @@
                         </td>
                         <td>{b.participant_name}</td>
                         <td class:positive={b.net_balance > 0} class:negative={b.net_balance < 0}>
-                            {b.net_balance >= 0 ? '+' : ''}${b.net_balance.toFixed(2)}
+                            {b.net_balance >= 0 ? '+' : ''}{formatCurrency(b.net_balance)}
                         </td>
                     </tr>
                     {#if isExpanded}
@@ -1056,7 +1052,7 @@
                             <td colspan="3">
                                 <div class="pairwise-details">
                                     {#if pairwise.length === 0}
-                                        <p class="no-relationships">No relationships with other participants</p>
+                                        <p class="no-relationships">{$_('debts.noRelationships')}</p>
                                     {:else}
                                         <div class="pairwise-list">
                                             {#each pairwise as pw}
@@ -1070,7 +1066,7 @@
                                                     <span class="pairwise-toggle">{isExpanded ? '▼' : '▶'}</span>
                                                     <span class="pairwise-name">{pw.other_participant_name}</span>
                                                     <span class="pairwise-net" class:positive={pw.net > 0} class:negative={pw.net < 0}>
-                                                        {pw.net >= 0 ? '+' : ''}${pw.net.toFixed(2)}
+                                                        {pw.net >= 0 ? '+' : ''}{formatCurrency(pw.net)}
                                                     </span>
                                                 </button>
                                                 {#if isExpanded}
@@ -1078,7 +1074,7 @@
                                                     <div class="pairwise-details-expanded">
                                                         {#if pw.amount_paid_for > 0.01}
                                                             <div class="detail-section">
-                                                                <div class="detail-header">{b.participant_name} paid ${pw.amount_paid_for.toFixed(2)} for {pw.other_participant_name}</div>
+                                                                <div class="detail-header">{b.participant_name} paid {formatCurrency(pw.amount_paid_for)} for {pw.other_participant_name}</div>
                                                                 {#if pw.paid_for_breakdown && pw.paid_for_breakdown.length > 0}
                                                                     {@const groupedYears = groupBreakdownByYearMonth(pw.paid_for_breakdown)}
                                                                     <div class="breakdown-hierarchy">
@@ -1091,7 +1087,7 @@
                                                                                 >
                                                                                     <span class="expand-icon">{yearExpanded ? '▼' : '▶'}</span>
                                                                                     <span class="year-text">{year}</span>
-                                                                                    <span class="year-total">${yearData.total.toFixed(2)}</span>
+                                                                                    <span class="year-total">{formatCurrency(yearData.total)}</span>
                                                                                 </button>
                                                                                 {#if yearExpanded}
                                                                                     {#each [...yearData.months.entries()] as [monthKey, monthData]}
@@ -1103,7 +1099,7 @@
                                                                                             >
                                                                                                 <span class="expand-icon">{monthExpanded ? '▼' : '▶'}</span>
                                                                                                 <span class="month-text">{monthData.month}</span>
-                                                                                                <span class="month-total">${monthData.total.toFixed(2)}</span>
+                                                                                                <span class="month-total">{formatCurrency(monthData.total)}</span>
                                                                                             </button>
                                                                                             {#if monthExpanded}
                                                                                                 <ul class="breakdown-list">
@@ -1111,7 +1107,7 @@
                                                                                                         <li class="breakdown-item">
                                                                                                             <span class="breakdown-desc">{item.description}</span>
                                                                                                             <span class="breakdown-date">{item.occurrence_date}</span>
-                                                                                                            <span class="breakdown-amount">${item.amount.toFixed(2)}</span>
+                                                                                                            <span class="breakdown-amount">{formatCurrency(item.amount)}</span>
                                                                                                         </li>
                                                                                                     {/each}
                                                                                                 </ul>
@@ -1127,7 +1123,7 @@
                                                         {/if}
                                                         {#if pw.amount_owed_by > 0.01}
                                                             <div class="detail-section">
-                                                                <div class="detail-header">{pw.other_participant_name} paid ${pw.amount_owed_by.toFixed(2)} for {b.participant_name}</div>
+                                                                <div class="detail-header">{pw.other_participant_name} paid {formatCurrency(pw.amount_owed_by)} for {b.participant_name}</div>
                                                                 {#if pw.owed_by_breakdown && pw.owed_by_breakdown.length > 0}
                                                                     {@const groupedYears = groupBreakdownByYearMonth(pw.owed_by_breakdown)}
                                                                     <div class="breakdown-hierarchy">
@@ -1140,7 +1136,7 @@
                                                                                 >
                                                                                     <span class="expand-icon">{yearExpanded ? '▼' : '▶'}</span>
                                                                                     <span class="year-text">{year}</span>
-                                                                                    <span class="year-total">${yearData.total.toFixed(2)}</span>
+                                                                                    <span class="year-total">{formatCurrency(yearData.total)}</span>
                                                                                 </button>
                                                                                 {#if yearExpanded}
                                                                                     {#each [...yearData.months.entries()] as [monthKey, monthData]}
@@ -1152,7 +1148,7 @@
                                                                                             >
                                                                                                 <span class="expand-icon">{monthExpanded ? '▼' : '▶'}</span>
                                                                                                 <span class="month-text">{monthData.month}</span>
-                                                                                                <span class="month-total">${monthData.total.toFixed(2)}</span>
+                                                                                                <span class="month-total">{formatCurrency(monthData.total)}</span>
                                                                                             </button>
                                                                                             {#if monthExpanded}
                                                                                                 <ul class="breakdown-list">
@@ -1160,7 +1156,7 @@
                                                                                                         <li class="breakdown-item">
                                                                                                             <span class="breakdown-desc">{item.description}</span>
                                                                                                             <span class="breakdown-date">{item.occurrence_date}</span>
-                                                                                                            <span class="breakdown-amount">${item.amount.toFixed(2)}</span>
+                                                                                                            <span class="breakdown-amount">{formatCurrency(item.amount)}</span>
                                                                                                         </li>
                                                                                                     {/each}
                                                                                                 </ul>
@@ -1190,14 +1186,14 @@
 
     <section class="card">
         <div class="settlements-header">
-            <h3>Settlements</h3>
+            <h3>{$_('debts.settlements')}</h3>
             <label class="settlement-mode-toggle">
                 <input type="checkbox" bind:checked={useDirectSettlements} />
-                Direct-only (no intermediaries)
+                {$_('debts.directOnlyMode')}
             </label>
         </div>
         {#if filteredSettlements.length === 0}
-            <p class="all-settled">{focusParticipantId !== null ? 'No settlements for this participant' : 'All settled up!'}</p>
+            <p class="all-settled">{focusParticipantId !== null ? $_('debts.noSettlementsForParticipant') : $_('debts.allSettled')}</p>
         {:else}
             <ul class="settlements-list">
                 {#each filteredSettlements as s}
@@ -1205,7 +1201,7 @@
                         <span class="from" class:highlight={s.from_participant_id === focusParticipantId}>{s.from_participant_name}</span>
                         <span class="arrow">&rarr;</span>
                         <span class="to" class:highlight={s.to_participant_id === focusParticipantId}>{s.to_participant_name}</span>
-                        <span class="amount">${s.amount.toFixed(2)}</span>
+                        <span class="amount">{formatCurrency(s.amount)}</span>
                     </li>
                 {/each}
             </ul>
@@ -1221,7 +1217,7 @@
                 onclick={() => showOccurrences = !showOccurrences}
             >
                 <span class="expand-icon">{showOccurrences ? '▼' : '▶'}</span>
-                <h3>Payments Included ({totalCount})</h3>
+                <h3>{$_('debts.paymentsIncluded')} ({totalCount})</h3>
             </button>
 
             {#if showOccurrences}
@@ -1241,14 +1237,14 @@
                                         <div class="year-summary-header">
                                             <span class="expand-icon">▶</span>
                                             <span class="year-label">{year}</span>
-                                            <span class="year-total">${getYearTotal(yearData).toFixed(2)}</span>
+                                            <span class="year-total">{formatCurrency(getYearTotal(yearData))}</span>
                                         </div>
                                         <div class="year-summary-meta">
-                                            {getYearTransactionCount(yearData)} {getYearTransactionCount(yearData) === 1 ? 'transaction' : 'transactions'}
+                                            {getYearTransactionCount(yearData)} {getYearTransactionCount(yearData) === 1 ? $_('debts.transaction') : $_('debts.transactions')}
                                         </div>
                                         <div class="year-summary-participants">
                                             {#each [...getYearParticipantTotals(yearData).entries()].sort((a, b) => b[1] - a[1]) as [participantName, amount]}
-                                                <span class="participant-chip">{participantName}: ${amount.toFixed(2)}</span>
+                                                <span class="participant-chip">{participantName}: {formatCurrency(amount)}</span>
                                             {/each}
                                         </div>
                                     </div>
@@ -1271,14 +1267,14 @@
                                                     <div class="month-summary-header">
                                                         <span class="expand-icon">▶</span>
                                                         <span class="month-label">{monthData.month}</span>
-                                                        <span class="month-total">${monthData.totalAmount.toFixed(2)}</span>
+                                                        <span class="month-total">{formatCurrency(monthData.totalAmount)}</span>
                                                     </div>
                                                     <div class="month-summary-meta">
-                                                        {getTransactionCount(monthData)} {getTransactionCount(monthData) === 1 ? 'transaction' : 'transactions'}
+                                                        {getTransactionCount(monthData)} {getTransactionCount(monthData) === 1 ? $_('debts.transaction') : $_('debts.transactions')}
                                                     </div>
                                                     <div class="month-summary-participants">
                                                         {#each [...monthData.participantTotals.entries()].sort((a, b) => b[1] - a[1]) as [participantName, amount]}
-                                                            <span class="participant-chip">{participantName}: ${amount.toFixed(2)}</span>
+                                                            <span class="participant-chip">{participantName}: {formatCurrency(amount)}</span>
                                                         {/each}
                                                     </div>
                                                 </div>
@@ -1291,7 +1287,7 @@
                                                 <div class="date-group">
                                                     <div class="date-label">
                                                         {formatDate(dateData.date)}
-                                                        <span class="date-total">${dateData.totalAmount.toFixed(2)}</span>
+                                                        <span class="date-total">{formatCurrency(dateData.totalAmount)}</span>
                                                     </div>
 
                                                     <!-- Individual transactions -->
@@ -1304,10 +1300,10 @@
                                                                     <span class="trans-desc">
                                                                         {occ.description}
                                                                         {#if occ.is_recurring}
-                                                                            <span class="occ-tag recurring-tag">recurring</span>
+                                                                            <span class="occ-tag recurring-tag">{$_('debts.recurring')}</span>
                                                                         {/if}
                                                                     </span>
-                                                                    <span class="trans-amount">${occ.amount.toFixed(2)}</span>
+                                                                    <span class="trans-amount">{formatCurrency(occ.amount)}</span>
                                                                 </div>
                                                                 <div class="trans-meta">
                                                                     {#if payment}
@@ -1331,7 +1327,7 @@
                                                                     <div class="trans-splits">
                                                                         {#each payment.contributions as c}
                                                                             <span class="chip">
-                                                                                {c.participant_name}: ${c.amount.toFixed(2)}
+                                                                                {c.participant_name}: {formatCurrency(c.amount)}
                                                                             </span>
                                                                         {/each}
                                                                     </div>

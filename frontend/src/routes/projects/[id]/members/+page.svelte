@@ -3,6 +3,7 @@
     import { updateMemberRole, removeMember, setMemberParticipant } from "$lib/api";
     import { members, participants, refreshMembers, isAdmin, currentProject } from '$lib/stores/project';
     import { auth } from '$lib/auth';
+    import { _ } from '$lib/i18n';
 
     let error = $state('');
     let success = $state('');
@@ -94,7 +95,7 @@
     );
 </script>
 
-<h2>Members</h2>
+<h2>{$_('members.title')}</h2>
 
 {#if error}
     <div class="error">{error}</div>
@@ -106,8 +107,8 @@
 
 {#if $isAdmin && $currentProject?.invite_code}
     <section class="card invite-card">
-        <h3>Invite Link</h3>
-        <p>Share this code with others to let them join the project:</p>
+        <h3>{$_('members.inviteLink')}</h3>
+        <p>{$_('members.shareCodeHint')}</p>
         <div class="invite-code">
             <code>{$currentProject.invite_code}</code>
         </div>
@@ -115,10 +116,10 @@
 {/if}
 
 <section class="card">
-    <h3>Project Members</h3>
+    <h3>{$_('members.projectMembers')}</h3>
 
     {#if $members.length === 0}
-        <p class="empty">No members yet.</p>
+        <p class="empty">{$_('members.noMembersYet')}</p>
     {:else}
         <ul class="members-list">
             {#each $members as m}
@@ -131,12 +132,12 @@
                             </div>
                             <div class="edit-controls">
                                 <select bind:value={editRole}>
-                                    <option value="reader">Reader</option>
-                                    <option value="editor">Editor</option>
-                                    <option value="admin">Admin</option>
+                                    <option value="reader">{$_('roles.reader')}</option>
+                                    <option value="editor">{$_('roles.editor')}</option>
+                                    <option value="admin">{$_('roles.admin')}</option>
                                 </select>
                                 <select bind:value={editParticipantId} onchange={() => handleSetParticipant(m.user_id, editParticipantId)}>
-                                    <option value={null}>No participant</option>
+                                    <option value={null}>{$_('members.noParticipant')}</option>
                                     {#if m.participant_id}
                                         <option value={m.participant_id}>{m.participant_name}</option>
                                     {/if}
@@ -144,8 +145,8 @@
                                         <option value={p.id}>{p.name}</option>
                                     {/each}
                                 </select>
-                                <button type="submit" disabled={updating}>Save</button>
-                                <button type="button" onclick={cancelEdit}>Cancel</button>
+                                <button type="submit" disabled={updating}>{$_('common.save')}</button>
+                                <button type="button" onclick={cancelEdit}>{$_('common.cancel')}</button>
                             </div>
                         </form>
                     {:else}
@@ -153,19 +154,19 @@
                             <span class="name">
                                 {m.display_name || m.username}
                                 {#if isCurrentUser(m.user_id)}
-                                    <span class="you">(you)</span>
+                                    <span class="you">{$_('members.you')}</span>
                                 {/if}
                             </span>
                             <span class="username">@{m.username}</span>
                             {#if m.participant_name}
-                                <span class="participant">as {m.participant_name}</span>
+                                <span class="participant">{$_('members.as')} {m.participant_name}</span>
                             {/if}
                         </div>
                         <div class="member-actions">
                             <span class="role-badge role-{m.role}">{getRoleBadge(m.role)}</span>
                             {#if $isAdmin && !isCurrentUser(m.user_id)}
-                                <button class="btn-edit" onclick={() => startEdit(m)}>Edit</button>
-                                <button class="btn-delete" onclick={() => handleRemove(m.user_id)}>Remove</button>
+                                <button class="btn-edit" onclick={() => startEdit(m)}>{$_('common.edit')}</button>
+                                <button class="btn-delete" onclick={() => handleRemove(m.user_id)}>{$_('members.remove')}</button>
                             {/if}
                         </div>
                     {/if}

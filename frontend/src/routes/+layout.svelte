@@ -10,13 +10,38 @@
     import { goto } from '$app/navigation';
     import { browser } from '$app/environment';
     import type { Snippet } from 'svelte';
+    import { setupI18n, getInitialLocale, _, locale, setLocale, supportedLanguages, isLocaleLoaded } from '$lib/i18n';
+    import { preferences } from '$lib/stores/preferences';
 
     let { children }: { children: Snippet } = $props();
+
+    // Initialize i18n before anything else
+    const initialLocale = getInitialLocale();
+    setupI18n(initialLocale);
 
     // Initialize auth on mount
     $effect(() => {
         auth.init();
     });
+
+    // When user logs in, sync preferences from backend
+    $effect(() => {
+        if ($auth.user?.preferences) {
+            preferences.initFromUser($auth.user.preferences);
+        }
+    });
+
+    // When user logs out, reset preferences
+    $effect(() => {
+        if (!$isAuthenticated && !$isLoading) {
+            // Don't reset on initial load, only on logout
+        }
+    });
+
+    function handleLanguageChange(e: Event) {
+        const select = e.target as HTMLSelectElement;
+        setLocale(select.value);
+    }
 
     // Redirect to login if not authenticated (except on auth pages)
     $effect(() => {
@@ -38,19 +63,36 @@
     }
 </script>
 
-{#if $isLoading}
-    <div class="loading">Loading...</div>
+{#if $isLoading || !$isLocaleLoaded}
+    <div class="loading">{$_('common.loading')}</div>
 {:else}
     {#if $isAuthenticated}
         <nav class="navbar">
             <div class="nav-brand">BonsCompte</div>
             <div class="nav-links">
-                <a href="/" class:active={$page.url.pathname === '/'}>Projects</a>
+                <a href="/" class:active={$page.url.pathname === '/'}>{$_('nav.projects')}</a>
             </div>
             <div class="nav-user">
+                <select class="language-select" value={$locale} onchange={handleLanguageChange}>
+                    {#each supportedLanguages as lang}
+                        <option value={lang.code}>{lang.name}</option>
+                    {/each}
+                </select>
                 <span>{$auth.user?.username}</span>
-                <a href="/settings" class="settings-link" class:active={$page.url.pathname === '/settings'}>Settings</a>
-                <button onclick={handleLogout}>Logout</button>
+                <a href="/settings" class="settings-link" class:active={$page.url.pathname === '/settings'}>{$_('nav.settings')}</a>
+                <button onclick={handleLogout}>{$_('nav.logout')}</button>
+            </div>
+        </nav>
+    {:else}
+        <!-- Language selector for unauthenticated pages -->
+        <nav class="navbar navbar-minimal">
+            <div class="nav-brand">BonsCompte</div>
+            <div class="nav-user">
+                <select class="language-select" value={$locale} onchange={handleLanguageChange}>
+                    {#each supportedLanguages as lang}
+                        <option value={lang.code}>{lang.name}</option>
+                    {/each}
+                </select>
             </div>
         </nav>
     {/if}
@@ -124,6 +166,25 @@
 
     .nav-user button:hover {
         background: #f5f5f5;
+    }
+
+    .language-select {
+        padding: 0.4rem 0.6rem;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        background: white;
+        cursor: pointer;
+        font-size: 0.9rem;
+        color: #333;
+    }
+
+    .language-select:focus {
+        outline: none;
+        border-color: var(--accent, #7b61ff);
+    }
+
+    .navbar-minimal {
+        justify-content: space-between;
     }
 
     .settings-link {

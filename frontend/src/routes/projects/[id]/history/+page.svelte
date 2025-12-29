@@ -2,6 +2,8 @@
     import { page } from '$app/stores';
     import { getProjectHistory, undoHistoryEntry, verifyHistoryChain, type HistoryEntry, type ChainVerification } from "$lib/api";
     import { isAdmin } from '$lib/stores/project';
+    import { _ } from '$lib/i18n';
+    import { formatDate, formatDateWithWeekday } from '$lib/format/date';
 
     let entries: HistoryEntry[] = $state([]);
     let loading = $state(true);
@@ -233,7 +235,7 @@
     }
 </script>
 
-<h2>History</h2>
+<h2>{$_('history.title')}</h2>
 
 {#if undoSuccess}
     <div class="success-message">{undoSuccess}</div>
@@ -251,7 +253,7 @@
 <div class="filters card">
     <div class="filter-row">
         <label>
-            <span>Type:</span>
+            <span>{$_('history.type')}:</span>
             <select bind:value={filterEntityType}>
                 {#each entityTypes as opt}
                     <option value={opt.value}>{opt.label}</option>
@@ -259,7 +261,7 @@
             </select>
         </label>
         <label>
-            <span>Action:</span>
+            <span>{$_('history.action')}:</span>
             <select bind:value={filterAction}>
                 {#each actionTypes as opt}
                     <option value={opt.value}>{opt.label}</option>
@@ -272,7 +274,7 @@
                 onclick={runVerification}
                 disabled={verifying}
             >
-                {verifying ? 'Verifying...' : 'Verify Chain'}
+                {verifying ? $_('history.verifying') : $_('history.verifyChain')}
             </button>
         {/if}
     </div>
@@ -280,19 +282,19 @@
         <div class="verification-result" class:valid={verification.is_valid} class:invalid={!verification.is_valid}>
             <span class="verification-icon">{verification.is_valid ? '✓' : '✗'}</span>
             <span>{verification.message}</span>
-            <span class="verification-count">({verification.total_entries} entries)</span>
+            <span class="verification-count">({verification.total_entries} {$_('history.entries')})</span>
         </div>
     {/if}
 </div>
 
 {#if loading}
-    <p class="loading">Loading history...</p>
+    <p class="loading">{$_('history.loadingHistory')}</p>
 {:else if filteredEntries.length === 0}
     <div class="card empty-state">
-        <p>No history entries found.</p>
+        <p>{$_('history.noEntriesFound')}</p>
         {#if filterEntityType || filterAction}
             <button class="clear-filters-btn" onclick={() => { filterEntityType = ''; filterAction = ''; }}>
-                Clear Filters
+                {$_('history.clearFilters')}
             </button>
         {/if}
     </div>
@@ -325,16 +327,16 @@
 
                 <div class="entry-meta">
                     <span class="actor">
-                        by {entry.actor_name || 'System'}
+                        {$_('history.by')} {entry.actor_name || $_('history.system')}
                     </span>
                     {#if entry.is_undone}
-                        <span class="undone-badge">Undone</span>
+                        <span class="undone-badge">{$_('history.undone')}</span>
                     {/if}
                     {#if entry.undoes_history_id}
-                        <span class="undoes-badge">Undoes #{entry.undoes_history_id}</span>
+                        <span class="undoes-badge">{$_('history.undoes')} #{entry.undoes_history_id}</span>
                     {/if}
                     {#if entry.reason}
-                        <span class="reason">Reason: {entry.reason}</span>
+                        <span class="reason">{$_('history.reason')}: {entry.reason}</span>
                     {/if}
                 </div>
 
@@ -342,18 +344,18 @@
                     <div class="entry-details">
                         {#if entry.payload_before}
                             <div class="payload-section">
-                                <h4>Before:</h4>
+                                <h4>{$_('history.before')}:</h4>
                                 <pre>{formatPayload(entry.payload_before)}</pre>
                             </div>
                         {/if}
                         {#if entry.payload_after}
                             <div class="payload-section">
-                                <h4>After:</h4>
+                                <h4>{$_('history.after')}:</h4>
                                 <pre>{formatPayload(entry.payload_after)}</pre>
                             </div>
                         {/if}
                         <div class="entry-footer">
-                            <span class="correlation">Correlation: {entry.correlation_id.substring(0, 8)}...</span>
+                            <span class="correlation">{$_('history.correlation')}: {entry.correlation_id.substring(0, 8)}...</span>
                             <span class="full-time">{formatDateTime(entry.created_at)}</span>
                         </div>
                     </div>
@@ -365,7 +367,7 @@
                         onclick={(e) => { e.stopPropagation(); openUndoDialog(entry); }}
                         disabled={undoingId === entry.id}
                     >
-                        {undoingId === entry.id ? 'Undoing...' : 'Undo'}
+                        {undoingId === entry.id ? $_('history.undoing') : $_('history.undo')}
                     </button>
                 {/if}
 
@@ -376,7 +378,7 @@
                             onclick={() => openUndoDialog(entry)}
                             disabled={undoingId === entry.id}
                         >
-                            {undoingId === entry.id ? 'Undoing...' : 'Undo This Action'}
+                            {undoingId === entry.id ? $_('history.undoing') : $_('history.undoThisAction')}
                         </button>
                     </div>
                 {/if}
@@ -389,9 +391,9 @@
 {#if showUndoDialog && entryToUndo}
     <div class="dialog-overlay" onclick={closeUndoDialog}>
         <div class="dialog" onclick={(e) => e.stopPropagation()}>
-            <h3>Confirm Undo</h3>
+            <h3>{$_('history.confirmUndo')}</h3>
             <p>
-                Are you sure you want to undo this action?
+                {$_('history.confirmUndoQuestion')}
             </p>
             <div class="dialog-summary">
                 <span class="action-badge" style="background: {getActionColor(entryToUndo.action)}">
@@ -403,17 +405,17 @@
                 {/if}
             </div>
             <label class="reason-label">
-                <span>Reason (optional):</span>
+                <span>{$_('history.reasonOptional')}:</span>
                 <input
                     type="text"
                     bind:value={undoReason}
-                    placeholder="Why are you undoing this?"
+                    placeholder={$_('history.reasonPlaceholder')}
                 />
             </label>
             <div class="dialog-actions">
-                <button class="cancel-btn" onclick={closeUndoDialog}>Cancel</button>
+                <button class="cancel-btn" onclick={closeUndoDialog}>{$_('common.cancel')}</button>
                 <button class="confirm-btn" onclick={confirmUndo} disabled={undoingId !== null}>
-                    {undoingId !== null ? 'Undoing...' : 'Confirm Undo'}
+                    {undoingId !== null ? $_('history.undoing') : $_('history.confirmUndo')}
                 </button>
             </div>
         </div>

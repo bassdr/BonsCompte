@@ -3,6 +3,9 @@
     import { getPayments, createPayment, updatePayment, deletePayment, type PaymentWithContributions, type CreatePaymentInput } from "$lib/api";
     import { participants, currentProject, canEdit, members } from '$lib/stores/project';
     import { auth } from '$lib/auth';
+    import { _ } from '$lib/i18n';
+    import { formatDate as formatDateI18n, formatDateWithWeekday } from '$lib/format/date';
+    import { formatCurrency, formatNumber } from '$lib/format/currency';
 
     let payments: PaymentWithContributions[] = $state([]);
     let loading = $state(true);
@@ -48,8 +51,8 @@
     let userModifiedMonths = $state(false);
 
     // Day and month names for display
-    const WEEKDAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    let WEEKDAY_NAMES = $derived([$_('weekdays.sun'), $_('weekdays.mon'), $_('weekdays.tue'), $_('weekdays.wed'), $_('weekdays.thu'), $_('weekdays.fri'), $_('weekdays.sat')]);
+    let MONTH_NAMES = $derived([$_('months.jan'), $_('months.feb'), $_('months.mar'), $_('months.apr'), $_('months.may'), $_('months.jun'), $_('months.jul'), $_('months.aug'), $_('months.sep'), $_('months.oct'), $_('months.nov'), $_('months.dec')]);
 
     // Derived values for UI logic
     let showWeekdaySelector = $derived(
@@ -1078,7 +1081,7 @@
     }
 </script>
 
-<h2>Payments</h2>
+<h2>{$_('payments.title')}</h2>
 
 {#if error}
     <div class="error">{error}</div>
@@ -1086,15 +1089,15 @@
 
 {#if $canEdit}
     <section class="card">
-        <h3>{editingPaymentId !== null ? 'Edit Payment' : 'Add Payment'}</h3>
+        <h3>{editingPaymentId !== null ? $_('payments.editPayment') : $_('payments.addPayment')}</h3>
 
         {#if $participants.length === 0}
-            <p class="warning">Add participants before creating payments.</p>
+            <p class="warning">{$_('payments.addParticipantsFirst')}</p>
         {:else}
             <form onsubmit={handleSubmit}>
                 <div class="form-row">
                     <div class="field">
-                        <label for="payer">Paid by</label>
+                        <label for="payer">{$_('payments.paidBy')}</label>
                         <select id="payer" bind:value={payerId}>
                             {#each $participants as p}
                                 <option value={p.id}>{p.name}</option>
@@ -1103,7 +1106,7 @@
                     </div>
 
                     <div class="field">
-                        <label for="amount">Amount</label>
+                        <label for="amount">{$_('payments.amount')}</label>
                         <input
                             id="amount"
                             type="number"
@@ -1115,7 +1118,7 @@
                     </div>
 
                     <div class="field">
-                        <label for="payment-date">Date</label>
+                        <label for="payment-date">{$_('payments.date')}</label>
                         <input
                             id="payment-date"
                             type="date"
@@ -1126,19 +1129,19 @@
                 </div>
 
                 <div class="field">
-                    <label for="description">Description</label>
+                    <label for="description">{$_('payments.description')}</label>
                     <input
                         id="description"
                         type="text"
                         bind:value={description}
-                        placeholder="What was this for?"
+                        placeholder={$_('payments.descriptionPlaceholder')}
                         required
                     />
                 </div>
 
                 <!-- Receipt Image -->
                 <div class="field">
-                    <label for="receipt-input">Receipt Image <span class="hint">(JPEG, PNG, GIF, WebP - max 5MB)</span></label>
+                    <label for="receipt-input">{$_('payments.receiptImage')} <span class="hint">{$_('payments.imageFormatsHint')}</span></label>
                     <div class="receipt-upload">
                         <input
                             type="file"
@@ -1148,7 +1151,7 @@
                         />
                         {#if receiptPreview}
                             <div class="receipt-preview">
-                                <img src={receiptPreview} alt="Receipt preview" />
+                                <img src={receiptPreview} alt={$_('payments.receiptPreview')} />
                                 <button type="button" class="clear-btn" onclick={clearReceipt}>&times;</button>
                             </div>
                         {/if}
@@ -1159,22 +1162,22 @@
                     {@const receiver = $participants.find(p => p.id === receiverAccountId)}
                     <div class="internal-transfer-banner">
                         <span class="transfer-icon">↗</span>
-                        <span class="transfer-text">Internal Transfer to {receiver?.name ?? 'Unknown'}</span>
-                        <button type="button" class="clear-transfer-btn" onclick={() => { receiverAccountId = null; includeAll(); }}>Cancel</button>
+                        <span class="transfer-text">{$_('payments.internalTransferTo')} {receiver?.name ?? $_('common.unknown')}</span>
+                        <button type="button" class="clear-transfer-btn" onclick={() => { receiverAccountId = null; includeAll(); }}>{$_('common.cancel')}</button>
                     </div>
                 {/if}
 
                 <div class="split-header">
-                    <h4>Split between</h4>
-                    <button type="button" class="small-btn" onclick={includeAll}>Include all</button>
+                    <h4>{$_('payments.splitBetween')}</h4>
+                    <button type="button" class="small-btn" onclick={includeAll}>{$_('payments.includeAll')}</button>
                 </div>
                 <table class="split-table">
                     <thead>
                         <tr>
-                            <th>Participant</th>
-                            <th>Include</th>
-                            <th>Weight</th>
-                            <th>Share</th>
+                            <th>{$_('payments.participant')}</th>
+                            <th>{$_('payments.include')}</th>
+                            <th>{$_('payments.weight')}</th>
+                            <th>{$_('payments.share')}</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -1199,14 +1202,14 @@
                                         disabled={!included[p.id]}
                                     />
                                 </td>
-                                <td class="share">${shares[p.id]?.toFixed(2) ?? '0.00'}</td>
+                                <td class="share">{formatCurrency(shares[p.id] ?? 0)}</td>
                                 <td>
                                     <button
                                         type="button"
                                         class="payback-btn transfer-btn"
                                         onclick={() => transferTo(p.id)}
-                                        title={p.account_type === 'pool' ? 'Deposit to pool' : 'Transfer money to this person'}
-                                    >{p.account_type === 'pool' ? 'Deposit' : 'Pay back'}</button>
+                                        title={p.account_type === 'pool' ? $_('payments.depositToPool') : $_('payments.transferToThisPerson')}
+                                    >{p.account_type === 'pool' ? $_('payments.deposit') : $_('payments.payBack')}</button>
                                 </td>
                             </tr>
                         {/each}
@@ -1217,24 +1220,24 @@
                 <div class="recurrence-section">
                     <label class="checkbox-label">
                         <input type="checkbox" bind:checked={isRecurring} />
-                        Recurring payment
+                        {$_('payments.recurringPayment')}
                     </label>
 
                     {#if isRecurring}
                         <div class="recurrence-options">
                             <div class="form-row">
                                 <div class="field small">
-                                    <label for="recurrence-interval">Every</label>
+                                    <label for="recurrence-interval">{$_('payments.every')}</label>
                                     <input id="recurrence-interval" type="number" bind:value={recurrenceInterval} min="1" />
                                 </div>
 
                                 <div class="field">
-                                    <label for="recurrence-type">Period</label>
+                                    <label for="recurrence-type">{$_('payments.period')}</label>
                                     <select id="recurrence-type" bind:value={recurrenceType}>
-                                        <option value="daily">{recurrenceInterval === 1 ? 'Day' : 'Days'}</option>
-                                        <option value="weekly">{recurrenceInterval === 1 ? 'Week' : 'Weeks'}</option>
-                                        <option value="monthly">{recurrenceInterval === 1 ? 'Month' : 'Months'}</option>
-                                        <option value="yearly">{recurrenceInterval === 1 ? 'Year' : 'Years'}</option>
+                                        <option value="daily">{recurrenceInterval === 1 ? $_('payments.day') : $_('payments.days')}</option>
+                                        <option value="weekly">{recurrenceInterval === 1 ? $_('payments.week') : $_('payments.weeks')}</option>
+                                        <option value="monthly">{recurrenceInterval === 1 ? $_('payments.month') : $_('payments.months')}</option>
+                                        <option value="yearly">{recurrenceInterval === 1 ? $_('payments.year') : $_('payments.years')}</option>
                                     </select>
                                 </div>
                             </div>
@@ -1242,10 +1245,10 @@
                             <!-- Weekly: Weekday selection (1-4 week cycles) -->
                             {#if showWeekdaySelector}
                                 <div class="weekday-selector" role="group" aria-labelledby="weekday-selector-label">
-                                    <span id="weekday-selector-label" class="selector-label">Select days of the week:</span>
+                                    <span id="weekday-selector-label" class="selector-label">{$_('payments.selectDaysOfWeek')}</span>
                                     {#each Array(recurrenceInterval) as _, weekIdx}
                                         {#if recurrenceInterval > 1}
-                                            <div class="week-label">Week {weekIdx + 1}:</div>
+                                            <div class="week-label">{$_('payments.week')} {weekIdx + 1}:</div>
                                         {/if}
                                         <div class="weekday-row">
                                             {#each WEEKDAY_NAMES as day, dayIdx}
@@ -1266,7 +1269,7 @@
                             <!-- Monthly: Day of month selection -->
                             {#if showMonthdaySelector}
                                 <div class="monthday-selector" role="group" aria-labelledby="monthday-selector-label">
-                                    <span id="monthday-selector-label" class="selector-label">Select days of the month:</span>
+                                    <span id="monthday-selector-label" class="selector-label">{$_('payments.selectDaysOfMonth')}</span>
                                     <div class="monthday-grid">
                                         {#each Array(31) as _, idx}
                                             {@const day = idx + 1}
@@ -1282,7 +1285,7 @@
                                     </div>
                                     {#if showMonthdayWarning}
                                         <p class="warning-hint">
-                                            Note: For months with fewer days, the last day of the month will be used.
+                                            {$_('payments.monthdayWarning')}
                                         </p>
                                     {/if}
                                 </div>
@@ -1291,7 +1294,7 @@
                             <!-- Yearly: Month selection -->
                             {#if showMonthSelector}
                                 <div class="month-selector" role="group" aria-labelledby="month-selector-label">
-                                    <span id="month-selector-label" class="selector-label">Select months:</span>
+                                    <span id="month-selector-label" class="selector-label">{$_('payments.selectMonths')}</span>
                                     <div class="month-grid">
                                         {#each MONTH_NAMES as monthName, idx}
                                             {@const month = idx + 1}
@@ -1310,7 +1313,7 @@
 
                             <div class="recurrence-limits">
                                 <div class="field">
-                                    <label for="end-date">End date (optional)</label>
+                                    <label for="end-date">{$_('payments.endDateOptional')}</label>
                                     <input
                                         id="end-date"
                                         type="date"
@@ -1320,16 +1323,16 @@
                                 </div>
 
                                 <div class="field">
-                                    <label for="recurrence-count">Number of occurrences (optional)</label>
+                                    <label for="recurrence-count">{$_('payments.occurrencesOptional')}</label>
                                     <input
                                         id="recurrence-count"
                                         type="number"
                                         bind:value={recurrenceCount}
                                         min="1"
-                                        placeholder="e.g., 12"
+                                        placeholder={$_('payments.occurrencesPlaceholder')}
                                     />
                                     {#if endDateFromCount}
-                                        <span class="count-hint">Last occurrence: {formatDate(endDateFromCount)}</span>
+                                        <span class="count-hint">{$_('payments.lastOccurrence')}: {formatDateI18n(endDateFromCount)}</span>
                                     {/if}
                                 </div>
                             </div>
@@ -1385,7 +1388,7 @@
 
                 <div class="form-actions">
                     <button type="submit" disabled={submitting || $participants.length === 0}>
-                        {submitting ? 'Saving...' : (editingPaymentId !== null ? (useSplitDate ? 'Split & Update' : 'Update Payment') : 'Add Payment')}
+                        {submitting ? $_('common.saving') : (editingPaymentId !== null ? (useSplitDate ? $_('payments.splitAndUpdate') : $_('payments.updatePayment')) : $_('payments.addPayment'))}
                     </button>
                     {#if editingPaymentId !== null}
                         <button type="button" class="cancel-btn" onclick={cancelEditing}>Cancel</button>
@@ -1397,12 +1400,12 @@
 {/if}
 
 <section class="card">
-    <h3>Recent Payments</h3>
+    <h3>{$_('payments.recentPayments')}</h3>
 
     {#if loading}
-        <p>Loading...</p>
+        <p>{$_('common.loading')}</p>
     {:else if payments.length === 0}
-        <p class="empty">No payments yet.</p>
+        <p class="empty">{$_('payments.noPaymentsYet')}</p>
     {:else}
         <ul class="payments-list">
             {#each payments as p}
@@ -1417,22 +1420,22 @@
                                 {#if p.receipt_image}
                                     <button
                                         class="icon-btn"
-                                        title="View receipt"
+                                        title={$_('payments.viewReceipt')}
                                         onclick={() => openImageModal(p.receipt_image!)}
                                     >&#x1F9FE;</button>
                                 {/if}
                             </div>
                         </div>
                         <span class="amount-group">
-                            <span class="amount">${p.amount.toFixed(2)}</span>
+                            <span class="amount">{formatCurrency(p.amount)}</span>
                             {#if $canEdit}
                                 <button
                                     class="edit-btn"
                                     onclick={() => startEditing(p)}
-                                    title="Edit payment"
+                                    title={$_('payments.editPayment')}
                                     disabled={editingPaymentId !== null}
                                 >&#x2699;</button>
-                                <button class="delete-btn" onclick={() => handleDelete(p.id)} title="Delete payment">
+                                <button class="delete-btn" onclick={() => handleDelete(p.id)} title={$_('payments.deletePayment')}>
                                     &times;
                                 </button>
                             {/if}
@@ -1441,10 +1444,10 @@
                     <div class="payment-meta">
                         {#if p.receiver_account_id !== null}
                             {@const receiver = $participants.find(pr => pr.id === p.receiver_account_id)}
-                            <span class="transfer-badge">Transfer</span>
-                            {p.payer_name ?? 'Unknown'} → {receiver?.name ?? 'Unknown'}
+                            <span class="transfer-badge">{$_('payments.transfer')}</span>
+                            {p.payer_name ?? $_('common.unknown')} → {receiver?.name ?? $_('common.unknown')}
                         {:else}
-                            Paid by {p.payer_name ?? 'Unknown'}
+                            {$_('payments.paidBy')} {p.payer_name ?? $_('common.unknown')}
                         {/if}
                         {#if p.is_recurring && p.recurrence_end_date}
                             from {formatDate(p.payment_date)} to {formatDate(p.recurrence_end_date)}
@@ -1458,7 +1461,7 @@
                     <div class="payment-splits">
                         {#each p.contributions as c}
                             <span class="chip">
-                                {c.participant_name}: ${c.amount.toFixed(2)}
+                                {c.participant_name}: {formatCurrency(c.amount)}
                             </span>
                         {/each}
                     </div>

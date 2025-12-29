@@ -1,6 +1,8 @@
 <script lang="ts">
     import { getProjects, createProject, joinProject, type ProjectWithRole } from "$lib/api";
     import { goto } from "$app/navigation";
+    import { _ } from '$lib/i18n';
+    import { formatDate } from '$lib/format';
 
     let projects: ProjectWithRole[] = $state([]);
     let loading = $state(true);
@@ -81,9 +83,9 @@
 
     function getRoleBadge(role: string): string {
         switch (role) {
-            case 'admin': return 'Admin';
-            case 'editor': return 'Editor';
-            case 'reader': return 'Reader';
+            case 'admin': return $_('roles.admin');
+            case 'editor': return $_('roles.editor');
+            case 'reader': return $_('roles.reader');
             default: return role;
         }
     }
@@ -93,7 +95,7 @@
     });
 </script>
 
-<h1>My Projects</h1>
+<h1>{$_('projects.title')}</h1>
 
 {#if error}
     <div class="error">{error}</div>
@@ -101,38 +103,38 @@
 
 <div class="actions">
     <button class="btn-primary" onclick={() => showCreateForm = !showCreateForm}>
-        {showCreateForm ? 'Cancel' : '+ New Project'}
+        {showCreateForm ? $_('common.cancel') : $_('projects.newProject')}
     </button>
     <button class="btn-secondary" onclick={() => showJoinForm = !showJoinForm}>
-        {showJoinForm ? 'Cancel' : 'Join Project'}
+        {showJoinForm ? $_('common.cancel') : $_('projects.joinProject')}
     </button>
 </div>
 
 {#if showCreateForm}
     <div class="card form-card">
-        <h2>Create New Project</h2>
+        <h2>{$_('projects.createNewProject')}</h2>
         <form onsubmit={handleCreate}>
             <div class="field">
-                <label for="name">Project Name</label>
+                <label for="name">{$_('projects.projectName')}</label>
                 <input
                     id="name"
                     type="text"
                     bind:value={newProjectName}
-                    placeholder="e.g., Summer Vacation 2025"
+                    placeholder={$_('projects.projectNamePlaceholder')}
                     required
                 />
             </div>
             <div class="field">
-                <label for="description">Description (optional)</label>
+                <label for="description">{$_('projects.descriptionOptional')}</label>
                 <input
                     id="description"
                     type="text"
                     bind:value={newProjectDescription}
-                    placeholder="What's this project about?"
+                    placeholder={$_('projects.descriptionPlaceholder')}
                 />
             </div>
             <button type="submit" disabled={creating}>
-                {creating ? 'Creating...' : 'Create Project'}
+                {creating ? $_('projects.creating') : $_('projects.createProject')}
             </button>
         </form>
     </div>
@@ -140,31 +142,31 @@
 
 {#if showJoinForm}
     <div class="card form-card">
-        <h2>Join a Project</h2>
+        <h2>{$_('projects.joinAProject')}</h2>
         <form onsubmit={handleJoin}>
             <div class="field">
-                <label for="code">Invite Code</label>
+                <label for="code">{$_('projects.inviteCode')}</label>
                 <input
                     id="code"
                     type="text"
                     bind:value={inviteCode}
-                    placeholder="Enter the invite code"
+                    placeholder={$_('projects.inviteCodePlaceholder')}
                     required
                 />
             </div>
             <button type="submit" disabled={joining}>
-                {joining ? 'Joining...' : 'Join Project'}
+                {joining ? $_('projects.joining') : $_('projects.joinProject')}
             </button>
         </form>
     </div>
 {/if}
 
 {#if loading}
-    <p>Loading projects...</p>
+    <p>{$_('projects.loadingProjects')}</p>
 {:else if projects.length === 0}
     <div class="empty-state">
-        <p>You don't have any projects yet.</p>
-        <p>Create a new project or join an existing one with an invite code.</p>
+        <p>{$_('projects.noProjects')}</p>
+        <p>{$_('projects.noProjectsHint')}</p>
     </div>
 {:else}
     <div class="projects-grid">
@@ -178,7 +180,7 @@
                     <p class="project-description">{project.description}</p>
                 {/if}
                 <div class="project-meta">
-                    Created {new Date(project.created_at).toLocaleDateString()}
+                    {$_('common.created')} {formatDate(project.created_at)}
                 </div>
             </a>
         {/each}

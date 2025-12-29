@@ -47,6 +47,17 @@ pub struct User {
     pub user_state: String,
     #[serde(skip_serializing)]
     pub token_version: i64,
+    // User preferences (nullable, defaults applied in UserPreferences)
+    #[serde(skip_serializing)]
+    pub language: Option<String>,
+    #[serde(skip_serializing)]
+    pub date_format: Option<String>,
+    #[serde(skip_serializing)]
+    pub decimal_separator: Option<String>,
+    #[serde(skip_serializing)]
+    pub currency_symbol: Option<String>,
+    #[serde(skip_serializing)]
+    pub currency_symbol_position: Option<String>,
 }
 
 impl User {
@@ -74,19 +85,58 @@ pub struct LoginRequest {
     pub password: String,
 }
 
+/// User preferences with server-side defaults applied
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserPreferences {
+    pub language: String,
+    pub date_format: String,
+    pub decimal_separator: String,
+    pub currency_symbol: String,
+    pub currency_symbol_position: String,
+}
+
+impl Default for UserPreferences {
+    fn default() -> Self {
+        Self {
+            language: "en".to_string(),
+            date_format: "mdy".to_string(),
+            decimal_separator: ".".to_string(),
+            currency_symbol: "$".to_string(),
+            currency_symbol_position: "before".to_string(),
+        }
+    }
+}
+
+impl UserPreferences {
+    /// Create preferences from User, applying defaults for NULL values
+    pub fn from_user(user: &User) -> Self {
+        let defaults = Self::default();
+        Self {
+            language: user.language.clone().unwrap_or(defaults.language),
+            date_format: user.date_format.clone().unwrap_or(defaults.date_format),
+            decimal_separator: user.decimal_separator.clone().unwrap_or(defaults.decimal_separator),
+            currency_symbol: user.currency_symbol.clone().unwrap_or(defaults.currency_symbol),
+            currency_symbol_position: user.currency_symbol_position.clone().unwrap_or(defaults.currency_symbol_position),
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct UserResponse {
     pub id: i64,
     pub username: String,
     pub display_name: Option<String>,
+    pub preferences: UserPreferences,
 }
 
 impl From<User> for UserResponse {
     fn from(user: User) -> Self {
+        let preferences = UserPreferences::from_user(&user);
         Self {
             id: user.id,
             username: user.username,
             display_name: user.display_name,
+            preferences,
         }
     }
 }

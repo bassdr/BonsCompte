@@ -12,6 +12,7 @@
     } from "$lib/api";
     import { participants, refreshParticipants, canEdit, isAdmin, currentProject } from '$lib/stores/project';
     import { auth } from '$lib/auth';
+    import { _ } from '$lib/i18n';
 
     let error = $state('');
     let success = $state('');
@@ -230,7 +231,7 @@
     });
 </script>
 
-<h2>Participants</h2>
+<h2>{$_('participants.title')}</h2>
 
 {#if error}
     <div class="error">{error}</div>
@@ -243,28 +244,28 @@
 {#if $canEdit}
     <div class="actions">
         <button class="btn-primary" onclick={() => showAddForm = !showAddForm}>
-            {showAddForm ? 'Cancel' : '+ Add Participant'}
+            {showAddForm ? $_('common.cancel') : $_('participants.addParticipant')}
         </button>
     </div>
 {/if}
 
 {#if showAddForm}
     <div class="card form-card">
-        <h3>Add Participant</h3>
+        <h3>{$_('participants.addParticipant')}</h3>
         <form onsubmit={handleAdd}>
             <div class="form-row">
                 <div class="field">
-                    <label for="name">Name</label>
+                    <label for="name">{$_('participants.name')}</label>
                     <input
                         id="name"
                         type="text"
                         bind:value={newName}
-                        placeholder="Participant name"
+                        placeholder={$_('participants.participantNamePlaceholder')}
                         required
                     />
                 </div>
                 <div class="field small">
-                    <label for="weight">Default Weight</label>
+                    <label for="weight">{$_('participants.defaultWeight')}</label>
                     <input
                         id="weight"
                         type="number"
@@ -274,25 +275,25 @@
                     />
                 </div>
                 <div class="field small">
-                    <label for="accountType">Type</label>
+                    <label for="accountType">{$_('participants.type')}</label>
                     <select id="accountType" bind:value={newAccountType}>
-                        <option value="user">User</option>
-                        <option value="pool">Pool</option>
+                        <option value="user">{$_('participants.user')}</option>
+                        <option value="pool">{$_('participants.pool')}</option>
                     </select>
                 </div>
             </div>
             <button type="submit" disabled={adding}>
-                {adding ? 'Adding...' : 'Add Participant'}
+                {adding ? $_('participants.adding') : $_('participants.addParticipant')}
             </button>
         </form>
     </div>
 {/if}
 
 <section class="card">
-    <h3>All Participants</h3>
+    <h3>{$_('participants.allParticipants')}</h3>
 
     {#if $participants.length === 0}
-        <p class="empty">No participants yet. Add one to get started.</p>
+        <p class="empty">{$_('participants.noParticipantsYet')}</p>
     {:else}
         <ul class="participants-list">
             {#each $participants as p}
@@ -312,41 +313,41 @@
                                 class="small-input"
                             />
                             <select bind:value={editAccountType} class="small-select">
-                                <option value="user">User</option>
-                                <option value="pool">Pool</option>
+                                <option value="user">{$_('participants.user')}</option>
+                                <option value="pool">{$_('participants.pool')}</option>
                             </select>
-                            <button type="submit" disabled={updating}>Save</button>
-                            <button type="button" onclick={cancelEdit}>Cancel</button>
+                            <button type="submit" disabled={updating}>{$_('common.save')}</button>
+                            <button type="button" onclick={cancelEdit}>{$_('common.cancel')}</button>
                         </form>
                     {:else}
                         <div class="participant-row">
                             <div class="participant-info">
                                 <span class="name">{p.name}</span>
                                 {#if p.account_type === 'pool'}
-                                    <span class="pool-badge">Pool</span>
+                                    <span class="pool-badge">{$_('participants.pool')}</span>
                                 {/if}
                                 <span class="weight">
                                     {#if p.default_weight === 0}
-                                        Weight: 0 (will not participate)
+                                        {$_('participants.weightZero')}
                                     {:else}
-                                        Weight: {p.default_weight}
+                                        {$_('participants.weight')}: {p.default_weight}
                                     {/if}
                                 </span>
                                 {#if p.user_id}
-                                    <span class="linked">Linked to account</span>
+                                    <span class="linked">{$_('participants.linkedToAccount')}</span>
                                 {/if}
                             </div>
                             <div class="participant-actions">
                                 {#if canClaim(p)}
                                     <button class="btn-claim" onclick={() => handleClaim(p.id)}>
-                                        Claim as me
+                                        {$_('participants.claimAsMe')}
                                     </button>
                                 {/if}
                                 {#if $canEdit}
-                                    <button class="btn-edit" onclick={() => startEdit(p)}>Edit</button>
+                                    <button class="btn-edit" onclick={() => startEdit(p)}>{$_('common.edit')}</button>
                                 {/if}
                                 {#if $isAdmin}
-                                    <button class="btn-delete" onclick={() => handleDelete(p.id)}>Delete</button>
+                                    <button class="btn-delete" onclick={() => handleDelete(p.id)}>{$_('common.delete')}</button>
                                 {/if}
                             </div>
                         </div>
@@ -355,25 +356,25 @@
                             <div class="invite-section">
                                 {#if invites[p.id]}
                                     <div class="invite-link-row">
-                                        <span class="invite-label">Invite link:</span>
+                                        <span class="invite-label">{$_('participants.inviteLink')}:</span>
                                         <code class="invite-url">{getInviteUrl(invites[p.id]!)}</code>
                                         <button
                                             class="btn-copy"
                                             onclick={() => copyInviteUrl(p.id)}
                                             disabled={loadingInvite === p.id}
                                         >
-                                            {copiedId === p.id ? 'Copied!' : 'Copy'}
+                                            {copiedId === p.id ? $_('participants.copied') : $_('participants.copy')}
                                         </button>
                                         <button
                                             class="btn-revoke"
                                             onclick={() => handleRevokeInvite(p.id)}
                                             disabled={loadingInvite === p.id}
                                         >
-                                            Revoke
+                                            {$_('participants.revoke')}
                                         </button>
                                     </div>
                                     {#if invites[p.id]?.used_by}
-                                        <span class="invite-used">Invite already used</span>
+                                        <span class="invite-used">{$_('participants.inviteAlreadyUsed')}</span>
                                     {/if}
                                 {:else}
                                     <button
@@ -381,7 +382,7 @@
                                         onclick={() => handleGenerateInvite(p.id)}
                                         disabled={loadingInvite === p.id}
                                     >
-                                        {loadingInvite === p.id ? 'Generating...' : 'Generate Invite Link'}
+                                        {loadingInvite === p.id ? $_('participants.generating') : $_('participants.generateInviteLink')}
                                     </button>
                                 {/if}
                             </div>

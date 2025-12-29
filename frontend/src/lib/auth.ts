@@ -1,10 +1,18 @@
 import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
 
+export interface UserPreferences {
+    date_format: string;
+    decimal_separator: string;
+    currency_symbol: string;
+    currency_symbol_position: string;
+}
+
 export interface User {
     id: number;
     username: string;
     display_name: string | null;
+    preferences: UserPreferences;
 }
 
 interface AuthState {
@@ -39,12 +47,20 @@ function createAuthStore() {
 
                     // Check if expired
                     if (payload.exp * 1000 > Date.now()) {
+                        // Note: When loading from JWT, we don't have full user data
+                        // Preferences will be loaded from localStorage by the preferences store
                         set({
                             token,
                             user: {
                                 id: payload.sub,
                                 username: payload.username,
-                                display_name: null
+                                display_name: null,
+                                preferences: {
+                                    date_format: 'mdy',
+                                    decimal_separator: '.',
+                                    currency_symbol: '$',
+                                    currency_symbol_position: 'before'
+                                }
                             },
                             loading: false
                         });

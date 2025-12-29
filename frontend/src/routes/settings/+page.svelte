@@ -1,7 +1,9 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
-    import { changePassword, deleteAccount, type DeleteAccountResponse } from '$lib/api';
-    import { auth } from '$lib/auth';
+    import { changePassword, deleteAccount, updatePreferences, type DeleteAccountResponse } from '$lib/api';
+    import { auth, type UserPreferences } from '$lib/auth';
+    import { _ } from '$lib/i18n';
+    import { preferences } from '$lib/stores/preferences';
 
     // Password change state
     let currentPassword = $state('');
@@ -17,6 +19,45 @@
     let deleting = $state(false);
     let showDeleteConfirm = $state(false);
     let deleteResult = $state<DeleteAccountResponse | null>(null);
+
+    // Preferences state
+    let prefsDateFormat = $state($preferences.date_format);
+    let prefsDecimalSeparator = $state($preferences.decimal_separator);
+    let prefsCurrencySymbol = $state($preferences.currency_symbol);
+    let prefsCurrencyPosition = $state($preferences.currency_symbol_position);
+    let prefsSaving = $state(false);
+    let prefsSuccess = $state('');
+    let prefsError = $state('');
+
+    // Sync preferences state when store changes
+    $effect(() => {
+        prefsDateFormat = $preferences.date_format;
+        prefsDecimalSeparator = $preferences.decimal_separator;
+        prefsCurrencySymbol = $preferences.currency_symbol;
+        prefsCurrencyPosition = $preferences.currency_symbol_position;
+    });
+
+    async function handlePreferenceSave() {
+        prefsSaving = true;
+        prefsSuccess = '';
+        prefsError = '';
+
+        try {
+            const updatedPrefs = await updatePreferences({
+                date_format: prefsDateFormat,
+                decimal_separator: prefsDecimalSeparator,
+                currency_symbol: prefsCurrencySymbol,
+                currency_symbol_position: prefsCurrencyPosition
+            });
+
+            preferences.setAll(updatedPrefs);
+            prefsSuccess = $_('settings.preferencesSaved');
+        } catch (err) {
+            prefsError = err instanceof Error ? err.message : 'Failed to save preferences';
+        } finally {
+            prefsSaving = false;
+        }
+    }
 
     async function handleChangePassword(e: Event) {
         e.preventDefault();
@@ -73,19 +114,20 @@
 </script>
 
 <div class="settings-container">
-    <h1>Account Settings</h1>
+    <button type="button" class="back-link" onclick={() => history.back()}>{$_('common.back')}</button>
+    <h1>{$_('settings.title')}</h1>
 
     {#if $auth.user}
         <section class="section">
-            <h2>Account Info</h2>
+            <h2>{$_('settings.accountInfo')}</h2>
             <div class="info-grid">
                 <div class="info-item">
-                    <span class="label">Username</span>
+                    <span class="label">{$_('auth.username')}</span>
                     <span class="value">{$auth.user?.username}</span>
                 </div>
                 {#if $auth.user?.display_name}
                     <div class="info-item">
-                        <span class="label">Display Name</span>
+                        <span class="label">{$_('auth.displayName')}</span>
                         <span class="value">{$auth.user?.display_name}</span>
                     </div>
                 {/if}
@@ -94,7 +136,65 @@
     {/if}
 
     <section class="section">
-        <h2>Change Password</h2>
+        <h2>{$_('settings.preferences')}</h2>
+
+        <div class="info-notice">
+            {$_('settings.preferencesNotice')}
+        </div>
+
+        {#if prefsError}
+            <div class="error">{prefsError}</div>
+        {/if}
+        {#if prefsSuccess}
+            <div class="success">{prefsSuccess}</div>
+        {/if}
+
+        <div class="prefs-grid">
+            <div class="field">
+                <label for="pref-dateformat">{$_('settings.dateFormat')}</label>
+                <select id="pref-dateformat" bind:value={prefsDateFormat}>
+                    <option value="mdy">{$_('settings.dateFormatMDY')}</option>
+                    <option value="dmy">{$_('settings.dateFormatDMY')}</option>
+                    <option value="ymd">{$_('settings.dateFormatYMD')}</option>
+                    <option value="iso">{$_('settings.dateFormatISO')}</option>
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="pref-decimal">{$_('settings.decimalSeparator')}</label>
+                <select id="pref-decimal" bind:value={prefsDecimalSeparator}>
+                    <option value=".">{$_('settings.decimalPeriod')}</option>
+                    <option value=",">{$_('settings.decimalComma')}</option>
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="pref-currency">{$_('settings.currencySymbol')}</label>
+                <input
+                    id="pref-currency"
+                    type="text"
+                    bind:value={prefsCurrencySymbol}
+                    maxlength="5"
+                    placeholder="$"
+                />
+            </div>
+
+            <div class="field">
+                <label for="pref-currpos">{$_('settings.currencyPosition')}</label>
+                <select id="pref-currpos" bind:value={prefsCurrencyPosition}>
+                    <option value="before">{$_('settings.currencyBefore')}</option>
+                    <option value="after">{$_('settings.currencyAfter')}</option>
+                </select>
+            </div>
+        </div>
+
+        <button type="button" onclick={handlePreferenceSave} disabled={prefsSaving}>
+            {prefsSaving ? $_('settings.savingPreferences') : $_('common.save')}
+        </button>
+    </section>
+
+    <section class="section">
+        <h2>{$_('settings.changePassword')}</h2>
 
         <form onsubmit={handleChangePassword}>
             {#if passwordError}
@@ -105,7 +205,7 @@
             {/if}
 
             <div class="field">
-                <label for="current-password">Current Password</label>
+                <label for="current-password">{$_('settings.currentPassword')}</label>
                 <input
                     id="current-password"
                     type="password"
@@ -116,7 +216,7 @@
             </div>
 
             <div class="field">
-                <label for="new-password">New Password</label>
+                <label for="new-password">{$_('settings.newPassword')}</label>
                 <input
                     id="new-password"
                     type="password"
@@ -128,7 +228,7 @@
             </div>
 
             <div class="field">
-                <label for="confirm-password">Confirm New Password</label>
+                <label for="confirm-password">{$_('settings.confirmNewPassword')}</label>
                 <input
                     id="confirm-password"
                     type="password"
@@ -139,25 +239,24 @@
             </div>
 
             <button type="submit" disabled={changingPassword}>
-                {changingPassword ? 'Changing...' : 'Change Password'}
+                {changingPassword ? $_('settings.changingPassword') : $_('settings.changePassword')}
             </button>
         </form>
     </section>
 
     <section class="section danger-zone">
-        <h2>Danger Zone</h2>
+        <h2>{$_('settings.dangerZone')}</h2>
         <p class="warning-text">
-            Deleting your account is permanent and cannot be undone.
-            Projects you own will be transferred to another admin or deleted if no other members exist.
+            {$_('settings.deleteAccountWarning')}
         </p>
 
         {#if !showDeleteConfirm}
             <button class="btn-danger" onclick={() => showDeleteConfirm = true}>
-                Delete Account
+                {$_('settings.deleteAccount')}
             </button>
         {:else}
             <div class="delete-confirm">
-                <h3>Confirm Account Deletion</h3>
+                <h3>{$_('settings.confirmDeletion')}</h3>
 
                 <form onsubmit={handleDeleteAccount}>
                     {#if deleteError}
@@ -165,14 +264,14 @@
                     {/if}
 
                     <div class="field">
-                        <label for="delete-password">Enter your password to confirm</label>
+                        <label for="delete-password">{$_('settings.enterPasswordToConfirm')}</label>
                         <input
                             id="delete-password"
                             type="password"
                             bind:value={deletePassword}
                             required
                             disabled={deleting}
-                            placeholder="Your password"
+                            placeholder={$_('settings.yourPassword')}
                         />
                     </div>
 
@@ -183,10 +282,10 @@
                             onclick={() => { showDeleteConfirm = false; deletePassword = ''; deleteError = ''; }}
                             disabled={deleting}
                         >
-                            Cancel
+                            {$_('common.cancel')}
                         </button>
                         <button type="submit" class="btn-danger" disabled={deleting}>
-                            {deleting ? 'Deleting...' : 'Delete My Account'}
+                            {deleting ? $_('settings.deleting') : $_('settings.deleteMyAccount')}
                         </button>
                     </div>
                 </form>
@@ -200,6 +299,24 @@
         max-width: 600px;
         margin: 2rem auto;
         padding: 2rem;
+    }
+
+    .back-link {
+        display: block;
+        background: none;
+        border: none;
+        padding: 0;
+        color: var(--accent, #7b61ff);
+        text-decoration: none;
+        font-size: 0.95rem;
+        font-weight: 500;
+        margin-bottom: 1rem;
+        cursor: pointer;
+        text-align: left;
+    }
+
+    .back-link:hover {
+        text-decoration: underline;
     }
 
     h1 {
@@ -240,8 +357,38 @@
         font-weight: 500;
     }
 
-    .field {
+    .info-notice {
+        background: #e7f3ff;
+        color: #004085;
+        padding: 0.75rem;
+        border-radius: 8px;
         margin-bottom: 1rem;
+        font-size: 0.9rem;
+        border-left: 4px solid #0066cc;
+    }
+
+    .prefs-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    @media (min-width: 600px) {
+        .prefs-grid {
+            grid-template-columns: 1fr 1fr;
+        }
+    }
+
+    .prefs-grid select,
+    .prefs-grid input {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .field {
+        margin-bottom: 0;
+        min-width: 0;
     }
 
     label {
@@ -257,6 +404,11 @@
         border: 1px solid #ddd;
         border-radius: 8px;
         font-size: 1rem;
+        box-sizing: border-box;
+    }
+
+    select {
+        box-sizing: border-box;
     }
 
     input:focus {

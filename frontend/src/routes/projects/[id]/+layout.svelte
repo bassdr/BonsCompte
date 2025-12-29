@@ -2,6 +2,7 @@
     import { page } from '$app/stores';
     import { loadProject, clearProject, currentProject, isAdmin } from '$lib/stores/project';
     import type { Snippet } from 'svelte';
+    import { _ } from '$lib/i18n';
 
     let { children }: { children: Snippet } = $props();
 
@@ -25,7 +26,7 @@
         try {
             await loadProject(projectId);
         } catch (e) {
-            error = e instanceof Error ? e.message : 'Failed to load project';
+            error = e instanceof Error ? e.message : $_('projects.failedToLoad');
         } finally {
             loading = false;
         }
@@ -33,12 +34,12 @@
 </script>
 
 {#if loading}
-    <div class="loading">Loading project...</div>
+    <div class="loading">{$_('common.loading')}</div>
 {:else if error}
     <div class="error">
-        <h2>Error</h2>
+        <h2>{$_('common.error')}</h2>
         <p>{error}</p>
-        <a href="/">Back to projects</a>
+        <a href="/">{$_('nav.projects')}</a>
     </div>
 {:else if $currentProject}
     <div class="project-layout">
@@ -49,23 +50,23 @@
             </div>
             <nav class="project-nav">
                 <a href="/projects/{$page.params.id}/debts" class:active={$page.url.pathname.includes('/debts')}>
-                    Debts
+                    {$_('debts.title')}
                 </a>
                 <a href="/projects/{$page.params.id}/payments" class:active={$page.url.pathname.includes('/payments')}>
-                    Payments
+                    {$_('payments.title')}
                 </a>
                 <a href="/projects/{$page.params.id}/participants" class:active={$page.url.pathname.includes('/participants')}>
-                    Participants
+                    {$_('participants.title')}
                 </a>
                 <a href="/projects/{$page.params.id}/members" class:active={$page.url.pathname.includes('/members')}>
-                    Members
+                    {$_('members.title')}
                 </a>
                 <a href="/projects/{$page.params.id}/history" class:active={$page.url.pathname.includes('/history')}>
-                    History
+                    {$_('history.title')}
                 </a>
                 {#if $isAdmin}
                     <a href="/projects/{$page.params.id}/settings" class:active={$page.url.pathname.includes('/settings')}>
-                        Settings
+                        {$_('nav.settings')}
                     </a>
                 {/if}
             </nav>

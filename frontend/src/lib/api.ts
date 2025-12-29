@@ -1,4 +1,4 @@
-import { auth, type User } from './auth';
+import { auth, type User, type UserPreferences } from './auth';
 import { browser } from '$app/environment';
 
 // Default to localhost:8000 for development
@@ -83,6 +83,16 @@ export const deleteAccount = (password: string): Promise<DeleteAccountResponse> 
     authFetch("/users/me", {
         method: "DELETE",
         body: JSON.stringify({ password })
+    });
+
+// User preferences
+export const getPreferences = (): Promise<UserPreferences> =>
+    authFetch("/users/me/preferences");
+
+export const updatePreferences = (prefs: Partial<UserPreferences>): Promise<UserPreferences> =>
+    authFetch("/users/me/preferences", {
+        method: "PUT",
+        body: JSON.stringify(prefs)
     });
 
 // Types

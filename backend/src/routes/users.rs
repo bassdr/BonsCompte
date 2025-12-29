@@ -9,7 +9,7 @@ use sqlx::SqlitePool;
 use crate::{
     auth::{password::{hash_password, verify_password}, AuthUser},
     error::{AppError, AppResult},
-    models::{User, UserResponse},
+    models::{User, UserPreferences, UserResponse},
     AppState,
 };
 
@@ -17,6 +17,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_users))
         .route("/me/password", put(change_password))
+        .route("/me/preferences", get(get_preferences).put(update_preferences))
         .route("/me", delete(delete_account))
         .route("/{id}", get(get_user))
 }
@@ -30,6 +31,14 @@ struct ChangePasswordRequest {
 #[derive(Deserialize)]
 struct DeleteAccountRequest {
     password: String,
+}
+
+#[derive(Deserialize)]
+struct UpdatePreferencesRequest {
+    date_format: Option<String>,
+    decimal_separator: Option<String>,
+    currency_symbol: Option<String>,
+    currency_symbol_position: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -230,4 +239,86 @@ async fn delete_account(
         message: "Account deleted successfully".to_string(),
         affected_projects,
     }))
+}
+
+async fn get_preferences(
+    auth: AuthUser,
+    State(pool): State<SqlitePool>,
+) -> AppResult<Json<UserPreferences>> {
+    let user: Option<User> = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+        .bind(auth.user_id)
+        .fetch_optional(&pool)
+        .await?;
+
+    let user = user.ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+
+    Ok(Json(UserPreferences::from_user(&user)))
+}
+
+fn validate_preferences(req: &UpdatePreferencesRequest) -> Result<(), AppError> {
+    if let Some(ref df) = req.date_format {
+        if !["mdy", "dmy", "ymd", "iso"].contains(&df.as_str()) {
+            return Err(AppError::Validation("Invalid date format. Supported: mdy, dmy, ymd, iso".to_string()));
+        }
+    }
+    if let Some(ref sep) = req.decimal_separator {
+        if ![".", ","].contains(&sep.as_str()) {
+            return Err(AppError::Validation("Invalid decimal separator. Supported: . ,".to_string()));
+        }
+    }
+    if let Some(ref pos) = req.currency_symbol_position {
+        if !["before", "after"].contains(&pos.as_str()) {
+            return Err(AppError::Validation("Invalid currency position. Supported: before, after".to_string()));
+        }
+    }
+    // currency_symbol is freeform, no validation needed
+    Ok(())
+}
+
+async fn update_preferences(
+    auth: AuthUser,
+    State(pool): State<SqlitePool>,
+    Json(req): Json<UpdatePreferencesRequest>,
+) -> AppResult<Json<UserPreferences>> {
+    // Validate input
+    validate_preferences(&req)?;
+
+    // Build dynamic update query
+    let mut updates = Vec::new();
+    let mut bindings: Vec<Option<String>> = Vec::new();
+
+    if let Some(ref v) = req.date_format {
+        updates.push("date_format = ?");
+        bindings.push(Some(v.clone()));
+    }
+    if let Some(ref v) = req.decimal_separator {
+        updates.push("decimal_separator = ?");
+        bindings.push(Some(v.clone()));
+    }
+    if let Some(ref v) = req.currency_symbol {
+        updates.push("currency_symbol = ?");
+        bindings.push(Some(v.clone()));
+    }
+    if let Some(ref v) = req.currency_symbol_position {
+        updates.push("currency_symbol_position = ?");
+        bindings.push(Some(v.clone()));
+    }
+
+    if !updates.is_empty() {
+        let query = format!("UPDATE users SET {} WHERE id = ?", updates.join(", "));
+        let mut q = sqlx::query(&query);
+        for binding in bindings {
+            q = q.bind(binding);
+        }
+        q = q.bind(auth.user_id);
+        q.execute(&pool).await?;
+    }
+
+    // Fetch and return updated preferences
+    let user: User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+        .bind(auth.user_id)
+        .fetch_one(&pool)
+        .await?;
+
+    Ok(Json(UserPreferences::from_user(&user)))
 }

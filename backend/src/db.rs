@@ -423,6 +423,40 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         .execute(pool)
         .await?;
 
+    // =====================
+    // Migration 010: User Preferences (i18n & Formatting)
+    // =====================
+
+    // Add language preference (e.g., 'en', 'fr')
+    sqlx::query("ALTER TABLE users ADD COLUMN language TEXT")
+        .execute(pool)
+        .await
+        .ok();
+
+    // Add date format preference ('mdy', 'dmy', 'ymd', 'iso')
+    sqlx::query("ALTER TABLE users ADD COLUMN date_format TEXT")
+        .execute(pool)
+        .await
+        .ok();
+
+    // Add decimal separator preference ('.' or ',')
+    sqlx::query("ALTER TABLE users ADD COLUMN decimal_separator TEXT")
+        .execute(pool)
+        .await
+        .ok();
+
+    // Add currency symbol (e.g., '$', 'EUR', 'CAD')
+    sqlx::query("ALTER TABLE users ADD COLUMN currency_symbol TEXT")
+        .execute(pool)
+        .await
+        .ok();
+
+    // Add currency symbol position ('before' or 'after')
+    sqlx::query("ALTER TABLE users ADD COLUMN currency_symbol_position TEXT")
+        .execute(pool)
+        .await
+        .ok();
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

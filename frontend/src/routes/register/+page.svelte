@@ -2,6 +2,8 @@
     import { goto } from '$app/navigation';
     import { register } from '$lib/api';
     import { auth } from '$lib/auth';
+    import { _ } from '$lib/i18n';
+    import { preferences } from '$lib/stores/preferences';
 
     let username = $state('');
     let displayName = $state('');
@@ -15,12 +17,12 @@
         error = '';
 
         if (password !== confirmPassword) {
-            error = 'Passwords do not match';
+            error = $_('auth.passwordMismatch');
             return;
         }
 
         if (password.length < 6) {
-            error = 'Password must be at least 6 characters';
+            error = $_('auth.passwordTooShort');
             return;
         }
 
@@ -33,9 +35,11 @@
                 displayName || undefined
             );
             auth.setAuth(response.token, response.user);
+            // Sync preferences from backend
+            preferences.initFromUser(response.user.preferences);
             goto('/');
         } catch (err) {
-            error = err instanceof Error ? err.message : 'Registration failed';
+            error = err instanceof Error ? err.message : $_('auth.registrationFailed');
         } finally {
             loading = false;
         }
@@ -43,7 +47,7 @@
 </script>
 
 <div class="auth-container">
-    <h1>Register</h1>
+    <h1>{$_('auth.register')}</h1>
 
     <form onsubmit={handleSubmit}>
         {#if error}
@@ -51,7 +55,7 @@
         {/if}
 
         <div class="field">
-            <label for="username">Username</label>
+            <label for="username">{$_('auth.username')}</label>
             <input
                 id="username"
                 type="text"
@@ -62,7 +66,7 @@
         </div>
 
         <div class="field">
-            <label for="displayName">Display Name (optional)</label>
+            <label for="displayName">{$_('auth.displayNameOptional')}</label>
             <input
                 id="displayName"
                 type="text"
@@ -72,7 +76,7 @@
         </div>
 
         <div class="field">
-            <label for="password">Password</label>
+            <label for="password">{$_('auth.password')}</label>
             <input
                 id="password"
                 type="password"
@@ -84,7 +88,7 @@
         </div>
 
         <div class="field">
-            <label for="confirmPassword">Confirm Password</label>
+            <label for="confirmPassword">{$_('auth.confirmPassword')}</label>
             <input
                 id="confirmPassword"
                 type="password"
@@ -95,12 +99,12 @@
         </div>
 
         <button type="submit" disabled={loading}>
-            {loading ? 'Creating account...' : 'Register'}
+            {loading ? $_('auth.creatingAccount') : $_('auth.register')}
         </button>
     </form>
 
     <p class="link">
-        Already have an account? <a href="/login">Login</a>
+        {$_('auth.hasAccount')} <a href="/login">{$_('auth.login')}</a>
     </p>
 </div>
 

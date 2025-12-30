@@ -1,4 +1,4 @@
-use sqlx::{sqlite::{SqliteConnectOptions, SqlitePoolOptions}, SqlitePool, ConnectOptions};
+use sqlx::{sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteJournalMode, SqliteSynchronous}, SqlitePool, ConnectOptions};
 use std::{path::Path, str::FromStr, time::Duration};
 
 pub async fn init_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> {
@@ -19,25 +19,33 @@ pub async fn init_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> {
         format!("{}?mode=rwc", database_url)
     };
 
-    // Configure connection options with higher slow query threshold
-    // Receipt images can be up to 5MB base64, which takes time to write
+    // Configure connection options optimized for SQLite
+    // - WAL mode for better read/write concurrency
+    // - busy_timeout to wait for locks instead of immediate failure
+    // - Higher slow query threshold for large receipt images
     let connect_options = SqliteConnectOptions::from_str(&connect_url)?
+        .journal_mode(SqliteJournalMode::Wal)
+        .synchronous(SqliteSynchronous::Normal)  // Faster writes, still safe with WAL
+        .busy_timeout(Duration::from_secs(30))   // Wait up to 30s for locks
         .log_slow_statements(log::LevelFilter::Warn, Duration::from_secs(5));
 
+    // SQLite prefers smaller connection pools (1-3 connections)
+    // Larger pools cause contention since SQLite has a single writer
     let pool = SqlitePoolOptions::new()
-        .max_connections(5)
+        .max_connections(2)
+        .min_connections(1)
+        .acquire_timeout(Duration::from_secs(30))
         .connect_with(connect_options)
         .await?;
 
-    // Enable foreign keys
+    // Enable foreign keys (must be set per-connection, but pool handles this)
     sqlx::query("PRAGMA foreign_keys = ON")
         .execute(&pool)
         .await?;
 
-    // Enable WAL mode for better concurrency
-    sqlx::query("PRAGMA journal_mode = WAL")
-        .execute(&pool)
-        .await?;
+    tracing::info!(
+        "SQLite pool initialized: max_connections=2, busy_timeout=30s, journal_mode=WAL"
+    );
 
     Ok(pool)
 }

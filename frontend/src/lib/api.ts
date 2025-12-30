@@ -5,6 +5,37 @@ import { browser } from '$app/environment';
 // Override with VITE_API_BASE in docker builds or production
 const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
+// Error codes returned by the backend for structured error handling
+export type AuthErrorCode =
+    | 'TOKEN_EXPIRED'
+    | 'TOKEN_INVALIDATED'
+    | 'INVALID_TOKEN'
+    | 'UNAUTHORIZED'
+    | 'PASSWORD_TOO_WEAK'
+    | 'USERNAME_EXISTS'
+    | 'INVALID_CREDENTIALS'
+    | 'INVALID_INPUT'
+    | 'ACCOUNT_PENDING'
+    | 'ACCOUNT_REVOKED'
+    | 'INTERNAL_ERROR';
+
+export interface ApiError {
+    code: string;
+    error: string;
+}
+
+export class ApiRequestError extends Error {
+    code: string;
+    status: number;
+
+    constructor(code: string, message: string, status: number) {
+        super(message);
+        this.code = code;
+        this.status = status;
+        this.name = 'ApiRequestError';
+    }
+}
+
 async function authFetch(path: string, opts: RequestInit = {}) {
     const token = auth.getToken();
 
@@ -17,6 +48,22 @@ async function authFetch(path: string, opts: RequestInit = {}) {
     const res = await fetch(`${BASE}${path}`, { ...opts, headers });
 
     if (res.status === 401) {
+        // Try to get the error code to distinguish expired vs invalid
+        try {
+            const data: ApiError = await res.json();
+            if (data.code === 'TOKEN_EXPIRED' || data.code === 'TOKEN_INVALIDATED') {
+                auth.logout();
+                if (browser) {
+                    // Store a message for the login page
+                    sessionStorage.setItem('auth_message', 'session_expired');
+                    window.location.href = '/login';
+                }
+                throw new ApiRequestError(data.code, data.error, res.status);
+            }
+        } catch (e) {
+            if (e instanceof ApiRequestError) throw e;
+            // If we can't parse the response, treat as generic 401
+        }
         auth.logout();
         if (browser) {
             window.location.href = '/login';
@@ -25,8 +72,14 @@ async function authFetch(path: string, opts: RequestInit = {}) {
     }
 
     if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`${res.status}: ${text}`);
+        try {
+            const data: ApiError = await res.json();
+            throw new ApiRequestError(data.code || 'UNKNOWN', data.error, res.status);
+        } catch (e) {
+            if (e instanceof ApiRequestError) throw e;
+            const text = await res.text();
+            throw new Error(`${res.status}: ${text}`);
+        }
     }
 
     return res.json();
@@ -46,8 +99,8 @@ export async function login(username: string, password: string): Promise<AuthRes
     });
 
     if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: 'Login failed' }));
-        throw new Error(data.error || 'Login failed');
+        const data: ApiError = await res.json().catch(() => ({ error: 'Login failed', code: 'UNKNOWN' }));
+        throw new ApiRequestError(data.code || 'UNKNOWN', data.error || 'Login failed', res.status);
     }
 
     return res.json();
@@ -65,8 +118,8 @@ export async function register(
     });
 
     if (!res.ok) {
-        const data = await res.json().catch(() => ({ error: 'Registration failed' }));
-        throw new Error(data.error || 'Registration failed');
+        const data: ApiError = await res.json().catch(() => ({ error: 'Registration failed', code: 'UNKNOWN' }));
+        throw new ApiRequestError(data.code || 'UNKNOWN', data.error || 'Registration failed', res.status);
     }
 
     return res.json();

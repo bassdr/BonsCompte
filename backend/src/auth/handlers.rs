@@ -2,7 +2,7 @@ use axum::{extract::State, Json};
 use sqlx::SqlitePool;
 
 use crate::{
-    error::{AppError, AppResult},
+    error::{AppError, AppResult, AuthFailureReason},
     models::{AuthResponse, CreateUser, LoginRequest, User, UserResponse, UserState},
 };
 
@@ -13,11 +13,30 @@ pub async fn register(
     State(jwt_secret): State<String>,
     Json(input): Json<CreateUser>,
 ) -> AppResult<Json<AuthResponse>> {
+    let username = input.username.trim().to_string();
+
+    tracing::info!(
+        event = "auth.register.attempt",
+        username = %username,
+        "Registration attempt"
+    );
+
     // Validate input
-    if input.username.trim().is_empty() {
+    if username.is_empty() {
+        tracing::warn!(
+            event = "auth.register.failure",
+            reason = AuthFailureReason::InvalidInput.as_code(),
+            "Registration failed: empty username"
+        );
         return Err(AppError::BadRequest("Username is required".to_string()));
     }
     if input.password.len() < 6 {
+        tracing::warn!(
+            event = "auth.register.failure",
+            reason = AuthFailureReason::PasswordTooWeak.as_code(),
+            username = %username,
+            "Registration failed: password too short"
+        );
         return Err(AppError::BadRequest("Password must be at least 6 characters".to_string()));
     }
 
@@ -25,11 +44,17 @@ pub async fn register(
     let existing: Option<User> = sqlx::query_as(
         "SELECT * FROM users WHERE username = ?"
     )
-    .bind(&input.username)
+    .bind(&username)
     .fetch_optional(&pool)
     .await?;
 
     if existing.is_some() {
+        tracing::warn!(
+            event = "auth.register.failure",
+            reason = AuthFailureReason::UsernameExists.as_code(),
+            username = %username,
+            "Registration failed: username exists"
+        );
         return Err(AppError::UserExists);
     }
 
@@ -39,7 +64,7 @@ pub async fn register(
     let result = sqlx::query(
         "INSERT INTO users (username, display_name, password_hash, user_state, token_version) VALUES (?, ?, ?, 'active', 1)"
     )
-    .bind(&input.username)
+    .bind(&username)
     .bind(&input.display_name)
     .bind(&password_hash)
     .execute(&pool)
@@ -56,6 +81,13 @@ pub async fn register(
     // Generate token with token_version
     let token = create_token(user.id, &user.username, user.token_version, &jwt_secret)?;
 
+    tracing::info!(
+        event = "auth.register.success",
+        user_id = user_id,
+        username = %username,
+        "Registration successful"
+    );
+
     Ok(Json(AuthResponse {
         token,
         user: UserResponse::from(user),
@@ -67,15 +99,34 @@ pub async fn login(
     State(jwt_secret): State<String>,
     Json(input): Json<LoginRequest>,
 ) -> AppResult<Json<AuthResponse>> {
+    let username = input.username.trim();
+
+    tracing::info!(
+        event = "auth.login.attempt",
+        username = %username,
+        "Login attempt"
+    );
+
     // Find user
     let user: Option<User> = sqlx::query_as(
         "SELECT * FROM users WHERE username = ?"
     )
-    .bind(&input.username)
+    .bind(username)
     .fetch_optional(&pool)
     .await?;
 
-    let user = user.ok_or(AppError::InvalidCredentials)?;
+    let user = match user {
+        Some(u) => u,
+        None => {
+            tracing::warn!(
+                event = "auth.login.failure",
+                reason = AuthFailureReason::InvalidCredentials.as_code(),
+                username = %username,
+                "Login failed: user not found"
+            );
+            return Err(AppError::InvalidCredentials);
+        }
+    };
 
     // Check user state before allowing login
     match user.state() {
@@ -83,9 +134,23 @@ pub async fn login(
             // User is active, proceed with login
         }
         UserState::PendingApproval => {
+            tracing::warn!(
+                event = "auth.login.failure",
+                reason = AuthFailureReason::AccountPending.as_code(),
+                user_id = user.id,
+                username = %username,
+                "Login failed: account pending approval"
+            );
             return Err(AppError::AccountPendingApproval);
         }
         UserState::Revoked => {
+            tracing::warn!(
+                event = "auth.login.failure",
+                reason = AuthFailureReason::AccountRevoked.as_code(),
+                user_id = user.id,
+                username = %username,
+                "Login failed: account revoked"
+            );
             return Err(AppError::AccountRevoked);
         }
     }
@@ -93,11 +158,25 @@ pub async fn login(
     // Verify password
     let valid = verify_password(&input.password, &user.password_hash)?;
     if !valid {
+        tracing::warn!(
+            event = "auth.login.failure",
+            reason = AuthFailureReason::InvalidCredentials.as_code(),
+            user_id = user.id,
+            username = %username,
+            "Login failed: invalid password"
+        );
         return Err(AppError::InvalidCredentials);
     }
 
     // Generate token with token_version
     let token = create_token(user.id, &user.username, user.token_version, &jwt_secret)?;
+
+    tracing::info!(
+        event = "auth.login.success",
+        user_id = user.id,
+        username = %username,
+        "Login successful"
+    );
 
     Ok(Json(AuthResponse {
         token,

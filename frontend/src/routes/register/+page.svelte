@@ -1,6 +1,6 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
-    import { register } from '$lib/api';
+    import { register, ApiRequestError } from '$lib/api';
     import { auth } from '$lib/auth';
     import { _ } from '$lib/i18n';
     import { preferences } from '$lib/stores/preferences';
@@ -11,6 +11,17 @@
     let confirmPassword = $state('');
     let error = $state('');
     let loading = $state(false);
+
+    // Map error codes to user-friendly translation keys
+    function getErrorMessage(code: string, fallback: string): string {
+        const errorMap: Record<string, string> = {
+            'PASSWORD_TOO_WEAK': $_('auth.errors.passwordTooWeak'),
+            'USERNAME_EXISTS': $_('auth.errors.usernameExists'),
+            'INVALID_INPUT': $_('auth.errors.invalidInput'),
+            'INTERNAL_ERROR': $_('auth.errors.internalError'),
+        };
+        return errorMap[code] || fallback;
+    }
 
     async function handleSubmit(e: Event) {
         e.preventDefault();
@@ -39,7 +50,11 @@
             preferences.initFromUser(response.user.preferences);
             goto('/');
         } catch (err) {
-            error = err instanceof Error ? err.message : $_('auth.registrationFailed');
+            if (err instanceof ApiRequestError) {
+                error = getErrorMessage(err.code, err.message);
+            } else {
+                error = err instanceof Error ? err.message : $_('auth.registrationFailed');
+            }
         } finally {
             loading = false;
         }

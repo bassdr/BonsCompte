@@ -36,6 +36,7 @@ The goal of BonsCompte is to make it easy for a group of people to fairly manage
 - Human-approved password recovery (no email required) - see [Password Recovery](docs/PASSWORD_RECOVERY.md)
 - Multi-project support with role-based access (owner/editor/viewer)
 - Invite system for adding members to projects
+- Rate limiting on auth endpoints (prevents brute-force attacks)
 
 ### 2. Recurring Shared Payments
 The system keeps track of expenses that repeat:
@@ -99,6 +100,13 @@ BonsCompte supports multiple payment types for flexible debt settlement:
 - Future date indication with "from" vs "on" preposition
 - Past/future badges for date context
 - Receipt image storage and viewing
+
+### 8. Security Hardening
+The backend includes multiple security layers for production deployment:
+- **Rate limiting**: Stricter limits on auth routes (5 req/sec) vs general API (100 req/sec)
+- **Scan path blocking**: Silently rejects common scanner probes (/.git, /wp-admin, .php files, etc.)
+- **Error sanitization**: Internal errors logged server-side, generic messages returned to clients
+- **Non-root containers**: Docker images run as unprivileged users
 
 ## Tech Stack
 

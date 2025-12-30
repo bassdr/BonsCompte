@@ -68,6 +68,21 @@ backend/src/
 
 - **Migrations**: Inline SQL in `db.rs`, runs `.ok()` on ALTER TABLE to handle re-runs
 
+### Security Middleware (in `main.rs`)
+
+The backend includes several security layers:
+
+- **Rate limiting** (tower_governor):
+  - Auth routes: 5 requests/sec with burst of 5 (prevents brute-force)
+  - General API: 100 requests/sec with burst of 100
+
+- **Scan path blocking**: Silently returns 404 for common scanner probes:
+  - Prefixes: `/.git`, `/.env`, `/wp-admin`, `/phpmyadmin`, `/cgi-bin`, etc.
+  - Extensions: `.php`, `.asp`, `.sql`, `.bak`, etc.
+  - Runs before logging to reduce noise
+
+- **Error sanitization** (`error.rs`): Internal errors (database, JWT) are logged server-side but return generic messages to clients
+
 ### Frontend Structure
 
 ```

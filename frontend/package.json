@@ -3,6 +3,12 @@
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",
+	"overrides": {
+		"svelte-i18n": {
+			"esbuild": "^0.25.0"
+		},
+		"cookie": "^0.7.0"
+	},
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",

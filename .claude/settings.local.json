@@ -16,7 +16,13 @@
       "Bash(cargo test:*)",
       "Bash(./target/debug/bonscompte-admin:*)",
       "Bash(cat:*)",
-      "Bash(git diff:*)"
+      "Bash(git diff:*)",
+      "Bash(npm audit:*)",
+      "Bash(npm outdated:*)",
+      "Bash(npm ls:*)",
+      "Bash(npm view:*)",
+      "Bash(npm install:*)",
+      "Bash(npm update:*)"
     ],
     "deny": [
       "Read(*.csv)",

@@ -26,7 +26,7 @@ export async function loadProject(projectId: number) {
     const projectsWithRole = await api.getProjects();
     const projectWithRole = projectsWithRole.find(p => p.id === projectId);
 
-    currentProject.set(projectWithRole || { ...project, role: 'reader' });
+    currentProject.set(projectWithRole || { ...project, role: 'reader', owner_name: '', user_balance: null, user_pools: [] });
     participants.set(participantsList);
     members.set(membersList);
 }

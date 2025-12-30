@@ -49,3 +49,30 @@ pub struct ProjectWithRole {
     pub require_approval: bool,
     pub role: String,
 }
+
+/// Summary of a user's ownership in a pool account
+#[derive(Debug, Clone, Serialize)]
+pub struct PoolSummary {
+    pub pool_name: String,
+    pub ownership: f64,
+}
+
+/// Extended project info for the project list, including owner and user's debt summary
+#[derive(Debug, Clone, Serialize)]
+pub struct ProjectListItem {
+    pub id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    pub invite_code: Option<String>,
+    pub created_by: i64,
+    pub created_at: String,
+    pub invites_enabled: bool,
+    pub require_approval: bool,
+    pub role: String,
+    /// Display name or username of the project owner
+    pub owner_name: String,
+    /// Current user's net balance (positive = they are owed, negative = they owe)
+    pub user_balance: Option<f64>,
+    /// Current user's pool ownership summaries
+    pub user_pools: Vec<PoolSummary>,
+}

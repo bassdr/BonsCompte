@@ -10,8 +10,8 @@ use sqlx::SqlitePool;
 use crate::{
     auth::{AuthUser, ProjectMember, AdminMember},
     error::{AppError, AppResult},
-    models::{Project, ProjectWithRole, CreateProject, UpdateProject, JoinProject, UpdateProjectSettings, EntityType},
-    services::HistoryService,
+    models::{Project, ProjectListItem, CreateProject, UpdateProject, JoinProject, UpdateProjectSettings, EntityType},
+    services::{HistoryService, debt_calculator},
     AppState,
 };
 
@@ -35,15 +35,37 @@ fn generate_invite_code() -> String {
         .collect()
 }
 
+/// Row from the project list query with owner and participant info
+#[derive(sqlx::FromRow)]
+struct ProjectListRow {
+    id: i64,
+    name: String,
+    description: Option<String>,
+    invite_code: Option<String>,
+    created_by: i64,
+    created_at: String,
+    invites_enabled: bool,
+    require_approval: bool,
+    role: String,
+    owner_name: String,
+    user_participant_id: Option<i64>,
+}
+
 async fn list_projects(
     auth: AuthUser,
     State(pool): State<SqlitePool>,
-) -> AppResult<Json<Vec<ProjectWithRole>>> {
-    let projects: Vec<ProjectWithRole> = sqlx::query_as(
+) -> AppResult<Json<Vec<ProjectListItem>>> {
+    use crate::models::PoolSummary;
+
+    // Get projects with owner name and user's participant ID
+    let rows: Vec<ProjectListRow> = sqlx::query_as(
         "SELECT p.id, p.name, p.description, p.invite_code, p.created_by, p.created_at,
-                p.invites_enabled, p.require_approval, pm.role
+                p.invites_enabled, p.require_approval, pm.role,
+                COALESCE(u.display_name, u.username) as owner_name,
+                pm.participant_id as user_participant_id
          FROM projects p
          JOIN project_members pm ON p.id = pm.project_id
+         JOIN users u ON p.created_by = u.id
          WHERE pm.user_id = ? AND pm.status = 'active'
          ORDER BY p.created_at DESC"
     )
@@ -51,7 +73,52 @@ async fn list_projects(
     .fetch_all(&pool)
     .await?;
 
-    Ok(Json(projects))
+    let mut items = Vec::with_capacity(rows.len());
+
+    for row in rows {
+        let mut user_balance: Option<f64> = None;
+        let mut user_pools: Vec<PoolSummary> = Vec::new();
+
+        // If user has a participant in this project, get their debt summary
+        if let Some(participant_id) = row.user_participant_id {
+            // Use the debt calculator to get accurate balances (including recurring payments)
+            if let Ok(debt_summary) = debt_calculator::calculate_debts(&pool, row.id).await {
+                // Find user's balance
+                if let Some(balance) = debt_summary.balances.iter().find(|b| b.participant_id == participant_id) {
+                    user_balance = Some(balance.net_balance);
+                }
+
+                // Get user's pool ownerships
+                for pool_ownership in &debt_summary.pool_ownerships {
+                    if let Some(entry) = pool_ownership.entries.iter().find(|e| e.participant_id == participant_id) {
+                        if entry.ownership.abs() >= 0.01 {
+                            user_pools.push(PoolSummary {
+                                pool_name: pool_ownership.pool_name.clone(),
+                                ownership: entry.ownership,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        items.push(ProjectListItem {
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            invite_code: row.invite_code,
+            created_by: row.created_by,
+            created_at: row.created_at,
+            invites_enabled: row.invites_enabled,
+            require_approval: row.require_approval,
+            role: row.role,
+            owner_name: row.owner_name,
+            user_balance,
+            user_pools,
+        });
+    }
+
+    Ok(Json(items))
 }
 
 async fn create_project(

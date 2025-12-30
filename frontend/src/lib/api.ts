@@ -138,6 +138,17 @@ export const deleteAccount = (password: string): Promise<DeleteAccountResponse> 
         body: JSON.stringify({ password })
     });
 
+// User profile
+export interface UpdateProfileRequest {
+    display_name?: string | null;
+}
+
+export const updateProfile = (data: UpdateProfileRequest): Promise<User> =>
+    authFetch("/users/me/profile", {
+        method: "PUT",
+        body: JSON.stringify(data)
+    });
+
 // User preferences
 export const getPreferences = (): Promise<UserPreferences> =>
     authFetch("/users/me/preferences");

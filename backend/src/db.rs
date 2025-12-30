@@ -1,5 +1,5 @@
-use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
-use std::path::Path;
+use sqlx::{sqlite::{SqliteConnectOptions, SqlitePoolOptions}, SqlitePool, ConnectOptions};
+use std::{path::Path, str::FromStr, time::Duration};
 
 pub async fn init_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> {
     // Extract path from sqlite: URL
@@ -19,9 +19,14 @@ pub async fn init_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> {
         format!("{}?mode=rwc", database_url)
     };
 
+    // Configure connection options with higher slow query threshold
+    // Receipt images can be up to 5MB base64, which takes time to write
+    let connect_options = SqliteConnectOptions::from_str(&connect_url)?
+        .log_slow_statements(log::LevelFilter::Warn, Duration::from_secs(5));
+
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
-        .connect(&connect_url)
+        .connect_with(connect_options)
         .await?;
 
     // Enable foreign keys

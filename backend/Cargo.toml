@@ -39,9 +39,15 @@ rand = "0.8"
 dotenvy = "0.15"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+log = "0.4"
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
 clap = { version = "4", features = ["derive"] }
 uuid = { version = "1", features = ["v4"] }
 sha2 = "0.10"
 hex = "0.4"
+
+# Rate limiting
+tower = "0.5"
+governor = "0.8"
+tower_governor = "0.6"

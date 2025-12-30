@@ -17,6 +17,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_users))
         .route("/me/password", put(change_password))
+        .route("/me/profile", put(update_profile))
         .route("/me/preferences", get(get_preferences).put(update_preferences))
         .route("/me", delete(delete_account))
         .route("/{id}", get(get_user))
@@ -26,6 +27,11 @@ pub fn router() -> Router<AppState> {
 struct ChangePasswordRequest {
     current_password: String,
     new_password: String,
+}
+
+#[derive(Deserialize)]
+struct UpdateProfileRequest {
+    display_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -115,6 +121,32 @@ async fn change_password(
         .await?;
 
     Ok(Json(serde_json::json!({ "message": "Password changed successfully" })))
+}
+
+async fn update_profile(
+    auth: AuthUser,
+    State(pool): State<SqlitePool>,
+    Json(req): Json<UpdateProfileRequest>,
+) -> AppResult<Json<UserResponse>> {
+    // Trim and normalize display_name (empty string becomes NULL)
+    let display_name = req.display_name
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    // Update display_name
+    sqlx::query("UPDATE users SET display_name = ? WHERE id = ?")
+        .bind(&display_name)
+        .bind(auth.user_id)
+        .execute(&pool)
+        .await?;
+
+    // Fetch and return updated user
+    let user: User = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+        .bind(auth.user_id)
+        .fetch_one(&pool)
+        .await?;
+
+    Ok(Json(UserResponse::from(user)))
 }
 
 async fn delete_account(

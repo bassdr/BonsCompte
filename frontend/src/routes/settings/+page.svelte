@@ -1,9 +1,16 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
-    import { changePassword, deleteAccount, updatePreferences, type DeleteAccountResponse } from '$lib/api';
+    import { changePassword, deleteAccount, updatePreferences, updateProfile, type DeleteAccountResponse } from '$lib/api';
     import { auth, type UserPreferences } from '$lib/auth';
     import { _ } from '$lib/i18n';
     import { preferences } from '$lib/stores/preferences';
+
+    // Profile state
+    let editingProfile = $state(false);
+    let profileDisplayName = $state($auth.user?.display_name ?? '');
+    let profileSaving = $state(false);
+    let profileError = $state('');
+    let profileSuccess = $state('');
 
     // Password change state
     let currentPassword = $state('');
@@ -36,6 +43,38 @@
         prefsCurrencySymbol = $preferences.currency_symbol;
         prefsCurrencyPosition = $preferences.currency_symbol_position;
     });
+
+    function startEditProfile() {
+        profileDisplayName = $auth.user?.display_name ?? '';
+        editingProfile = true;
+        profileError = '';
+        profileSuccess = '';
+    }
+
+    function cancelEditProfile() {
+        editingProfile = false;
+        profileDisplayName = $auth.user?.display_name ?? '';
+        profileError = '';
+    }
+
+    async function handleProfileSave() {
+        profileSaving = true;
+        profileError = '';
+        profileSuccess = '';
+
+        try {
+            const updatedUser = await updateProfile({
+                display_name: profileDisplayName.trim() || null
+            });
+            auth.updateUser({ display_name: updatedUser.display_name });
+            profileSuccess = $_('settings.profileSaved');
+            editingProfile = false;
+        } catch (err) {
+            profileError = err instanceof Error ? err.message : $_('settings.failedToSaveProfile');
+        } finally {
+            profileSaving = false;
+        }
+    }
 
     async function handlePreferenceSave() {
         prefsSaving = true;
@@ -120,17 +159,45 @@
     {#if $auth.user}
         <section class="section">
             <h2>{$_('settings.accountInfo')}</h2>
+
+            {#if profileError}
+                <div class="error">{profileError}</div>
+            {/if}
+            {#if profileSuccess}
+                <div class="success">{profileSuccess}</div>
+            {/if}
+
             <div class="info-grid">
                 <div class="info-item">
                     <span class="label">{$_('auth.username')}</span>
                     <span class="value">{$auth.user?.username}</span>
                 </div>
-                {#if $auth.user?.display_name}
-                    <div class="info-item">
-                        <span class="label">{$_('auth.displayName')}</span>
-                        <span class="value">{$auth.user?.display_name}</span>
-                    </div>
-                {/if}
+                <div class="info-item">
+                    <span class="label">{$_('auth.displayName')}</span>
+                    {#if editingProfile}
+                        <div class="edit-inline">
+                            <input
+                                type="text"
+                                bind:value={profileDisplayName}
+                                placeholder={$_('settings.displayNamePlaceholder')}
+                                disabled={profileSaving}
+                            />
+                            <div class="edit-buttons">
+                                <button type="button" onclick={handleProfileSave} disabled={profileSaving}>
+                                    {profileSaving ? $_('common.saving') : $_('common.save')}
+                                </button>
+                                <button type="button" class="btn-secondary" onclick={cancelEditProfile} disabled={profileSaving}>
+                                    {$_('common.cancel')}
+                                </button>
+                            </div>
+                        </div>
+                    {:else}
+                        <button type="button" class="value-button" onclick={startEditProfile}>
+                            <span class="value-text">{$auth.user?.display_name || $_('settings.notSet')}</span>
+                            <span class="edit-hint">{$_('common.edit')}</span>
+                        </button>
+                    {/if}
+                </div>
             </div>
         </section>
     {/if}
@@ -355,6 +422,59 @@
 
     .info-item .value {
         font-weight: 500;
+    }
+
+    .value-button {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        background: none;
+        border: none;
+        padding: 0;
+        font: inherit;
+        cursor: pointer;
+        text-align: left;
+        color: inherit;
+    }
+
+    .value-button .value-text {
+        font-weight: 500;
+        color: #333;
+    }
+
+    .value-button:hover .value-text {
+        color: var(--accent, #7b61ff);
+    }
+
+    .edit-hint {
+        font-size: 0.75rem;
+        color: #999;
+        font-weight: 400;
+    }
+
+    .value-button:hover .edit-hint {
+        color: var(--accent, #7b61ff);
+    }
+
+    .edit-inline {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .edit-inline input {
+        padding: 0.5rem;
+        font-size: 0.95rem;
+    }
+
+    .edit-buttons {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .edit-buttons button {
+        padding: 0.5rem 1rem;
+        font-size: 0.85rem;
     }
 
     .info-notice {

@@ -91,6 +91,13 @@ function createAuthStore() {
 
         getToken(): string | null {
             return get({ subscribe }).token;
+        },
+
+        updateUser(userData: Partial<User>) {
+            update(s => ({
+                ...s,
+                user: s.user ? { ...s.user, ...userData } : null
+            }));
         }
     };
 }

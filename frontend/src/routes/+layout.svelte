@@ -64,7 +64,7 @@
 </script>
 
 {#if $isLoading || !$isLocaleLoaded}
-    <div class="loading">{$_('common.loading')}</div>
+    <div class="loading">Loading...</div>
 {:else}
     {#if $isAuthenticated}
         <nav class="navbar">

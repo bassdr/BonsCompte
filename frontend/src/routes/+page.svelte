@@ -2,7 +2,7 @@
     import { getProjects, createProject, joinProject, type ProjectWithRole } from "$lib/api";
     import { goto } from "$app/navigation";
     import { _ } from '$lib/i18n';
-    import { formatDate } from '$lib/format';
+    import { formatCurrency } from '$lib/format/currency';
 
     let projects: ProjectWithRole[] = $state([]);
     let loading = $state(true);
@@ -90,6 +90,72 @@
         }
     }
 
+    function formatRelativeTime(dateStr: string): string {
+        const date = new Date(dateStr);
+        const now = new Date();
+        const diffMs = now.getTime() - date.getTime();
+        const diffMinutes = Math.floor(diffMs / (1000 * 60));
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        const diffMonths = Math.floor(diffDays / 30);
+        const diffYears = Math.floor(diffDays / 365);
+
+        if (diffMinutes < 1) {
+            return $_('projects.createdJustNow');
+        } else if (diffMinutes < 60) {
+            return $_('projects.createdMinutesAgo', { values: { minutes: diffMinutes } });
+        } else if (diffHours < 24) {
+            return $_('projects.createdHoursAgo', { values: { hours: diffHours } });
+        } else if (diffDays < 30) {
+            return $_('projects.createdDaysAgo', { values: { days: diffDays } });
+        } else if (diffMonths < 12) {
+            return $_('projects.createdMonthsAgo', { values: { months: diffMonths } });
+        } else {
+            return $_('projects.createdYearsAgo', { values: { years: diffYears } });
+        }
+    }
+
+    interface DebtSummaryLine {
+        text: string;
+        type: 'owe' | 'owed' | 'pool' | 'settled';
+    }
+
+    function getDebtSummaryLines(project: ProjectWithRole): DebtSummaryLine[] {
+        const lines: DebtSummaryLine[] = [];
+
+        // Pool ownerships first (more specific)
+        for (const pool of project.user_pools) {
+            const sign = pool.ownership >= 0 ? '+' : '';
+            lines.push({
+                text: `${pool.pool_name}: ${sign}${formatCurrency(pool.ownership)}`,
+                type: 'pool'
+            });
+        }
+
+        // User balance (group owes them or they owe group)
+        if (project.user_balance !== null && Math.abs(project.user_balance) >= 0.01) {
+            if (project.user_balance < 0) {
+                lines.push({
+                    text: `${$_('projects.youOwe')} ${formatCurrency(Math.abs(project.user_balance))}`,
+                    type: 'owe'
+                });
+            } else {
+                lines.push({
+                    text: `${$_('projects.owedToYou')}: +${formatCurrency(project.user_balance)}`,
+                    type: 'owed'
+                });
+            }
+        } else if (project.user_balance !== null && lines.length === 0) {
+            // Only show "all settled" if there's no pool activity and balance is zero
+            lines.push({
+                text: $_('projects.allSettled'),
+                type: 'settled'
+            });
+        }
+
+        return lines;
+    }
+
     $effect(() => {
         loadProjects();
     });
@@ -171,6 +237,7 @@
 {:else}
     <div class="projects-grid">
         {#each projects as project}
+            {@const debtLines = getDebtSummaryLines(project)}
             <a href="/projects/{project.id}" class="project-card">
                 <div class="project-header">
                     <h3>{project.name}</h3>
@@ -179,8 +246,15 @@
                 {#if project.description}
                     <p class="project-description">{project.description}</p>
                 {/if}
+                {#if debtLines.length > 0}
+                    <div class="project-debt-lines">
+                        {#each debtLines as line}
+                            <div class="debt-line debt-{line.type}">{line.text}</div>
+                        {/each}
+                    </div>
+                {/if}
                 <div class="project-meta">
-                    {$_('common.created')} {formatDate(project.created_at)}
+                    {project.owner_name} · {formatRelativeTime(project.created_at)}
                 </div>
             </a>
         {/each}
@@ -353,10 +427,39 @@
         font-size: 0.9rem;
     }
 
+    .project-debt-lines {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        margin-top: 0.5rem;
+    }
+
+    .debt-line {
+        font-size: 0.85rem;
+        font-weight: 500;
+    }
+
+    .debt-line.debt-pool {
+        color: var(--accent, #7b61ff);
+    }
+
+    .debt-line.debt-owed {
+        color: #2e7d32;
+    }
+
+    .debt-line.debt-owe {
+        color: #c62828;
+    }
+
+    .debt-line.debt-settled {
+        color: #666;
+        font-style: italic;
+    }
+
     .project-meta {
         font-size: 0.8rem;
         color: #999;
-        margin-top: 1rem;
+        margin-top: 0.75rem;
     }
 
     /* Mobile responsive styles */

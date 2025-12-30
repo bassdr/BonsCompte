@@ -107,8 +107,16 @@ export interface Project {
     require_approval: boolean;
 }
 
+export interface PoolSummary {
+    pool_name: string;
+    ownership: number;
+}
+
 export interface ProjectWithRole extends Project {
     role: string;
+    owner_name: string;
+    user_balance: number | null;
+    user_pools: PoolSummary[];
 }
 
 export interface Participant {

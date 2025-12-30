@@ -283,8 +283,16 @@
     </div>
     {#if verification}
         <div class="verification-result" class:valid={verification.is_valid} class:invalid={!verification.is_valid}>
-            <span class="verification-icon">{verification.is_valid ? '✓' : '✗'}</span>
-            <span>{verification.message}</span>
+            <span class="verification-icon">{verification.is_valid ? '[OK]' : '[X]'}</span>
+            <span>
+                {#if verification.total_entries === 0}
+                    {$_('history.emptyLog')}
+                {:else if verification.is_valid}
+                    {$_('history.chainValid')}
+                {:else}
+                    {$_('history.chainInvalid')}
+                {/if}
+            </span>
             <span class="verification-count">({verification.total_entries} {$_('history.entries')})</span>
         </div>
     {/if}

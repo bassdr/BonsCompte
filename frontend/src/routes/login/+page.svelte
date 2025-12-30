@@ -1,6 +1,8 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
-    import { login } from '$lib/api';
+    import { onMount } from 'svelte';
+    import { browser } from '$app/environment';
+    import { login, ApiRequestError } from '$lib/api';
     import { auth } from '$lib/auth';
     import { _ } from '$lib/i18n';
     import { preferences } from '$lib/stores/preferences';
@@ -8,12 +10,36 @@
     let username = $state('');
     let password = $state('');
     let error = $state('');
+    let info = $state('');
     let loading = $state(false);
     let showForgotPassword = $state(false);
+
+    // Map error codes to user-friendly translation keys
+    function getErrorMessage(code: string, fallback: string): string {
+        const errorMap: Record<string, string> = {
+            'INVALID_CREDENTIALS': $_('auth.errors.invalidCredentials'),
+            'ACCOUNT_PENDING': $_('auth.errors.accountPending'),
+            'ACCOUNT_REVOKED': $_('auth.errors.accountRevoked'),
+            'INTERNAL_ERROR': $_('auth.errors.internalError'),
+        };
+        return errorMap[code] || fallback;
+    }
+
+    // Check for session expired message on mount
+    onMount(() => {
+        if (browser) {
+            const authMessage = sessionStorage.getItem('auth_message');
+            if (authMessage === 'session_expired') {
+                info = $_('auth.sessionExpired');
+                sessionStorage.removeItem('auth_message');
+            }
+        }
+    });
 
     async function handleSubmit(e: Event) {
         e.preventDefault();
         error = '';
+        info = '';
         loading = true;
 
         try {
@@ -23,7 +49,11 @@
             preferences.initFromUser(response.user.preferences);
             goto('/');
         } catch (err) {
-            error = err instanceof Error ? err.message : $_('auth.loginFailed');
+            if (err instanceof ApiRequestError) {
+                error = getErrorMessage(err.code, err.message);
+            } else {
+                error = err instanceof Error ? err.message : $_('auth.loginFailed');
+            }
         } finally {
             loading = false;
         }
@@ -34,6 +64,9 @@
     <h1>{$_('auth.login')}</h1>
 
     <form onsubmit={handleSubmit}>
+        {#if info}
+            <div class="info">{info}</div>
+        {/if}
         {#if error}
             <div class="error">{error}</div>
         {/if}
@@ -150,6 +183,14 @@
     .error {
         background: #fee;
         color: #c00;
+        padding: 0.75rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+    }
+
+    .info {
+        background: #e3f2fd;
+        color: #1565c0;
         padding: 0.75rem;
         border-radius: 8px;
         margin-bottom: 1rem;

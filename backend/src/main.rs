@@ -178,7 +178,7 @@ async fn main() {
         .nest("/debts", routes::debts::router())
         .nest("/history", routes::history::router());
 
-    // Auth routes with stricter rate limiting
+    // Auth routes with strict rate limiting (5 requests per 60s to prevent brute-force)
     let auth_routes = routes::auth::router()
         .layer(GovernorLayer { config: auth_rate_limit });
 
@@ -194,7 +194,7 @@ async fn main() {
         // Project-scoped routes
         .nest("/projects/{id}", project_routes)
         .layer(middleware::from_fn_with_state(state.clone(), inject_extensions))
-        // General rate limiting for all API routes
+        // General rate limiting (100 requests per second)
         .layer(GovernorLayer { config: api_rate_limit })
         // Global middleware
         .layer(TraceLayer::new_for_http())
@@ -211,5 +211,10 @@ async fn main() {
     tracing::info!("Server running on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .unwrap();
 }

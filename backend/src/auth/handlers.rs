@@ -65,7 +65,7 @@ pub async fn register(
     let password_hash = hash_password(&input.password)?;
 
     let result = sqlx::query(
-        "INSERT INTO users (username, display_name, password_hash, user_state, token_version) VALUES (?, ?, ?, 'active', 1)"
+        "INSERT INTO users (username, display_name, password_hash, user_state, token_version) VALUES (?, ?, ?, 'pending_approval', 1)"
     )
     .bind(&username)
     .bind(&input.display_name)
@@ -130,19 +130,11 @@ pub async fn login(
     };
 
     // Check user state before allowing login
+    // Pending users CAN log in (they'll be restricted by middleware)
+    // Revoked users are blocked entirely
     match user.state() {
-        UserState::Active => {
-            // User is active, proceed with login
-        }
-        UserState::PendingApproval => {
-            tracing::warn!(
-                event = "auth.login.failure",
-                reason = AuthFailureReason::AccountPending.as_code(),
-                user_id = user.id,
-                username = %username,
-                "Login failed: account pending approval"
-            );
-            return Err(AppError::AccountPendingApproval);
+        UserState::Active | UserState::PendingApproval => {
+            // User can log in, middleware will handle access restrictions
         }
         UserState::Revoked => {
             tracing::warn!(

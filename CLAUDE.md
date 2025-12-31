@@ -337,6 +337,7 @@ JWT_SECRET=your-secret-key
 HOST=0.0.0.0
 PORT=8000
 RATE_LIMIT_ENABLED=false  # Default. Only set to true if NOT behind a reverse proxy
+MAX_PROJECTS_PER_USER=3  # Optional: Limit projects per user (empty/0 = unlimited)
 ```
 
 Frontend (`.env` or inline):

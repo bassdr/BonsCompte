@@ -96,11 +96,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .execute(&pool)
             .await?;
 
+            // Set all project memberships to pending
+            let rows_updated =
+                sqlx::query("UPDATE project_members SET status = 'pending' WHERE user_id = ?")
+                    .bind(user_id)
+                    .execute(&pool)
+                    .await?
+                    .rows_affected();
+
             println!("Password reset for user '{}'", username);
             println!("Temporary password: {}", temp_password);
             println!("Previous state: {}", current_state);
             println!("New state: pending_approval");
             println!("Token version: {} -> {}", current_version, new_version);
+            println!("Project memberships set to pending: {}", rows_updated);
             println!();
             println!("IMPORTANT: The user must:");
             println!("  1. Log in with this temporary password");
@@ -139,10 +148,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .execute(&pool)
                 .await?;
 
+            // Activate ALL project memberships (system admin bypass)
+            let rows_updated =
+                sqlx::query("UPDATE project_members SET status = 'active' WHERE user_id = ?")
+                    .bind(user_id)
+                    .execute(&pool)
+                    .await?
+                    .rows_affected();
+
             println!("User '{}' approved", username);
             println!("Previous state: {}", current_state);
             println!("New state: active");
             println!("Token version: {} (unchanged)", current_version);
+            println!("Project memberships activated: {}", rows_updated);
         }
 
         Commands::Revoke { username } => {

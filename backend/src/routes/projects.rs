@@ -141,8 +141,25 @@ async fn list_projects(
 async fn create_project(
     auth: AuthUser,
     State(pool): State<SqlitePool>,
+    State(state): State<AppState>,
     Json(input): Json<CreateProject>,
 ) -> AppResult<Json<Project>> {
+    // Check project creation limit if configured
+    if let Some(max_projects) = state.config.max_projects_per_user {
+        let project_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM projects WHERE created_by = ?")
+                .bind(auth.user_id)
+                .fetch_one(&pool)
+                .await?;
+
+        if project_count >= max_projects {
+            return Err(AppError::Forbidden(format!(
+                "Project creation limit reached (maximum {} projects per user)",
+                max_projects
+            )));
+        }
+    }
+
     let invite_code = generate_invite_code();
 
     // Start transaction

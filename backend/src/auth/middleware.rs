@@ -76,7 +76,26 @@ where
                 // User is active, proceed
             }
             UserState::PendingApproval => {
-                return Err(AppError::AccountPendingApproval);
+                // Allow pending users to access specific routes only
+                let path = parts.uri.path();
+                let method = parts.method.as_str();
+
+                // Allowed routes for pending users:
+                // - GET /users/me (read own profile)
+                // - PUT /users/me/... (update own profile/preferences)
+                // - GET /approvals/* (check approval status)
+                // - POST /approvals/*/vote (cast votes - validation happens in handler)
+                let allowed = matches!(
+                    (method, path),
+                    ("GET", "/users/me")
+                        | ("PUT", "/users/me/profile")
+                        | ("PUT", "/users/me/preferences")
+                        | ("GET", "/users/me/preferences")
+                ) || path.starts_with("/approvals/");
+
+                if !allowed {
+                    return Err(AppError::AccountPendingApproval);
+                }
             }
             UserState::Revoked => {
                 return Err(AppError::AccountRevoked);
@@ -149,9 +168,9 @@ where
                 "Database pool not configured".to_string(),
             ))?;
 
-        // Check if user is a member of this project
-        let member: Option<(String, Option<i64>)> = sqlx::query_as(
-            "SELECT role, participant_id FROM project_members
+        // Check if user is a member of this project and membership is active
+        let member: Option<(String, Option<i64>, String)> = sqlx::query_as(
+            "SELECT role, participant_id, status FROM project_members
              WHERE project_id = ? AND user_id = ?",
         )
         .bind(project_id)
@@ -161,7 +180,12 @@ where
         .map_err(|e| AppError::Internal(format!("Database error: {}", e)))?;
 
         match member {
-            Some((role_str, participant_id)) => {
+            Some((role_str, participant_id, status)) => {
+                // Check if membership is active
+                if status != "active" {
+                    return Err(AppError::AccountPendingApproval);
+                }
+
                 let role = role_str
                     .parse::<Role>()
                     .map_err(|_| AppError::Internal("Invalid role in database".to_string()))?;

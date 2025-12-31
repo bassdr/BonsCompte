@@ -33,6 +33,7 @@ export type AuthErrorCode =
   | 'INVALID_CREDENTIALS'
   | 'INVALID_INPUT'
   | 'ACCOUNT_PENDING'
+  | 'PENDING_APPROVAL'
   | 'ACCOUNT_REVOKED'
   | 'INTERNAL_ERROR';
 
@@ -98,6 +99,35 @@ async function authFetch(path: string, opts: AuthFetchOptions = {}) {
       window.location.href = '/login';
     }
     throw new Error('Session expired');
+  }
+
+  // Handle 403 - check for pending approval or revoked account
+  if (res.status === 403) {
+    const text = await res.text();
+    try {
+      const data: ApiError = JSON.parse(text);
+      if (data.code === 'ACCOUNT_PENDING' || data.code === 'PENDING_APPROVAL') {
+        // Redirect to quarantine page, don't clear token
+        if (browser) {
+          window.location.href = '/account/pending';
+        }
+        throw new ApiRequestError(data.code, data.error, res.status);
+      }
+      if (data.code === 'ACCOUNT_REVOKED') {
+        // Logout revoked users
+        auth.logout();
+        if (browser) {
+          sessionStorage.setItem('auth_message', 'account_revoked');
+          window.location.href = '/login';
+        }
+        throw new ApiRequestError(data.code, data.error, res.status);
+      }
+      // Other 403 errors
+      throw new ApiRequestError(data.code || 'FORBIDDEN', data.error, res.status);
+    } catch (e) {
+      if (e instanceof ApiRequestError) throw e;
+      throw new Error(`${res.status}: ${text}`);
+    }
   }
 
   if (!res.ok) {
@@ -839,3 +869,60 @@ export const undoHistoryEntry = (
 
 export const verifyHistoryChain = (projectId: number): Promise<ChainVerification> =>
   authFetch(`/projects/${projectId}/history/verify`);
+
+// ========================================
+// Approval endpoints
+// ========================================
+
+export interface ApprovalVote {
+  id: number;
+  approval_id: number;
+  voter_id: number;
+  voter_username?: string;
+  voter_display_name?: string;
+  vote: string; // 'approve' or 'reject'
+  reason?: string;
+  voted_at: string;
+}
+
+export interface ProjectApproval {
+  id: number;
+  user_id: number;
+  project_id: number;
+  event_type: string;
+  event_metadata?: string;
+  status: string; // 'pending', 'approved', 'rejected'
+  created_at: string;
+  resolved_at?: string;
+  // Additional fields from ApprovalWithDetails
+  project_name?: string;
+  username?: string;
+  display_name?: string;
+  votes?: ApprovalVote[];
+  vote_count?: number;
+  required_votes?: number;
+  can_self_approve?: boolean;
+}
+
+export interface CastVoteRequest {
+  vote: 'approve' | 'reject';
+  reason?: string;
+}
+
+export const getMyPendingApprovals = (): Promise<ProjectApproval[]> =>
+  authFetch('/approvals/my-pending');
+
+export const getActionableApprovals = (): Promise<ProjectApproval[]> =>
+  authFetch('/approvals/actionable');
+
+export const getApproval = (id: number): Promise<ProjectApproval> => authFetch(`/approvals/${id}`);
+
+export const castVote = (
+  approvalId: number,
+  vote: 'approve' | 'reject',
+  reason?: string
+): Promise<ProjectApproval> =>
+  authFetch(`/approvals/${approvalId}/vote`, {
+    method: 'POST',
+    body: JSON.stringify({ vote, reason } as CastVoteRequest)
+  });

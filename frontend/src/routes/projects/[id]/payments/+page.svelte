@@ -2170,4 +2170,95 @@
         font-size: 0.85rem;
         color: #856404;
     }
+
+    /* Tablet responsive styles */
+    @media (max-width: 768px) {
+        .split-header {
+            margin: 0.75rem 0 0.4rem;
+        }
+
+        .split-header h4 {
+            font-size: 1rem;
+        }
+
+        .small-btn {
+            padding: 0.2rem 0.5rem;
+            font-size: 0.75rem;
+        }
+
+        .split-table th,
+        .split-table td {
+            padding: 0.4rem;
+            font-size: 0.9rem;
+        }
+
+        .split-table input[type="number"] {
+            width: 60px;
+            padding: 0.4rem;
+            font-size: 0.85rem;
+        }
+
+        .payback-btn {
+            padding: 0.2rem 0.4rem;
+            font-size: 0.65rem;
+        }
+    }
+
+    /* Mobile responsive styles */
+    @media (max-width: 480px) {
+        .split-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.5rem;
+            margin: 0.5rem 0 0.3rem;
+        }
+
+        .split-header h4 {
+            font-size: 0.95rem;
+        }
+
+        .small-btn {
+            align-self: stretch;
+            padding: 0.3rem 0.5rem;
+            font-size: 0.75rem;
+        }
+
+        .split-table {
+            font-size: 0.8rem;
+            display: block;
+            overflow-x: auto;
+        }
+
+        .split-table th,
+        .split-table td {
+            padding: 0.3rem 0.2rem;
+            font-size: 0.8rem;
+        }
+
+        .split-table th:first-child,
+        .split-table td:first-child {
+            padding-left: 0.4rem;
+        }
+
+        .split-table th:last-child,
+        .split-table td:last-child {
+            padding-right: 0.4rem;
+        }
+
+        .split-table input[type="number"] {
+            width: 50px;
+            padding: 0.3rem 0.2rem;
+            font-size: 0.75rem;
+        }
+
+        .payback-btn {
+            padding: 0.3rem 0.3rem;
+            font-size: 0.6rem;
+            white-space: nowrap;
+        }
+
+        .share {
+            font-size: 0.8rem;
+        }
+    }
 </style>

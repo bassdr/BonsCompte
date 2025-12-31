@@ -378,4 +378,122 @@
         background: transparent;
         border: 1px solid #ddd;
     }
+
+    /* Tablet responsive styles */
+    @media (max-width: 768px) {
+        .card {
+            padding: 1rem;
+        }
+
+        .invite-code code {
+            font-size: 1rem;
+            padding: 0.75rem 1rem;
+        }
+
+        .members-list li {
+            padding: 0.75rem;
+        }
+
+        .member-info {
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .edit-controls {
+            flex-wrap: wrap;
+        }
+
+        .edit-controls select {
+            min-width: 120px;
+        }
+    }
+
+    /* Mobile responsive styles */
+    @media (max-width: 480px) {
+        h2 {
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+        }
+
+        h3 {
+            font-size: 1.1rem;
+        }
+
+        .card {
+            padding: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .invite-code {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .invite-code code {
+            font-size: 0.9rem;
+            padding: 0.6rem 0.8rem;
+            text-align: center;
+        }
+
+        .members-list li {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.75rem;
+            padding: 0.75rem 0.5rem;
+        }
+
+        .member-info {
+            gap: 0.4rem;
+            flex-wrap: wrap;
+            width: 100%;
+        }
+
+        .name {
+            font-size: 0.95rem;
+        }
+
+        .username {
+            font-size: 0.8rem;
+        }
+
+        .participant {
+            font-size: 0.7rem;
+            padding: 0.2rem 0.4rem;
+        }
+
+        .member-actions {
+            width: 100%;
+            flex-wrap: wrap;
+        }
+
+        .role-badge {
+            font-size: 0.7rem;
+            padding: 0.2rem 0.6rem;
+        }
+
+        .btn-edit,
+        .btn-delete {
+            flex: 1;
+            min-width: 80px;
+            padding: 0.4rem 0.75rem;
+            font-size: 0.8rem;
+        }
+
+        .edit-form {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 0.75rem;
+        }
+
+        .edit-controls {
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .edit-controls select,
+        .edit-controls button {
+            width: 100%;
+            font-size: 0.9rem;
+        }
+    }
 </style>

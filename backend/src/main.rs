@@ -123,10 +123,16 @@ async fn main() {
 
     tracing::info!("Connected to SQLite at {}", config.database_url);
 
+    // Extract values before moving config into state
+    let host = config.host.clone();
+    let port = config.port;
+    let rate_limit_enabled = config.rate_limit_enabled;
+
     // Create app state
     let state = AppState {
         pool,
-        jwt_secret: config.jwt_secret,
+        jwt_secret: config.jwt_secret.clone(),
+        config,
     };
 
     // CORS configuration
@@ -160,7 +166,7 @@ async fn main() {
             .expect("Failed to create API rate limiter"),
     );
 
-    // Project sub-routes (nested under /api/projects/:id)
+    // Project sub-routes (nested under /api/projects/{id})
     let project_routes = Router::new()
         .nest("/participants", routes::participants::router())
         .nest("/members", routes::members::router())
@@ -170,7 +176,7 @@ async fn main() {
         .nest("/history", routes::history::router());
 
     // Auth routes with optional rate limiting (5 requests per 60s to prevent brute-force)
-    let auth_routes = if config.rate_limit_enabled {
+    let auth_routes = if rate_limit_enabled {
         routes::auth::router().layer(GovernorLayer {
             config: auth_rate_limit,
         })
@@ -186,6 +192,7 @@ async fn main() {
         .nest("/auth", auth_routes)
         // Protected routes (with extensions middleware)
         .nest("/users", routes::users::router())
+        .nest("/approvals", routes::approvals::router())
         .nest("/projects", routes::projects::router())
         // Project-scoped routes
         .nest("/projects/{id}", project_routes)
@@ -195,7 +202,7 @@ async fn main() {
         ));
 
     // Conditionally apply general rate limiting (100 requests per second)
-    if config.rate_limit_enabled {
+    if rate_limit_enabled {
         app = app.layer(GovernorLayer {
             config: api_rate_limit,
         });
@@ -210,7 +217,7 @@ async fn main() {
         .with_state(state);
 
     // Start server
-    let addr: SocketAddr = format!("{}:{}", config.host, config.port)
+    let addr: SocketAddr = format!("{}:{}", host, port)
         .parse()
         .expect("Invalid address");
 

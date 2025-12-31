@@ -10,6 +10,7 @@ use crate::{
     auth::{password::{hash_password, verify_password}, AuthUser},
     error::{AppError, AppResult},
     models::{User, UserPreferences, UserResponse},
+    services::approval_service,
     AppState,
 };
 
@@ -113,14 +114,26 @@ async fn change_password(
     // Hash new password
     let new_hash = hash_password(&req.new_password)?;
 
-    // Update password
-    sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
+    // Update password AND increment token_version to invalidate existing sessions
+    // This is critical for security: old tokens become invalid after password change
+    sqlx::query("UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?")
         .bind(&new_hash)
         .bind(auth.user_id)
         .execute(&pool)
         .await?;
 
-    Ok(Json(serde_json::json!({ "message": "Password changed successfully" })))
+    // Trigger approval workflow
+    // Creates approval records in all user's projects and sets memberships to pending
+    approval_service::create_approval_for_all_projects(
+        &pool,
+        auth.user_id,
+        "password_change"
+    ).await?;
+
+    Ok(Json(serde_json::json!({
+        "message": "Password changed successfully. Your account requires approval to continue.",
+        "requires_approval": true
+    })))
 }
 
 async fn update_profile(

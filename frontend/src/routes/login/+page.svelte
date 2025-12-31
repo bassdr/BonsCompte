@@ -112,7 +112,7 @@
                 {$_('auth.passwordRecoveryInfo')}
             </p>
             <p class="details-link">
-                <a href="https://github.com/bassdr/BonsCompte/blob/main/docs/PASSWORD_RECOVERY.md" target="_blank" rel="noopener noreferrer">
+                <a href="/help/password-recovery">
                     {$_('auth.passwordRecoveryLink')}
                 </a>
             </p>

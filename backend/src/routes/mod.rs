@@ -6,3 +6,4 @@ pub mod members;
 pub mod payments;
 pub mod debts;
 pub mod history;
+pub mod approvals;

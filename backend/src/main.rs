@@ -190,6 +190,7 @@ async fn main() {
         .nest("/auth", auth_routes)
         // Protected routes (with extensions middleware)
         .nest("/users", routes::users::router())
+        .nest("/approvals", routes::approvals::router())
         .nest("/projects", routes::projects::router())
         // Project-scoped routes
         .nest("/projects/{id}", project_routes)

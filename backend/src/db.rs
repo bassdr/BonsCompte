@@ -470,6 +470,62 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         .await
         .ok();
 
+    // ==========================================
+    // Migration 011: Approval System
+    // ==========================================
+    tracing::info!("Running migration 011: Approval system");
+
+    // Create project_approvals table
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS project_approvals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            project_id INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            event_metadata TEXT,
+            status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            resolved_at TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+        )"
+    )
+    .execute(pool)
+    .await?;
+
+    // Create approval_votes table
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS approval_votes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            approval_id INTEGER NOT NULL,
+            voter_id INTEGER NOT NULL,
+            vote TEXT NOT NULL CHECK(vote IN ('approve', 'reject')),
+            reason TEXT,
+            voted_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (approval_id) REFERENCES project_approvals(id) ON DELETE CASCADE,
+            FOREIGN KEY (voter_id) REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE(approval_id, voter_id)
+        )"
+    )
+    .execute(pool)
+    .await?;
+
+    // Create indexes for approval queries
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_project_approvals_user ON project_approvals(user_id, status)")
+        .execute(pool)
+        .await
+        .ok();
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_project_approvals_project ON project_approvals(project_id, status)")
+        .execute(pool)
+        .await
+        .ok();
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_approval_votes_approval ON approval_votes(approval_id)")
+        .execute(pool)
+        .await
+        .ok();
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

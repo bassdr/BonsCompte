@@ -2,6 +2,7 @@
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
     import { joinProject } from '$lib/api';
+    import { t } from 'svelte-i18n';
 
     let error = $state('');
     let joining = $state(false);
@@ -27,13 +28,13 @@
             const response = await joinProject(inviteCode, participantToken);
 
             if (response.status === 'pending') {
-                success = `Your request to join "${response.project.name}" has been submitted and is pending admin approval.`;
+                success = $t('join.pendingApproval', { values: { name: response.project.name } });
             } else {
                 // Go to joined project
                 goto(`/projects/${response.project.id}`);
             }
         } catch (e) {
-            error = e instanceof Error ? e.message : 'Failed to join project';
+            error = e instanceof Error ? e.message : $t('join.failedToJoin');
         } finally {
             joining = false;
         }
@@ -41,12 +42,12 @@
 </script>
 
 <div class="join-container">
-    <h1>Join Project</h1>
+    <h1>{$t('join.title')}</h1>
 
     {#if success}
         <div class="success">
             <p>{success}</p>
-            <a href="/" class="btn-primary">Go to Projects</a>
+            <a href="/" class="btn-primary">{$t('join.goToProjects')}</a>
         </div>
     {:else}
         {#if error}
@@ -55,45 +56,45 @@
 
         {#if code}
             <div class="invite-info">
-                <p>You've been invited to join a project!</p>
+                <p>{$t('join.inviteMessage')}</p>
                 {#if participantToken}
-                    <p class="note">This invite will automatically link you to a participant in the project.</p>
+                    <p class="note">{$t('join.participantLinkNote')}</p>
                 {/if}
             </div>
 
             <form onsubmit={handleJoin}>
                 <div class="code-display">
-                    <span class="label">Invite Code:</span>
+                    <span class="label">{$t('join.inviteCodeLabel')}</span>
                     <code>{code}</code>
                 </div>
                 <button type="submit" disabled={joining}>
-                    {joining ? 'Joining...' : 'Join Project'}
+                    {joining ? $t('join.joining') : $t('join.joinButton')}
                 </button>
             </form>
         {:else}
-            <p>Enter an invite code to join a project.</p>
+            <p>{$t('join.enterCodePrompt')}</p>
 
             <form onsubmit={handleJoin}>
                 <div class="field">
-                    <label for="code">Invite Code</label>
+                    <label for="code">{$t('join.inviteCodeInput')}</label>
                     <input
                         id="code"
                         type="text"
                         bind:value={manualCode}
                         required
                         disabled={joining}
-                        placeholder="Enter invite code"
+                        placeholder={$t('join.inviteCodePlaceholder')}
                     />
                 </div>
 
                 <button type="submit" disabled={joining || !manualCode.trim()}>
-                    {joining ? 'Joining...' : 'Join Project'}
+                    {joining ? $t('join.joining') : $t('join.joinButton')}
                 </button>
             </form>
         {/if}
 
         <p class="link">
-            <a href="/">Back to Projects</a>
+            <a href="/">{$t('join.backToProjects')}</a>
         </p>
     {/if}
 </div>

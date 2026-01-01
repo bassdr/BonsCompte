@@ -16,6 +16,18 @@
     let editingPaymentId = $state<number | null>(null);
     let editingPaymentOriginal = $state<PaymentWithContributions | null>(null);
 
+    // Filter state
+    let searchText = $state('');
+    let filterPayerId = $state<number | null>(null);
+    let filterContributorId = $state<number | null>(null);
+    let filterPaymentType = $state<string>(''); // '', 'expense', 'transfer', 'recurring'
+    let filterDateFrom = $state('');
+    let filterDateTo = $state('');
+
+    // Pagination state
+    let paymentsToShow = $state(30);
+    const PAYMENTS_PER_PAGE = 30;
+
     // Split date option for recurring payments
     let useSplitDate = $state(false);
     let splitFromDate = $state(getLocalDateString());
@@ -149,6 +161,102 @@
         return result;
     });
 
+    // Apply all filters
+    let filteredPayments = $derived.by(() => {
+        let result = payments;
+
+        // Text search (case-insensitive description)
+        if (searchText.trim()) {
+            const search = searchText.toLowerCase();
+            result = result.filter(p =>
+                p.description.toLowerCase().includes(search)
+            );
+        }
+
+        // Filter by payer
+        if (filterPayerId !== null) {
+            result = result.filter(p => p.payer_id === filterPayerId);
+        }
+
+        // Filter by contributor (payments where participant contributed)
+        if (filterContributorId !== null) {
+            result = result.filter(p =>
+                p.contributions.some(c => c.participant_id === filterContributorId)
+            );
+        }
+
+        // Filter by payment type
+        if (filterPaymentType) {
+            if (filterPaymentType === 'expense') {
+                result = result.filter(p => p.receiver_account_id === null);
+            } else if (filterPaymentType === 'transfer') {
+                result = result.filter(p => p.receiver_account_id !== null);
+            } else if (filterPaymentType === 'recurring') {
+                result = result.filter(p => p.is_recurring);
+            }
+        }
+
+        // Filter by date range
+        if (filterDateFrom) {
+            result = result.filter(p => {
+                const paymentDate = p.payment_date.split('T')[0];
+                return paymentDate >= filterDateFrom;
+            });
+        }
+        if (filterDateTo) {
+            result = result.filter(p => {
+                const paymentDate = p.payment_date.split('T')[0];
+                return paymentDate <= filterDateTo;
+            });
+        }
+
+        return result;
+    });
+
+    // Check if any filters are active
+    let hasActiveFilters = $derived(
+        searchText.trim() !== '' ||
+        filterPayerId !== null ||
+        filterContributorId !== null ||
+        filterPaymentType !== '' ||
+        filterDateFrom !== '' ||
+        filterDateTo !== ''
+    );
+
+    // Count of active filters
+    let activeFilterCount = $derived.by(() => {
+        let count = 0;
+        if (searchText.trim()) count++;
+        if (filterPayerId !== null) count++;
+        if (filterContributorId !== null) count++;
+        if (filterPaymentType) count++;
+        if (filterDateFrom) count++;
+        if (filterDateTo) count++;
+        return count;
+    });
+
+    // Apply pagination (unless editing or filters active)
+    let visiblePayments = $derived.by(() => {
+        // If editing, only show the payment being edited
+        if (editingPaymentId !== null) {
+            const editingPayment = filteredPayments.find(p => p.id === editingPaymentId);
+            return editingPayment ? [editingPayment] : [];
+        }
+
+        // If filters are active, show all filtered results (ignore pagination)
+        if (hasActiveFilters) {
+            return filteredPayments;
+        }
+
+        // Otherwise, apply pagination
+        return filteredPayments.slice(0, paymentsToShow);
+    });
+
+    // Check if there are more payments to load
+    let hasMorePayments = $derived(
+        !hasActiveFilters && filteredPayments.length > paymentsToShow
+    );
+
     async function loadPayments() {
         loading = true;
         error = '';
@@ -160,6 +268,28 @@
             loading = false;
         }
     }
+
+    function clearFilters() {
+        searchText = '';
+        filterPayerId = null;
+        filterContributorId = null;
+        filterPaymentType = '';
+        filterDateFrom = '';
+        filterDateTo = '';
+        paymentsToShow = PAYMENTS_PER_PAGE; // Reset pagination too
+    }
+
+    function loadMorePayments() {
+        paymentsToShow += PAYMENTS_PER_PAGE;
+    }
+
+    // Reset pagination when filters change
+    $effect(() => {
+        // Watch filter changes
+        const _ = [searchText, filterPayerId, filterContributorId, filterPaymentType, filterDateFrom, filterDateTo];
+        // Reset to initial page
+        paymentsToShow = PAYMENTS_PER_PAGE;
+    });
 
     // Initialize form when participants change
     $effect(() => {
@@ -1098,8 +1228,94 @@
     <div class="error">{error}</div>
 {/if}
 
+<!-- Filters Section -->
+{#if !editingPaymentId}
+<section class="card filters">
+    <div class="filters-header">
+        <h3>{$_('payments.filters')}</h3>
+        {#if activeFilterCount > 0}
+            <button type="button" class="clear-filters-btn" onclick={clearFilters}>
+                {$_('common.clear')} ({activeFilterCount})
+            </button>
+        {/if}
+    </div>
+
+    <div class="filters-grid">
+        <!-- Text Search -->
+        <div class="filter-field">
+            <label for="search-text">{$_('payments.searchDescription')}</label>
+            <input
+                id="search-text"
+                type="text"
+                bind:value={searchText}
+                placeholder={$_('payments.searchPlaceholder')}
+            />
+        </div>
+
+        <!-- Payer Filter -->
+        <div class="filter-field">
+            <label for="filter-payer">{$_('payments.filterByPayer')}</label>
+            <select id="filter-payer" bind:value={filterPayerId}>
+                <option value={null}>{$_('payments.allPayers')}</option>
+                {#each $participants as p}
+                    <option value={p.id}>{p.name}</option>
+                {/each}
+            </select>
+        </div>
+
+        <!-- Contributor Filter -->
+        <div class="filter-field">
+            <label for="filter-contributor">{$_('payments.filterByContributor')}</label>
+            <select id="filter-contributor" bind:value={filterContributorId}>
+                <option value={null}>{$_('payments.allContributors')}</option>
+                {#each $participants as p}
+                    <option value={p.id}>{p.name}</option>
+                {/each}
+            </select>
+        </div>
+
+        <!-- Payment Type Filter -->
+        <div class="filter-field">
+            <label for="filter-type">{$_('payments.filterByType')}</label>
+            <select id="filter-type" bind:value={filterPaymentType}>
+                <option value="">{$_('payments.allTypes')}</option>
+                <option value="expense">{$_('payments.typeExpense')}</option>
+                <option value="transfer">{$_('payments.typeTransfer')}</option>
+                <option value="recurring">{$_('payments.typeRecurring')}</option>
+            </select>
+        </div>
+
+        <!-- Date From -->
+        <div class="filter-field">
+            <label for="filter-date-from">{$_('payments.dateFrom')}</label>
+            <input
+                id="filter-date-from"
+                type="date"
+                bind:value={filterDateFrom}
+            />
+        </div>
+
+        <!-- Date To -->
+        <div class="filter-field">
+            <label for="filter-date-to">{$_('payments.dateTo')}</label>
+            <input
+                id="filter-date-to"
+                type="date"
+                bind:value={filterDateTo}
+            />
+        </div>
+    </div>
+
+    {#if activeFilterCount > 0}
+        <div class="filter-summary">
+            {$_('payments.showingFiltered')} {filteredPayments.length} / {payments.length}
+        </div>
+    {/if}
+</section>
+{/if}
+
 {#if $canEdit}
-    <section class="card">
+    <section class="card" class:editing-card={editingPaymentId !== null}>
         <h3>{editingPaymentId !== null ? $_('payments.editPayment') : $_('payments.addPayment')}</h3>
 
         {#if $participants.length === 0}
@@ -1401,9 +1617,6 @@
                     <button type="submit" disabled={submitting || $participants.length === 0}>
                         {submitting ? $_('common.saving') : (editingPaymentId !== null ? (useSplitDate ? $_('payments.splitAndUpdate') : $_('payments.updatePayment')) : $_('payments.addPayment'))}
                     </button>
-                    {#if editingPaymentId !== null}
-                        <button type="button" class="cancel-btn" onclick={cancelEditing}>Cancel</button>
-                    {/if}
                 </div>
             </form>
         {/if}
@@ -1417,9 +1630,16 @@
         <p>{$_('common.loading')}</p>
     {:else if payments.length === 0}
         <p class="empty">{$_('payments.noPaymentsYet')}</p>
+    {:else if filteredPayments.length === 0}
+        <div class="empty-state">
+            <p class="empty">{$_('payments.noMatchingPayments')}</p>
+            <button type="button" class="clear-filters-btn" onclick={clearFilters}>
+                {$_('common.clear')}
+            </button>
+        </div>
     {:else}
         <ul class="payments-list">
-            {#each payments as p}
+            {#each visiblePayments as p}
                 <li class:editing={editingPaymentId === p.id}>
                     <div class="payment-header">
                         <div class="payment-title">
@@ -1479,6 +1699,16 @@
                 </li>
             {/each}
         </ul>
+
+        <!-- Load More Button -->
+        {#if hasMorePayments && !editingPaymentId}
+            <div class="load-more-section">
+                <button type="button" class="load-more-btn" onclick={loadMorePayments}>
+                    {$_('payments.loadMore')}
+                    ({paymentsToShow} / {filteredPayments.length})
+                </button>
+            </div>
+        {/if}
     {/if}
 </section>
 
@@ -2171,8 +2401,127 @@
         color: #856404;
     }
 
+    /* Filters Section */
+    .filters {
+        margin-bottom: 1.5rem;
+    }
+
+    .filters-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+
+    .filters-header h3 {
+        margin: 0;
+    }
+
+    .clear-filters-btn {
+        padding: 0.5rem 1rem;
+        background: #f5f5f5;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        color: #666;
+        transition: all 0.2s;
+    }
+
+    .clear-filters-btn:hover {
+        background: #eee;
+        color: #333;
+    }
+
+    .filters-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+    }
+
+    .filter-field {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .filter-field label {
+        font-size: 0.9rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        color: #666;
+    }
+
+    .filter-field input,
+    .filter-field select {
+        padding: 0.75rem;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        font-size: 0.9rem;
+        background: white;
+    }
+
+    .filter-field input:focus,
+    .filter-field select:focus {
+        outline: none;
+        border-color: var(--accent, #7b61ff);
+    }
+
+    .filter-summary {
+        margin-top: 1rem;
+        padding: 0.75rem;
+        background: #f9f9f9;
+        border-radius: 8px;
+        font-size: 0.9rem;
+        color: #666;
+        text-align: center;
+    }
+
+    /* Load More Button */
+    .load-more-section {
+        display: flex;
+        justify-content: center;
+        margin-top: 1.5rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid #eee;
+    }
+
+    .load-more-btn {
+        padding: 0.75rem 1.5rem;
+        background: var(--accent, #7b61ff);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: opacity 0.2s;
+    }
+
+    .load-more-btn:hover {
+        opacity: 0.9;
+    }
+
+    /* Editing Card Highlight */
+    .editing-card {
+        border: 2px solid var(--accent, #7b61ff);
+        background: rgba(123, 97, 255, 0.05);
+    }
+
+    /* Empty State */
+    .empty-state {
+        text-align: center;
+        padding: 2rem 1rem;
+    }
+
+    .empty-state .clear-filters-btn {
+        margin-top: 1rem;
+    }
+
     /* Tablet responsive styles */
     @media (max-width: 768px) {
+        .filters-grid {
+            grid-template-columns: 1fr;
+        }
+
         .split-header {
             margin: 0.75rem 0 0.4rem;
         }

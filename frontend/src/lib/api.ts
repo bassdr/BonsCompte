@@ -76,10 +76,19 @@ async function authFetch(path: string, opts: RequestInit = {}) {
         // Check for pending approval status
         try {
             const data: ApiError = await res.json();
-            if (data.code === 'PENDING_APPROVAL') {
+            if (data.code === 'ACCOUNT_PENDING' || data.code === 'PENDING_APPROVAL') {
                 // Redirect to quarantine page, don't clear token
                 if (browser) {
                     window.location.href = '/account/pending';
+                }
+                throw new ApiRequestError(data.code, data.error, res.status);
+            }
+            if (data.code === 'ACCOUNT_REVOKED') {
+                // Logout revoked users
+                auth.logout();
+                if (browser) {
+                    sessionStorage.setItem('auth_message', 'account_revoked');
+                    window.location.href = '/login';
                 }
                 throw new ApiRequestError(data.code, data.error, res.status);
             }

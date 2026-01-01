@@ -8,7 +8,7 @@
     let approvals = $state<ProjectApproval[]>([]);
     let loading = $state(true);
     let error = $state('');
-    let intervalId: number | null = null;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
 
     async function loadApprovals() {
         try {
@@ -17,11 +17,17 @@
             approvals = await getMyPendingApprovals();
 
             // If all approvals are resolved, redirect to home
+            // But only if we have approvals - empty means new user pending system approval
             if (approvals.length === 0) {
-                goto('/');
+                // Will be handled by displaying new user message
+                loading = false;
+                return;
             }
         } catch (e) {
-            error = e instanceof Error ? e.message : 'Failed to load approvals';
+            // If we can't load approvals, user might be a new pending user
+            // Don't treat this as an error, just show the new user message
+            error = '';
+            approvals = [];
         } finally {
             loading = false;
         }
@@ -67,7 +73,20 @@
             <div class="loading">{$_('common.loading', { default: 'Loading...' })}</div>
         {:else if error}
             <div class="error-message">{error}</div>
-        {:else if approvals.length > 0}
+        {:else if approvals.length === 0}
+            <div class="new-user-message">
+                <p>
+                    {$_('approvals.new_user.description', {
+                        default: 'Your account is awaiting approval from a system administrator. You will be able to create and join projects once your account is approved.'
+                    })}
+                </p>
+                <p class="contact-admin">
+                    {$_('approvals.new_user.contact', {
+                        default: 'Please contact the system administrator to request access.'
+                    })}
+                </p>
+            </div>
+        {:else}
             <div class="approvals-list">
                 {#each approvals as approval}
                     <div class="approval-card">
@@ -312,5 +331,25 @@
         color: #dc2626;
         background: #fee2e2;
         border-radius: 4px;
+    }
+
+    .new-user-message {
+        background: #eff6ff;
+        border-left: 4px solid #3b82f6;
+        padding: 1.5rem;
+        border-radius: 4px;
+        margin: 2rem 0;
+        text-align: left;
+    }
+
+    .new-user-message p {
+        margin: 0.75rem 0;
+        color: #1e40af;
+        line-height: 1.6;
+    }
+
+    .contact-admin {
+        font-weight: 500;
+        margin-top: 1rem;
     }
 </style>

@@ -139,10 +139,15 @@ async fn main() {
 
     tracing::info!("Connected to SQLite at {}", config.database_url);
 
+    // Extract host and port before moving config into state
+    let host = config.host.clone();
+    let port = config.port;
+
     // Create app state
     let state = AppState {
         pool,
-        jwt_secret: config.jwt_secret,
+        jwt_secret: config.jwt_secret.clone(),
+        config,
     };
 
     // CORS configuration
@@ -205,7 +210,7 @@ async fn main() {
         .with_state(state);
 
     // Start server
-    let addr: SocketAddr = format!("{}:{}", config.host, config.port)
+    let addr: SocketAddr = format!("{}:{}", host, port)
         .parse()
         .expect("Invalid address");
 

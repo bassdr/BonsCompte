@@ -121,6 +121,7 @@ pub struct UserResponse {
     pub id: i64,
     pub username: String,
     pub display_name: Option<String>,
+    pub user_state: String,
     pub preferences: UserPreferences,
 }
 
@@ -131,6 +132,7 @@ impl From<User> for UserResponse {
             id: user.id,
             username: user.username,
             display_name: user.display_name,
+            user_state: user.user_state,
             preferences,
         }
     }

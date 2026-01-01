@@ -32,6 +32,9 @@
             if (authMessage === 'session_expired') {
                 info = $_('auth.sessionExpired');
                 sessionStorage.removeItem('auth_message');
+            } else if (authMessage === 'account_revoked') {
+                error = $_('auth.errors.accountRevoked', { default: 'Your account has been revoked. Please contact the administrator.' });
+                sessionStorage.removeItem('auth_message');
             }
         }
     });

@@ -161,14 +161,10 @@ async fn main() {
             .expect("Failed to create auth rate limiter"),
     );
 
-    // General API: 100 requests per minute
-    let api_rate_limit = Arc::new(
-        GovernorConfigBuilder::default()
-            .per_second(100)
-            .burst_size(100)
-            .finish()
-            .expect("Failed to create API rate limiter"),
-    );
+    // General API rate limiting disabled when running behind nginx reverse proxy.
+    // Backend can't distinguish between users (all requests appear as 127.0.0.1).
+    // Nginx handles rate limiting at the proxy level where it sees real client IPs.
+    // See docs/NGINX_RATE_LIMIT_FIX.md for nginx configuration.
 
     // Project sub-routes (nested under /api/projects/:id)
     let project_routes = Router::new()
@@ -195,7 +191,8 @@ async fn main() {
         .nest("/projects/{id}", project_routes)
         .layer(middleware::from_fn_with_state(state.clone(), inject_extensions))
         // General rate limiting (100 requests per second)
-        .layer(GovernorLayer { config: api_rate_limit })
+        // DISABLED: Backend can't identify real IPs behind reverse proxy - nginx handles this
+        // .layer(GovernorLayer { config: api_rate_limit })
         // Global middleware
         .layer(TraceLayer::new_for_http())
         // Block scanner probes before logging to reduce noise

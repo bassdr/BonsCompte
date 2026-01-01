@@ -49,8 +49,9 @@ async function authFetch(path: string, opts: RequestInit = {}) {
 
     if (res.status === 401) {
         // Try to get the error code to distinguish expired vs invalid
+        const text = await res.text();
         try {
-            const data: ApiError = await res.json();
+            const data: ApiError = JSON.parse(text);
             if (data.code === 'TOKEN_EXPIRED' || data.code === 'TOKEN_INVALIDATED') {
                 auth.logout();
                 if (browser) {
@@ -72,12 +73,14 @@ async function authFetch(path: string, opts: RequestInit = {}) {
     }
 
     if (!res.ok) {
+        // Read response body once as text, then try to parse as JSON
+        const text = await res.text();
         try {
-            const data: ApiError = await res.json();
+            const data: ApiError = JSON.parse(text);
             throw new ApiRequestError(data.code || 'UNKNOWN', data.error, res.status);
         } catch (e) {
             if (e instanceof ApiRequestError) throw e;
-            const text = await res.text();
+            // If not valid JSON, throw with the raw text
             throw new Error(`${res.status}: ${text}`);
         }
     }

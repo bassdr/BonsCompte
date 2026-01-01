@@ -28,7 +28,13 @@ services:
   # Note: The pre-built image uses VITE_API_BASE="/api" for production with nginx reverse proxy.
   # For direct backend access, use docker-compose.override.yml to build locally.
   frontend:
-    image: ghcr.io/bassdr/bonscompte-frontend:latest
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # IMPORTANT: For production, point to the backend service URL
+        # Must be accessible from the browser (user's machine), not just inside Docker network
+        VITE_API_BASE: "http://localhost:8000"
     container_name: bonscompte-frontend
     restart: unless-stopped
     environment:

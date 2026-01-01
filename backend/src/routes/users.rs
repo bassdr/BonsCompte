@@ -12,7 +12,7 @@ use crate::{
         AuthUser,
     },
     error::{AppError, AppResult},
-    models::{User, UserPreferences, UserResponse},
+    models::{User, UserPreferences, UserResponse, UserState},
     services::approval_service,
     AppState,
 };
@@ -28,6 +28,8 @@ pub fn router() -> Router<AppState> {
         )
         .route("/me", delete(delete_account))
         .route("/{id}", get(get_user))
+        .route("/{id}/approve", put(approve_user))
+        .route("/{id}/revoke", put(revoke_user))
 }
 
 #[derive(Deserialize)]
@@ -377,4 +379,70 @@ async fn update_preferences(
         .await?;
 
     Ok(Json(UserPreferences::from_user(&user)))
+}
+
+/// Check if user is a system admin (user ID 1 for now)
+fn is_system_admin(user_id: i64) -> bool {
+    user_id == 1
+}
+
+async fn approve_user(
+    auth: AuthUser,
+    State(pool): State<SqlitePool>,
+    Path(user_id): Path<i64>,
+) -> AppResult<Json<UserResponse>> {
+    // Check if requester is admin
+    if !is_system_admin(auth.user_id) {
+        return Err(AppError::Forbidden("System admin access required".to_string()));
+    }
+
+    // Update user state to active
+    sqlx::query("UPDATE users SET user_state = ? WHERE id = ?")
+        .bind(UserState::Active.as_str())
+        .bind(user_id)
+        .execute(&pool)
+        .await?;
+
+    // Fetch updated user
+    let user: Option<User> = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+        .bind(user_id)
+        .fetch_optional(&pool)
+        .await?;
+
+    let user = user.ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+
+    Ok(Json(UserResponse::from(user)))
+}
+
+async fn revoke_user(
+    auth: AuthUser,
+    State(pool): State<SqlitePool>,
+    Path(user_id): Path<i64>,
+) -> AppResult<Json<UserResponse>> {
+    // Check if requester is admin
+    if !is_system_admin(auth.user_id) {
+        return Err(AppError::Forbidden("System admin access required".to_string()));
+    }
+
+    // Prevent revoking yourself
+    if auth.user_id == user_id {
+        return Err(AppError::Forbidden("Cannot revoke your own account".to_string()));
+    }
+
+    // Update user state to revoked and increment token_version to invalidate tokens
+    sqlx::query("UPDATE users SET user_state = ?, token_version = token_version + 1 WHERE id = ?")
+        .bind(UserState::Revoked.as_str())
+        .bind(user_id)
+        .execute(&pool)
+        .await?;
+
+    // Fetch updated user
+    let user: Option<User> = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+        .bind(user_id)
+        .fetch_optional(&pool)
+        .await?;
+
+    let user = user.ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+
+    Ok(Json(UserResponse::from(user)))
 }

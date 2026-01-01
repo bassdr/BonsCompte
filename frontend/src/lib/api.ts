@@ -101,15 +101,24 @@ async function authFetch(path: string, opts: AuthFetchOptions = {}) {
     throw new Error('Session expired');
   }
 
-  // Handle 403 - check for pending approval
+  // Handle 403 - check for pending approval or revoked account
   if (res.status === 403) {
     const text = await res.text();
     try {
       const data: ApiError = JSON.parse(text);
-      if (data.code === 'PENDING_APPROVAL') {
+      if (data.code === 'ACCOUNT_PENDING' || data.code === 'PENDING_APPROVAL') {
         // Redirect to quarantine page, don't clear token
         if (browser) {
           window.location.href = '/account/pending';
+        }
+        throw new ApiRequestError(data.code, data.error, res.status);
+      }
+      if (data.code === 'ACCOUNT_REVOKED') {
+        // Logout revoked users
+        auth.logout();
+        if (browser) {
+          sessionStorage.setItem('auth_message', 'account_revoked');
+          window.location.href = '/login';
         }
         throw new ApiRequestError(data.code, data.error, res.status);
       }

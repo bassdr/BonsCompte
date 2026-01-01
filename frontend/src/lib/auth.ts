@@ -12,6 +12,7 @@ export interface User {
   id: number;
   username: string;
   display_name: string | null;
+  user_state: string;
   preferences: UserPreferences;
 }
 
@@ -55,6 +56,7 @@ function createAuthStore() {
                 id: payload.sub,
                 username: payload.username,
                 display_name: null,
+                user_state: 'active', // Default, will be updated when fetching user data
                 preferences: {
                   date_format: 'mdy',
                   decimal_separator: '.',

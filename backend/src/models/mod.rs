@@ -5,6 +5,7 @@ pub mod project;
 pub mod participant;
 pub mod member;
 pub mod history;
+pub mod approval;
 
 pub use user::*;
 pub use payment::*;
@@ -13,3 +14,4 @@ pub use project::*;
 pub use participant::*;
 pub use member::*;
 pub use history::*;
+pub use approval::*;

@@ -32,6 +32,9 @@
             if (authMessage === 'session_expired') {
                 info = $_('auth.sessionExpired');
                 sessionStorage.removeItem('auth_message');
+            } else if (authMessage === 'account_revoked') {
+                error = $_('auth.errors.accountRevoked', { default: 'Your account has been revoked. Please contact the administrator.' });
+                sessionStorage.removeItem('auth_message');
             }
         }
     });
@@ -112,7 +115,7 @@
                 {$_('auth.passwordRecoveryInfo')}
             </p>
             <p class="details-link">
-                <a href="https://github.com/bassdr/BonsCompte/blob/main/docs/PASSWORD_RECOVERY.md" target="_blank" rel="noopener noreferrer">
+                <a href="/help/password-recovery">
                     {$_('auth.passwordRecoveryLink')}
                 </a>
             </p>

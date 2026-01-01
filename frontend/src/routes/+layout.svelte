@@ -12,12 +12,43 @@
     import type { Snippet } from 'svelte';
     import { setupI18n, getInitialLocale, _, locale, setLocale, supportedLanguages, isLocaleLoaded } from '$lib/i18n';
     import { preferences } from '$lib/stores/preferences';
+    import { getActionableApprovals } from '$lib/api';
+    import { onMount, onDestroy } from 'svelte';
 
     let { children }: { children: Snippet } = $props();
 
     // Initialize i18n before anything else
     const initialLocale = getInitialLocale();
     setupI18n(initialLocale);
+
+    let actionableApprovalsCount = $state(0);
+    let approvalCheckInterval: number | null = null;
+
+    async function checkActionableApprovals() {
+        if (!$isAuthenticated) return;
+
+        try {
+            const approvals = await getActionableApprovals();
+            actionableApprovalsCount = approvals.length;
+        } catch (e) {
+            // Silently fail - approvals might not be accessible
+            actionableApprovalsCount = 0;
+        }
+    }
+
+    onMount(() => {
+        // Check immediately on mount
+        checkActionableApprovals();
+
+        // Check every 30 seconds
+        approvalCheckInterval = setInterval(checkActionableApprovals, 30000);
+    });
+
+    onDestroy(() => {
+        if (approvalCheckInterval) {
+            clearInterval(approvalCheckInterval);
+        }
+    });
 
     // Initialize auth on mount
     $effect(() => {
@@ -71,6 +102,12 @@
             <div class="nav-brand">BonsCompte</div>
             <div class="nav-links">
                 <a href="/" class:active={$page.url.pathname === '/'}>{$_('nav.projects')}</a>
+                <a href="/approvals" class="approvals-link" class:active={$page.url.pathname.startsWith('/approvals')}>
+                    {$_('nav.approvals', { default: 'Approvals' })}
+                    {#if actionableApprovalsCount > 0}
+                        <span class="badge">{actionableApprovalsCount}</span>
+                    {/if}
+                </a>
             </div>
             <div class="nav-user">
                 <select class="language-select" value={$locale} onchange={handleLanguageChange}>
@@ -143,6 +180,24 @@
     .nav-links a:hover,
     .nav-links a.active {
         color: var(--accent, #7b61ff);
+    }
+
+    .approvals-link {
+        position: relative;
+    }
+
+    .badge {
+        position: absolute;
+        top: -8px;
+        right: -12px;
+        background: #ef4444;
+        color: white;
+        font-size: 0.7rem;
+        font-weight: 700;
+        padding: 0.15rem 0.4rem;
+        border-radius: 10px;
+        min-width: 1.2rem;
+        text-align: center;
     }
 
     .nav-user {

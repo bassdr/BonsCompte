@@ -48,6 +48,7 @@
 		"vitest": "^4.0.16"
 	},
 	"dependencies": {
+		"chart.js": "^4.4.1",
 		"svelte-i18n": "^4.0.1"
 	}
 }

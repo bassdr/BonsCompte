@@ -180,18 +180,39 @@ This ensures that only NGINX can access the containers, not external traffic.
 
 ### Rate Limiting
 
-Add rate limiting to protect the API:
+⚠️ **IMPORTANT**: The backend has its own rate limiting (100 req/s for API, 5 req/min for auth). NGINX rate limits should be **higher** than backend limits to avoid blocking legitimate traffic before it reaches the backend.
+
+**Recommended configuration** (matches backend limits):
 
 ```nginx
-# In http block (usually in nginx.conf)
-limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+# In http block (usually in nginx.conf or at top of conf.d file)
+# Auth endpoints: 5 requests per minute (prevents brute-force)
+limit_req_zone $binary_remote_addr zone=auth_limit:10m rate=5r/m;
 
-# In server block
+# General API: 100 requests per second (allows normal app usage)
+limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/s;
+
+# In server block - apply stricter limit to auth endpoints
+location ~ ^/api/auth/(login|register) {
+    limit_req zone=auth_limit burst=5 nodelay;
+    limit_req_status 429;
+    # ... proxy config
+}
+
+# In server block - permissive limit for general API
 location /api/ {
-    limit_req zone=api burst=20 nodelay;
-    # ... rest of proxy config
+    limit_req zone=api_limit burst=200 nodelay;
+    limit_req_status 429;
+    # ... proxy config
 }
 ```
+
+**Why these limits?**
+- Frontend makes 5-10 parallel requests on page load (payments, participants, debts, etc.)
+- Scanner bots probe the site constantly (handled by backend's scan blocking middleware)
+- Too low limits (e.g., 10r/s) cause legitimate requests to fail with 429 errors
+
+See `docs/NGINX_PRODUCTION.conf` for a complete production-ready configuration.
 
 ### Caching Static Assets
 

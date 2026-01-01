@@ -344,6 +344,53 @@
 		}
 	});
 
+	// Pre-fill form from URL parameters (for cashflow recommendations)
+	$effect(() => {
+		const params = $page.url.searchParams;
+
+		if (params.get('prefill') === 'true') {
+			const payerIdParam = params.get('payer_id');
+			const amountParam = params.get('amount');
+			const recurringParam = params.get('recurring');
+			const descParam = params.get('description');
+			const recurrenceTypeParam = params.get('recurrence_type');
+			const recurrenceIntervalParam = params.get('recurrence_interval');
+
+			if (payerIdParam) {
+				const id = parseInt(payerIdParam);
+				if (!isNaN(id)) {
+					payerId = id;
+				}
+			}
+
+			if (amountParam) {
+				amount = amountParam;
+			}
+
+			if (recurringParam === 'true') {
+				isRecurring = true;
+			}
+
+			if (descParam) {
+				description = decodeURIComponent(descParam.replace(/\+/g, ' '));
+			}
+
+			if (
+				recurrenceTypeParam &&
+				['daily', 'weekly', 'monthly', 'yearly'].includes(recurrenceTypeParam)
+			) {
+				recurrenceType = recurrenceTypeParam as 'daily' | 'weekly' | 'monthly' | 'yearly';
+			}
+
+			if (recurrenceIntervalParam) {
+				const interval = parseInt(recurrenceIntervalParam);
+				if (!isNaN(interval) && interval > 0) {
+					recurrenceInterval = interval;
+				}
+			}
+		}
+	});
+
 	// Initialize enhanced recurrence patterns when type/interval/date changes
 	$effect(() => {
 		if (!isRecurring) return;

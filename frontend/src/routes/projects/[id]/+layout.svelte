@@ -51,10 +51,16 @@
 			</div>
 			<nav class="project-nav">
 				<a
-					href={resolveRoute(`/projects/${$page.params.id}/debts`)}
-					class:active={$page.url.pathname.includes('/debts')}
+					href={resolveRoute(`/projects/${$page.params.id}/settlement-snapshot`)}
+					class:active={$page.url.pathname.includes('/settlement-snapshot')}
 				>
-					{$_('debts.title')}
+					{$_('settlements.title')}
+				</a>
+				<a
+					href={resolveRoute(`/projects/${$page.params.id}/cashflow-planning`)}
+					class:active={$page.url.pathname.includes('/cashflow-planning')}
+				>
+					{$_('cashflow.title')}
 				</a>
 				<a
 					href={resolveRoute(`/projects/${$page.params.id}/payments`)}

@@ -1,6 +1,6 @@
-pub mod password;
+pub mod handlers;
 pub mod jwt;
 pub mod middleware;
-pub mod handlers;
+pub mod password;
 
-pub use middleware::{AuthUser, ProjectMember, AdminMember};
+pub use middleware::{AdminMember, AuthUser, ProjectMember};

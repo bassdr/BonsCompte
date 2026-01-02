@@ -49,19 +49,19 @@ where
         let pool = parts
             .extensions
             .get::<SqlitePool>()
-            .ok_or(AppError::Internal("Database pool not configured".to_string()))?;
+            .ok_or(AppError::Internal(
+                "Database pool not configured".to_string(),
+            ))?;
 
         // Fetch current user state and token version from database
-        let user_data: Option<(String, i64)> = sqlx::query_as(
-            "SELECT user_state, token_version FROM users WHERE id = ?"
-        )
-        .bind(claims.sub)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| AppError::Internal(format!("Database error: {}", e)))?;
+        let user_data: Option<(String, i64)> =
+            sqlx::query_as("SELECT user_state, token_version FROM users WHERE id = ?")
+                .bind(claims.sub)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| AppError::Internal(format!("Database error: {}", e)))?;
 
-        let (user_state_str, db_token_version) = user_data
-            .ok_or(AppError::Unauthorized)?;
+        let (user_state_str, db_token_version) = user_data.ok_or(AppError::Unauthorized)?;
 
         // Check if token version matches (reject if password was reset or token invalidated)
         if claims.token_version != db_token_version {
@@ -69,8 +69,7 @@ where
         }
 
         // Check user state
-        let user_state = UserState::from_str(&user_state_str)
-            .unwrap_or(UserState::Active);
+        let user_state = UserState::from_str(&user_state_str).unwrap_or(UserState::Active);
 
         match user_state {
             UserState::Active => {
@@ -146,12 +145,14 @@ where
         let pool = parts
             .extensions
             .get::<SqlitePool>()
-            .ok_or(AppError::Internal("Database pool not configured".to_string()))?;
+            .ok_or(AppError::Internal(
+                "Database pool not configured".to_string(),
+            ))?;
 
         // Check if user is a member of this project
         let member: Option<(String, Option<i64>)> = sqlx::query_as(
             "SELECT role, participant_id FROM project_members
-             WHERE project_id = ? AND user_id = ?"
+             WHERE project_id = ? AND user_id = ?",
         )
         .bind(project_id)
         .bind(auth_user.user_id)
@@ -172,7 +173,9 @@ where
                     participant_id,
                 })
             }
-            None => Err(AppError::NotFound("Project not found or access denied".to_string())),
+            None => Err(AppError::NotFound(
+                "Project not found or access denied".to_string(),
+            )),
         }
     }
 }

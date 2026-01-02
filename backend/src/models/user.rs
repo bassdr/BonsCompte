@@ -111,9 +111,18 @@ impl UserPreferences {
         let defaults = Self::default();
         Self {
             date_format: user.date_format.clone().unwrap_or(defaults.date_format),
-            decimal_separator: user.decimal_separator.clone().unwrap_or(defaults.decimal_separator),
-            currency_symbol: user.currency_symbol.clone().unwrap_or(defaults.currency_symbol),
-            currency_symbol_position: user.currency_symbol_position.clone().unwrap_or(defaults.currency_symbol_position),
+            decimal_separator: user
+                .decimal_separator
+                .clone()
+                .unwrap_or(defaults.decimal_separator),
+            currency_symbol: user
+                .currency_symbol
+                .clone()
+                .unwrap_or(defaults.currency_symbol),
+            currency_symbol_position: user
+                .currency_symbol_position
+                .clone()
+                .unwrap_or(defaults.currency_symbol_position),
         }
     }
 }

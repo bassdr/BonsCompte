@@ -6,7 +6,10 @@ use crate::{
     models::{AuthResponse, CreateUser, LoginRequest, User, UserResponse, UserState},
 };
 
-use super::{jwt::create_token, password::{hash_password, verify_password}};
+use super::{
+    jwt::create_token,
+    password::{hash_password, verify_password},
+};
 
 pub async fn register(
     State(pool): State<SqlitePool>,
@@ -37,16 +40,16 @@ pub async fn register(
             username = %username,
             "Registration failed: password too short"
         );
-        return Err(AppError::BadRequest("Password must be at least 6 characters".to_string()));
+        return Err(AppError::BadRequest(
+            "Password must be at least 6 characters".to_string(),
+        ));
     }
 
     // Check if user exists
-    let existing: Option<User> = sqlx::query_as(
-        "SELECT * FROM users WHERE username = ?"
-    )
-    .bind(&username)
-    .fetch_optional(&pool)
-    .await?;
+    let existing: Option<User> = sqlx::query_as("SELECT * FROM users WHERE username = ?")
+        .bind(&username)
+        .fetch_optional(&pool)
+        .await?;
 
     if existing.is_some() {
         tracing::warn!(
@@ -108,12 +111,10 @@ pub async fn login(
     );
 
     // Find user
-    let user: Option<User> = sqlx::query_as(
-        "SELECT * FROM users WHERE username = ?"
-    )
-    .bind(username)
-    .fetch_optional(&pool)
-    .await?;
+    let user: Option<User> = sqlx::query_as("SELECT * FROM users WHERE username = ?")
+        .bind(username)
+        .fetch_optional(&pool)
+        .await?;
 
     let user = match user {
         Some(u) => u,

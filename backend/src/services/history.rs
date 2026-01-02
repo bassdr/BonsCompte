@@ -1,5 +1,7 @@
 use crate::error::{AppError, AppResult};
-use crate::models::{ActionType, ChainVerification, EntityType, HistoryEntry, HistoryEntryResponse};
+use crate::models::{
+    ActionType, ChainVerification, EntityType, HistoryEntry, HistoryEntryResponse,
+};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
@@ -16,11 +18,10 @@ impl HistoryService {
 
     /// Get the hash of the most recent history entry (for chaining)
     async fn get_previous_hash(pool: &SqlitePool) -> AppResult<Option<String>> {
-        let result: Option<(String,)> = sqlx::query_as(
-            "SELECT entry_hash FROM history_log ORDER BY id DESC LIMIT 1"
-        )
-        .fetch_optional(pool)
-        .await?;
+        let result: Option<(String,)> =
+            sqlx::query_as("SELECT entry_hash FROM history_log ORDER BY id DESC LIMIT 1")
+                .fetch_optional(pool)
+                .await?;
 
         Ok(result.map(|(hash,)| hash))
     }
@@ -43,7 +44,12 @@ impl HistoryService {
         }
 
         hasher.update(created_at.as_bytes());
-        hasher.update(actor_user_id.map(|id| id.to_string()).unwrap_or_default().as_bytes());
+        hasher.update(
+            actor_user_id
+                .map(|id| id.to_string())
+                .unwrap_or_default()
+                .as_bytes(),
+        );
         hasher.update(action.as_bytes());
         hasher.update(entity_type.as_bytes());
 
@@ -72,7 +78,9 @@ impl HistoryService {
         let previous_hash = Self::get_previous_hash(pool).await?;
 
         // Generate timestamp
-        let created_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+        let created_at = chrono::Utc::now()
+            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+            .to_string();
 
         // Compute entry hash
         let entry_hash = Self::compute_entry_hash(
@@ -92,7 +100,7 @@ impl HistoryService {
                 entity_type, entity_id, action, payload_before, payload_after,
                 reason, undoes_history_id, previous_hash, entry_hash
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#
+            "#,
         )
         .bind(&created_at)
         .bind(correlation_id)
@@ -218,7 +226,7 @@ impl HistoryService {
                 WHERE project_id = ? AND entity_type = ?
                 ORDER BY id DESC
                 LIMIT ? OFFSET ?
-                "#
+                "#,
             )
             .bind(project_id)
             .bind(entity_type)
@@ -233,7 +241,7 @@ impl HistoryService {
                 WHERE project_id = ?
                 ORDER BY id DESC
                 LIMIT ? OFFSET ?
-                "#
+                "#,
             )
             .bind(project_id)
             .bind(limit)
@@ -257,7 +265,7 @@ impl HistoryService {
             SELECT * FROM history_log
             WHERE project_id = ? AND entity_type = ? AND entity_id = ?
             ORDER BY id DESC
-            "#
+            "#,
         )
         .bind(project_id)
         .bind(entity_type)
@@ -270,12 +278,10 @@ impl HistoryService {
 
     /// Get a single history entry by ID
     pub async fn get_entry(pool: &SqlitePool, history_id: i64) -> AppResult<Option<HistoryEntry>> {
-        let entry = sqlx::query_as::<_, HistoryEntry>(
-            "SELECT * FROM history_log WHERE id = ?"
-        )
-        .bind(history_id)
-        .fetch_optional(pool)
-        .await?;
+        let entry = sqlx::query_as::<_, HistoryEntry>("SELECT * FROM history_log WHERE id = ?")
+            .bind(history_id)
+            .fetch_optional(pool)
+            .await?;
 
         Ok(entry)
     }
@@ -283,7 +289,7 @@ impl HistoryService {
     /// Check if an entry has been undone
     pub async fn is_entry_undone(pool: &SqlitePool, history_id: i64) -> AppResult<bool> {
         let result: Option<(i64,)> = sqlx::query_as(
-            "SELECT id FROM history_log WHERE undoes_history_id = ? AND action = 'UNDO' LIMIT 1"
+            "SELECT id FROM history_log WHERE undoes_history_id = ? AND action = 'UNDO' LIMIT 1",
         )
         .bind(history_id)
         .fetch_optional(pool)
@@ -293,13 +299,20 @@ impl HistoryService {
     }
 
     /// Check if multiple entries have been undone
-    pub async fn get_undone_status(pool: &SqlitePool, history_ids: &[i64]) -> AppResult<std::collections::HashMap<i64, bool>> {
+    pub async fn get_undone_status(
+        pool: &SqlitePool,
+        history_ids: &[i64],
+    ) -> AppResult<std::collections::HashMap<i64, bool>> {
         if history_ids.is_empty() {
             return Ok(std::collections::HashMap::new());
         }
 
         // Get all UNDO entries that reference any of these history IDs
-        let placeholders = history_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let placeholders = history_ids
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(",");
         let query = format!(
             "SELECT undoes_history_id FROM history_log WHERE undoes_history_id IN ({}) AND action = 'UNDO'",
             placeholders
@@ -311,7 +324,8 @@ impl HistoryService {
         }
 
         let undone_ids: Vec<(i64,)> = query_builder.fetch_all(pool).await?;
-        let undone_set: std::collections::HashSet<i64> = undone_ids.into_iter().map(|(id,)| id).collect();
+        let undone_set: std::collections::HashSet<i64> =
+            undone_ids.into_iter().map(|(id,)| id).collect();
 
         let mut result = std::collections::HashMap::new();
         for id in history_ids {
@@ -339,7 +353,8 @@ impl HistoryService {
             .collect();
 
         // Fetch actor names
-        let mut actor_names: std::collections::HashMap<i64, String> = std::collections::HashMap::new();
+        let mut actor_names: std::collections::HashMap<i64, String> =
+            std::collections::HashMap::new();
         if !actor_ids.is_empty() {
             let placeholders = actor_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
             let query = format!(
@@ -366,7 +381,9 @@ impl HistoryService {
         let responses = entries
             .into_iter()
             .map(|entry| {
-                let actor_name = entry.actor_user_id.and_then(|id| actor_names.get(&id).cloned());
+                let actor_name = entry
+                    .actor_user_id
+                    .and_then(|id| actor_names.get(&id).cloned());
                 let is_undone = undone_status.get(&entry.id).copied().unwrap_or(false);
                 entry.into_response(actor_name, is_undone)
             })
@@ -377,11 +394,10 @@ impl HistoryService {
 
     /// Verify the hash chain integrity
     pub async fn verify_chain(pool: &SqlitePool) -> AppResult<ChainVerification> {
-        let entries = sqlx::query_as::<_, HistoryEntry>(
-            "SELECT * FROM history_log ORDER BY id ASC"
-        )
-        .fetch_all(pool)
-        .await?;
+        let entries =
+            sqlx::query_as::<_, HistoryEntry>("SELECT * FROM history_log ORDER BY id ASC")
+                .fetch_all(pool)
+                .await?;
 
         let total_entries = entries.len() as i64;
 
@@ -639,7 +655,10 @@ mod tests {
             .await
             .expect("Failed to verify chain");
 
-        assert!(verification.is_valid, "Valid chain should pass verification");
+        assert!(
+            verification.is_valid,
+            "Valid chain should pass verification"
+        );
         assert_eq!(verification.total_entries, 3);
         assert!(verification.first_broken_id.is_none());
     }
@@ -742,12 +761,10 @@ mod tests {
             .expect("Failed to drop trigger");
 
         // Tamper with payload (without updating hash)
-        sqlx::query(
-            r#"UPDATE history_log SET payload_after = '{"amount":9999999}' WHERE id = 1"#,
-        )
-        .execute(&pool)
-        .await
-        .expect("Failed to tamper with payload");
+        sqlx::query(r#"UPDATE history_log SET payload_after = '{"amount":9999999}' WHERE id = 1"#)
+            .execute(&pool)
+            .await
+            .expect("Failed to tamper with payload");
 
         // Verify chain - should detect tampering
         let verification = HistoryService::verify_chain(&pool)

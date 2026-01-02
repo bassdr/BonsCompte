@@ -14,14 +14,14 @@ pub struct Payment {
     pub receipt_image: Option<String>,
     // Recurrence fields
     pub is_recurring: bool,
-    pub recurrence_type: Option<String>,  // 'daily', 'weekly', 'monthly', 'yearly'
+    pub recurrence_type: Option<String>, // 'daily', 'weekly', 'monthly', 'yearly'
     pub recurrence_interval: Option<i32>, // every X periods
     pub recurrence_times_per: Option<i32>, // DEPRECATED: kept for backwards compat, use weekdays/monthdays/months instead
     pub recurrence_end_date: Option<String>,
     // Enhanced recurrence patterns
-    pub recurrence_weekdays: Option<String>,  // JSON: [[1,3],[0,5]] for week patterns
+    pub recurrence_weekdays: Option<String>, // JSON: [[1,3],[0,5]] for week patterns
     pub recurrence_monthdays: Option<String>, // JSON: [1, 15] for monthly day selection
-    pub recurrence_months: Option<String>,    // JSON: [1, 6, 12] for yearly month selection
+    pub recurrence_months: Option<String>,   // JSON: [1, 6, 12] for yearly month selection
     // Internal transfer support
     // NULL = external expense (money leaves system)
     // NOT NULL = internal transfer (money moves between accounts, e.g., user → pool)

@@ -1,8 +1,8 @@
 pub mod auth;
-pub mod users;
-pub mod projects;
-pub mod participants;
-pub mod members;
-pub mod payments;
 pub mod debts;
 pub mod history;
+pub mod members;
+pub mod participants;
+pub mod payments;
+pub mod projects;
+pub mod users;

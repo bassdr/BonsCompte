@@ -9,7 +9,7 @@ use sqlx::SqlitePool;
 use crate::{
     auth::{AdminMember, ProjectMember},
     error::{AppError, AppResult},
-    models::{ProjectMemberResponse, Role, UpdateMemberRole, SetMemberParticipant, EntityType},
+    models::{EntityType, ProjectMemberResponse, Role, SetMemberParticipant, UpdateMemberRole},
     services::HistoryService,
     AppState,
 };
@@ -23,7 +23,12 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_members))
         .route("/pending", get(list_pending_members))
-        .route("/{user_id}", get(get_member).put(update_member_role).delete(remove_member))
+        .route(
+            "/{user_id}",
+            get(get_member)
+                .put(update_member_role)
+                .delete(remove_member),
+        )
         .route("/{user_id}/participant", put(set_member_participant))
         .route("/{user_id}/approve", put(approve_member))
         .route("/{user_id}/reject", put(reject_member))
@@ -100,7 +105,9 @@ async fn update_member_role(
 
     // Can't change own role (prevent admin lockout)
     if path.user_id == member.user_id {
-        return Err(AppError::BadRequest("Cannot change your own role".to_string()));
+        return Err(AppError::BadRequest(
+            "Cannot change your own role".to_string(),
+        ));
     }
 
     // Validate role
@@ -227,13 +234,12 @@ async fn set_member_participant(
     let member = admin.0;
 
     // Verify target is a member
-    let target_exists: Option<i64> = sqlx::query_scalar(
-        "SELECT id FROM project_members WHERE project_id = ? AND user_id = ?"
-    )
-    .bind(member.project_id)
-    .bind(path.user_id)
-    .fetch_optional(&pool)
-    .await?;
+    let target_exists: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM project_members WHERE project_id = ? AND user_id = ?")
+            .bind(member.project_id)
+            .bind(path.user_id)
+            .fetch_optional(&pool)
+            .await?;
 
     if target_exists.is_none() {
         return Err(AppError::NotFound("Member not found".to_string()));
@@ -241,13 +247,12 @@ async fn set_member_participant(
 
     // If setting a participant, verify it belongs to project
     if let Some(participant_id) = input.participant_id {
-        let participant_exists: Option<i64> = sqlx::query_scalar(
-            "SELECT id FROM participants WHERE id = ? AND project_id = ?"
-        )
-        .bind(participant_id)
-        .bind(member.project_id)
-        .fetch_optional(&pool)
-        .await?;
+        let participant_exists: Option<i64> =
+            sqlx::query_scalar("SELECT id FROM participants WHERE id = ? AND project_id = ?")
+                .bind(participant_id)
+                .bind(member.project_id)
+                .fetch_optional(&pool)
+                .await?;
 
         if participant_exists.is_none() {
             return Err(AppError::BadRequest("Invalid participant".to_string()));
@@ -263,7 +268,9 @@ async fn set_member_participant(
         .await?;
 
         if already_claimed.is_some() {
-            return Err(AppError::BadRequest("Participant already claimed by another user".to_string()));
+            return Err(AppError::BadRequest(
+                "Participant already claimed by another user".to_string(),
+            ));
         }
     }
 
@@ -278,12 +285,14 @@ async fn set_member_participant(
         .await?;
 
     // Update project_member
-    sqlx::query("UPDATE project_members SET participant_id = ? WHERE project_id = ? AND user_id = ?")
-        .bind(input.participant_id)
-        .bind(member.project_id)
-        .bind(path.user_id)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "UPDATE project_members SET participant_id = ? WHERE project_id = ? AND user_id = ?",
+    )
+    .bind(input.participant_id)
+    .bind(member.project_id)
+    .bind(path.user_id)
+    .execute(&mut *tx)
+    .await?;
 
     // If setting a participant, also set user_id on participant
     if let Some(participant_id) = input.participant_id {
@@ -320,7 +329,7 @@ async fn approve_member(
 
     // Verify target is a pending member
     let target_status: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM project_members WHERE project_id = ? AND user_id = ?"
+        "SELECT status FROM project_members WHERE project_id = ? AND user_id = ?",
     )
     .bind(member.project_id)
     .bind(path.user_id)
@@ -331,14 +340,21 @@ async fn approve_member(
         None => return Err(AppError::NotFound("Member not found".to_string())),
         Some("active") => return Err(AppError::BadRequest("Member is already active".to_string())),
         Some("pending") => {} // OK to proceed
-        Some(s) => return Err(AppError::BadRequest(format!("Cannot approve member with status: {}", s))),
+        Some(s) => {
+            return Err(AppError::BadRequest(format!(
+                "Cannot approve member with status: {}",
+                s
+            )))
+        }
     }
 
-    sqlx::query("UPDATE project_members SET status = 'active' WHERE project_id = ? AND user_id = ?")
-        .bind(member.project_id)
-        .bind(path.user_id)
-        .execute(&pool)
-        .await?;
+    sqlx::query(
+        "UPDATE project_members SET status = 'active' WHERE project_id = ? AND user_id = ?",
+    )
+    .bind(member.project_id)
+    .bind(path.user_id)
+    .execute(&pool)
+    .await?;
 
     let updated: ProjectMemberResponse = sqlx::query_as(
         "SELECT pm.id, pm.project_id, pm.user_id, u.username, u.display_name, pm.role, pm.participant_id, p.name as participant_name, pm.joined_at, pm.status
@@ -364,7 +380,7 @@ async fn reject_member(
 
     // Verify target is a pending member
     let target_status: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM project_members WHERE project_id = ? AND user_id = ?"
+        "SELECT status FROM project_members WHERE project_id = ? AND user_id = ?",
     )
     .bind(member.project_id)
     .bind(path.user_id)
@@ -373,9 +389,18 @@ async fn reject_member(
 
     match target_status.as_deref() {
         None => return Err(AppError::NotFound("Member not found".to_string())),
-        Some("active") => return Err(AppError::BadRequest("Cannot reject an active member".to_string())),
+        Some("active") => {
+            return Err(AppError::BadRequest(
+                "Cannot reject an active member".to_string(),
+            ))
+        }
         Some("pending") => {} // OK to proceed
-        Some(s) => return Err(AppError::BadRequest(format!("Cannot reject member with status: {}", s))),
+        Some(s) => {
+            return Err(AppError::BadRequest(format!(
+                "Cannot reject member with status: {}",
+                s
+            )))
+        }
     }
 
     // Delete the pending member

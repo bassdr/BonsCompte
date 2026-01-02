@@ -86,7 +86,9 @@ async fn undo_action(
 ) -> AppResult<Json<HistoryEntryResponse>> {
     // Only admins can undo
     if !member.is_admin() {
-        return Err(AppError::Forbidden("Only admins can undo actions".to_string()));
+        return Err(AppError::Forbidden(
+            "Only admins can undo actions".to_string(),
+        ));
     }
 
     // Get the original entry
@@ -101,12 +103,16 @@ async fn undo_action(
 
     // Check if already undone
     if HistoryService::is_entry_undone(&pool, path.history_id).await? {
-        return Err(AppError::BadRequest("This action has already been undone".to_string()));
+        return Err(AppError::BadRequest(
+            "This action has already been undone".to_string(),
+        ));
     }
 
     // Cannot undo an UNDO action
     if entry.action == "UNDO" {
-        return Err(AppError::BadRequest("Cannot undo an UNDO action".to_string()));
+        return Err(AppError::BadRequest(
+            "Cannot undo an UNDO action".to_string(),
+        ));
     }
 
     // Perform the undo based on entity type and action
@@ -131,14 +137,18 @@ async fn perform_undo(
     reason: Option<&str>,
 ) -> AppResult<i64> {
     let correlation_id = HistoryService::new_correlation_id();
-    let entity_id = entry.entity_id.ok_or_else(|| {
-        AppError::BadRequest("Cannot undo entry without entity_id".to_string())
-    })?;
+    let entity_id = entry
+        .entity_id
+        .ok_or_else(|| AppError::BadRequest("Cannot undo entry without entity_id".to_string()))?;
 
     match entry.entity_type.as_str() {
         "payment" => undo_payment(pool, member, entry, entity_id, &correlation_id, reason).await,
-        "participant" => undo_participant(pool, member, entry, entity_id, &correlation_id, reason).await,
-        "project_member" => undo_project_member(pool, member, entry, entity_id, &correlation_id, reason).await,
+        "participant" => {
+            undo_participant(pool, member, entry, entity_id, &correlation_id, reason).await
+        }
+        "project_member" => {
+            undo_project_member(pool, member, entry, entity_id, &correlation_id, reason).await
+        }
         "project" => undo_project(pool, member, entry, entity_id, &correlation_id, reason).await,
         _ => Err(AppError::BadRequest(format!(
             "Undo not supported for entity type: {}",
@@ -209,16 +219,31 @@ async fn undo_payment(
                     recurrence_end_date = ?,
                     receiver_account_id = ?
                 WHERE id = ? AND project_id = ?
-                "#
+                "#,
             )
             .bind(before.get("payer_id").and_then(|v| v.as_i64()))
             .bind(before.get("amount").and_then(|v| v.as_f64()).unwrap_or(0.0))
-            .bind(before.get("description").and_then(|v| v.as_str()).unwrap_or(""))
+            .bind(
+                before
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(""),
+            )
             .bind(before.get("payment_date").and_then(|v| v.as_str()))
             .bind(before.get("receipt_image").and_then(|v| v.as_str()))
-            .bind(before.get("is_recurring").and_then(|v| v.as_bool()).unwrap_or(false))
+            .bind(
+                before
+                    .get("is_recurring")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+            )
             .bind(before.get("recurrence_type").and_then(|v| v.as_str()))
-            .bind(before.get("recurrence_interval").and_then(|v| v.as_i64()).map(|v| v as i32))
+            .bind(
+                before
+                    .get("recurrence_interval")
+                    .and_then(|v| v.as_i64())
+                    .map(|v| v as i32),
+            )
             .bind(before.get("recurrence_end_date").and_then(|v| v.as_str()))
             .bind(before.get("receiver_account_id").and_then(|v| v.as_i64()))
             .bind(entity_id)
@@ -262,23 +287,63 @@ async fn undo_payment(
                     recurrence_end_date, recurrence_weekdays, recurrence_monthdays,
                     recurrence_months, receiver_account_id
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                "#
+                "#,
             )
             .bind(entity_id)
             .bind(member.project_id)
             .bind(payment_data.get("payer_id").and_then(|v| v.as_i64()))
-            .bind(payment_data.get("amount").and_then(|v| v.as_f64()).unwrap_or(0.0))
-            .bind(payment_data.get("description").and_then(|v| v.as_str()).unwrap_or(""))
+            .bind(
+                payment_data
+                    .get("amount")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0),
+            )
+            .bind(
+                payment_data
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(""),
+            )
             .bind(payment_data.get("payment_date").and_then(|v| v.as_str()))
             .bind(payment_data.get("receipt_image").and_then(|v| v.as_str()))
-            .bind(payment_data.get("is_recurring").and_then(|v| v.as_bool()).unwrap_or(false))
+            .bind(
+                payment_data
+                    .get("is_recurring")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+            )
             .bind(payment_data.get("recurrence_type").and_then(|v| v.as_str()))
-            .bind(payment_data.get("recurrence_interval").and_then(|v| v.as_i64()).map(|v| v as i32))
-            .bind(payment_data.get("recurrence_end_date").and_then(|v| v.as_str()))
-            .bind(payment_data.get("recurrence_weekdays").and_then(|v| v.as_str()))
-            .bind(payment_data.get("recurrence_monthdays").and_then(|v| v.as_str()))
-            .bind(payment_data.get("recurrence_months").and_then(|v| v.as_str()))
-            .bind(payment_data.get("receiver_account_id").and_then(|v| v.as_i64()))
+            .bind(
+                payment_data
+                    .get("recurrence_interval")
+                    .and_then(|v| v.as_i64())
+                    .map(|v| v as i32),
+            )
+            .bind(
+                payment_data
+                    .get("recurrence_end_date")
+                    .and_then(|v| v.as_str()),
+            )
+            .bind(
+                payment_data
+                    .get("recurrence_weekdays")
+                    .and_then(|v| v.as_str()),
+            )
+            .bind(
+                payment_data
+                    .get("recurrence_monthdays")
+                    .and_then(|v| v.as_str()),
+            )
+            .bind(
+                payment_data
+                    .get("recurrence_months")
+                    .and_then(|v| v.as_str()),
+            )
+            .bind(
+                payment_data
+                    .get("receiver_account_id")
+                    .and_then(|v| v.as_i64()),
+            )
             .execute(pool)
             .await?;
 
@@ -286,8 +351,14 @@ async fn undo_payment(
             if let Some(contributions) = before.get("contributions").and_then(|v| v.as_array()) {
                 for contrib in contributions {
                     let participant_id = contrib.get("participant_id").and_then(|v| v.as_i64());
-                    let amount = contrib.get("amount").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                    let weight = contrib.get("weight").and_then(|v| v.as_f64()).unwrap_or(1.0);
+                    let amount = contrib
+                        .get("amount")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0);
+                    let weight = contrib
+                        .get("weight")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(1.0);
 
                     if let Some(pid) = participant_id {
                         sqlx::query(
@@ -373,11 +444,21 @@ async fn undo_participant(
                     default_weight = ?,
                     account_type = ?
                 WHERE id = ? AND project_id = ?
-                "#
+                "#,
             )
             .bind(before.get("name").and_then(|v| v.as_str()).unwrap_or(""))
-            .bind(before.get("default_weight").and_then(|v| v.as_f64()).unwrap_or(1.0))
-            .bind(before.get("account_type").and_then(|v| v.as_str()).unwrap_or("user"))
+            .bind(
+                before
+                    .get("default_weight")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(1.0),
+            )
+            .bind(
+                before
+                    .get("account_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("user"),
+            )
             .bind(entity_id)
             .bind(member.project_id)
             .execute(pool)
@@ -467,11 +548,21 @@ async fn undo_project_member(
                     participant_id = ?,
                     status = ?
                 WHERE user_id = ? AND project_id = ?
-                "#
+                "#,
             )
-            .bind(before.get("role").and_then(|v| v.as_str()).unwrap_or("editor"))
+            .bind(
+                before
+                    .get("role")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("editor"),
+            )
             .bind(before.get("participant_id").and_then(|v| v.as_i64()))
-            .bind(before.get("status").and_then(|v| v.as_str()).unwrap_or("active"))
+            .bind(
+                before
+                    .get("status")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("active"),
+            )
             .bind(entity_id)
             .bind(member.project_id)
             .execute(pool)
@@ -503,13 +594,23 @@ async fn undo_project_member(
                 r#"
                 INSERT INTO project_members (project_id, user_id, role, participant_id, status)
                 VALUES (?, ?, ?, ?, ?)
-                "#
+                "#,
             )
             .bind(member.project_id)
             .bind(entity_id)
-            .bind(before.get("role").and_then(|v| v.as_str()).unwrap_or("editor"))
+            .bind(
+                before
+                    .get("role")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("editor"),
+            )
             .bind(before.get("participant_id").and_then(|v| v.as_i64()))
-            .bind(before.get("status").and_then(|v| v.as_str()).unwrap_or("active"))
+            .bind(
+                before
+                    .get("status")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("active"),
+            )
             .execute(pool)
             .await?;
 
@@ -560,12 +661,22 @@ async fn undo_project(
                     invites_enabled = ?,
                     require_approval = ?
                 WHERE id = ?
-                "#
+                "#,
             )
             .bind(before.get("name").and_then(|v| v.as_str()).unwrap_or(""))
             .bind(before.get("description").and_then(|v| v.as_str()))
-            .bind(before.get("invites_enabled").and_then(|v| v.as_bool()).unwrap_or(true))
-            .bind(before.get("require_approval").and_then(|v| v.as_bool()).unwrap_or(false))
+            .bind(
+                before
+                    .get("invites_enabled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true),
+            )
+            .bind(
+                before
+                    .get("require_approval")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+            )
             .bind(entity_id)
             .execute(pool)
             .await?;
@@ -599,7 +710,9 @@ async fn verify_chain(
     State(pool): State<SqlitePool>,
 ) -> AppResult<Json<ChainVerification>> {
     if !member.is_admin() {
-        return Err(AppError::Forbidden("Only admins can verify chain".to_string()));
+        return Err(AppError::Forbidden(
+            "Only admins can verify chain".to_string(),
+        ));
     }
 
     let verification = HistoryService::verify_chain(&pool).await?;

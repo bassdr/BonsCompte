@@ -7,7 +7,10 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
 use crate::{
-    auth::{password::{hash_password, verify_password}, AuthUser},
+    auth::{
+        password::{hash_password, verify_password},
+        AuthUser,
+    },
     error::{AppError, AppResult},
     models::{User, UserPreferences, UserResponse},
     AppState,
@@ -18,7 +21,10 @@ pub fn router() -> Router<AppState> {
         .route("/", get(list_users))
         .route("/me/password", put(change_password))
         .route("/me/profile", put(update_profile))
-        .route("/me/preferences", get(get_preferences).put(update_preferences))
+        .route(
+            "/me/preferences",
+            get(get_preferences).put(update_preferences),
+        )
         .route("/me", delete(delete_account))
         .route("/{id}", get(get_user))
 }
@@ -51,7 +57,7 @@ struct UpdatePreferencesRequest {
 struct ProjectOutcome {
     project_id: i64,
     project_name: String,
-    outcome: String, // "transferred", "deleted"
+    outcome: String,                // "transferred", "deleted"
     transferred_to: Option<String>, // username if transferred
 }
 
@@ -94,7 +100,9 @@ async fn change_password(
 ) -> AppResult<Json<serde_json::Value>> {
     // Validate new password
     if req.new_password.len() < 6 {
-        return Err(AppError::Validation("New password must be at least 6 characters".to_string()));
+        return Err(AppError::Validation(
+            "New password must be at least 6 characters".to_string(),
+        ));
     }
 
     // Get current user with password hash
@@ -120,7 +128,9 @@ async fn change_password(
         .execute(&pool)
         .await?;
 
-    Ok(Json(serde_json::json!({ "message": "Password changed successfully" })))
+    Ok(Json(
+        serde_json::json!({ "message": "Password changed successfully" }),
+    ))
 }
 
 async fn update_profile(
@@ -129,7 +139,8 @@ async fn update_profile(
     Json(req): Json<UpdateProfileRequest>,
 ) -> AppResult<Json<UserResponse>> {
     // Trim and normalize display_name (empty string becomes NULL)
-    let display_name = req.display_name
+    let display_name = req
+        .display_name
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
 
@@ -176,12 +187,11 @@ async fn delete_account(
         name: String,
     }
 
-    let owned_projects: Vec<OwnedProject> = sqlx::query_as(
-        "SELECT id, name FROM projects WHERE created_by = ?"
-    )
-    .bind(auth.user_id)
-    .fetch_all(&pool)
-    .await?;
+    let owned_projects: Vec<OwnedProject> =
+        sqlx::query_as("SELECT id, name FROM projects WHERE created_by = ?")
+            .bind(auth.user_id)
+            .fetch_all(&pool)
+            .await?;
 
     for project in owned_projects {
         // Check for other admins
@@ -290,17 +300,23 @@ async fn get_preferences(
 fn validate_preferences(req: &UpdatePreferencesRequest) -> Result<(), AppError> {
     if let Some(ref df) = req.date_format {
         if !["mdy", "dmy", "ymd", "iso"].contains(&df.as_str()) {
-            return Err(AppError::Validation("Invalid date format. Supported: mdy, dmy, ymd, iso".to_string()));
+            return Err(AppError::Validation(
+                "Invalid date format. Supported: mdy, dmy, ymd, iso".to_string(),
+            ));
         }
     }
     if let Some(ref sep) = req.decimal_separator {
         if ![".", ","].contains(&sep.as_str()) {
-            return Err(AppError::Validation("Invalid decimal separator. Supported: . ,".to_string()));
+            return Err(AppError::Validation(
+                "Invalid decimal separator. Supported: . ,".to_string(),
+            ));
         }
     }
     if let Some(ref pos) = req.currency_symbol_position {
         if !["before", "after"].contains(&pos.as_str()) {
-            return Err(AppError::Validation("Invalid currency position. Supported: before, after".to_string()));
+            return Err(AppError::Validation(
+                "Invalid currency position. Supported: before, after".to_string(),
+            ));
         }
     }
     // currency_symbol is freeform, no validation needed

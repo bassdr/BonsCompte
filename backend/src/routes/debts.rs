@@ -6,12 +6,7 @@ use axum::{
 use serde::Deserialize;
 use sqlx::SqlitePool;
 
-use crate::{
-    auth::ProjectMember,
-    error::AppResult,
-    services::DebtSummary,
-    AppState,
-};
+use crate::{auth::ProjectMember, error::AppResult, services::DebtSummary, AppState};
 
 #[derive(Deserialize)]
 struct DebtsQuery {
@@ -31,9 +26,7 @@ async fn get_debts(
         Some(target_date) => {
             crate::services::calculate_debts_at_date(&pool, member.project_id, &target_date).await?
         }
-        None => {
-            crate::services::calculate_debts(&pool, member.project_id).await?
-        }
+        None => crate::services::calculate_debts(&pool, member.project_id).await?,
     };
     Ok(Json(summary))
 }

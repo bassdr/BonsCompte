@@ -49,6 +49,8 @@ pub struct User {
     pub token_version: i64,
     // User preferences (nullable, defaults applied in UserPreferences)
     #[serde(skip_serializing)]
+    pub language: Option<String>,
+    #[serde(skip_serializing)]
     pub date_format: Option<String>,
     #[serde(skip_serializing)]
     pub decimal_separator: Option<String>,

@@ -20,7 +20,7 @@
             'INVALID_INPUT': $_('auth.errors.invalidInput'),
             'INTERNAL_ERROR': $_('auth.errors.internalError'),
         };
-        return errorMap[code] || fallback;
+        return errorMap[code] || $_('auth.registrationFailed');
     }
 
     async function handleSubmit(e: Event) {

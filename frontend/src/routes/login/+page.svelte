@@ -22,7 +22,7 @@
             'ACCOUNT_REVOKED': $_('auth.errors.accountRevoked'),
             'INTERNAL_ERROR': $_('auth.errors.internalError'),
         };
-        return errorMap[code] || fallback;
+        return errorMap[code] || $_('auth.loginFailed');
     }
 
     // Check for session expired message on mount

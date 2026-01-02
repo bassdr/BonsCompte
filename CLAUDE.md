@@ -18,6 +18,7 @@ BonsCompte is a financial coordination tool for shared living situations (roomma
 cargo run                    # Start server on localhost:8000
 cargo check                  # Type check without building
 cargo build --release        # Production build
+cargo test                   # Run all unit tests
 ```
 
 ### Frontend (from `/frontend`)
@@ -27,7 +28,26 @@ npm run build                # Production build
 npm run check                # TypeScript + Svelte type checking
 npm run lint                 # ESLint + Prettier check
 npm run format               # Auto-format with Prettier
+npm test                     # Run unit tests with Vitest
+npm run test:watch           # Run tests in watch mode
 ```
+
+### Root (from `/`)
+```bash
+npm test                     # Run all tests (backend + frontend)
+npm run test:backend         # Run backend tests only
+npm run test:frontend        # Run frontend tests only
+```
+
+## Database
+
+The SQLite database is located at `backend/data/bonscompte.db`. The database schema is defined and migrated automatically by `backend/src/db.rs` on server startup.
+
+**Important notes:**
+- The actual database file is `backend/data/bonscompte.db`, not `backend/data.db`
+- Migrations run automatically when the server starts
+- The database uses WAL (Write-Ahead Logging) mode for better concurrency
+- Foreign keys are enabled by default
 
 ## Architecture
 
@@ -238,25 +258,118 @@ PORT=8000
 
 Frontend (`.env` or inline):
 ```
-VITE_API_BASE=http://localhost:8000
+VITE_API_BASE=http://localhost:8000  # Development (optional, auto-detected)
+VITE_API_BASE=/api                   # Production with NGINX proxy (optional, auto-detected)
 ```
+
+**Note:** The frontend automatically detects production (HTTPS) and uses `/api` as the base URL. You only need to set `VITE_API_BASE` for custom deployment configurations.
 
 ## Development Guidelines
 
 ### Testing
 
-```bash
-# Backend tests (from /backend)
-cargo test                   # Run all unit tests
+The project has comprehensive unit tests for both backend and frontend.
 
-# Frontend checks (from /frontend)
-npm run check                # TypeScript + Svelte type checking
+#### Backend Tests
+
+Located in `backend/tests/`, using Rust's built-in test framework with `axum-test` for HTTP testing.
+
+**Authentication tests** (`backend/tests/auth_tests.rs`):
+- Register and login success flow
+- Invalid credentials handling
+- Wrong password handling
+- Duplicate username validation
+- Password strength requirements
+- User preferences returned in login response
+
+Run tests:
+```bash
+cd backend
+cargo test                   # Run all tests
+cargo test auth_tests        # Run auth tests only
+cargo test -- --nocapture    # Run with output
 ```
+
+#### Frontend Tests
+
+Located in `frontend/src/tests/`, using Vitest with jsdom environment.
+
+**API tests** (`frontend/src/tests/api.test.ts`):
+- Login with valid credentials
+- Login with invalid credentials
+- Network error handling
+- Malformed JSON responses
+- User registration
+- Username exists error handling
+- Password validation errors
+
+**Production NGINX proxy tests** (`frontend/src/tests/api-config.test.ts`):
+- API base URL selection logic (HTTPS → `/api`, HTTP → `localhost:8000`)
+- NGINX reverse proxy path mapping validation
+- Production deployment checklist
+- API endpoint path validation
+- Backend CORS requirements documentation
+
+Run tests:
+```bash
+cd frontend
+npm test                     # Run all tests
+npm run test:watch           # Watch mode for development
+npm run test:ui              # Interactive UI
+```
+
+#### Running All Tests
+
+From the project root:
+```bash
+npm test                     # Runs both backend and frontend tests
+```
+
+### Pre-commit Hooks
+
+The project uses Husky to automatically run tests before each commit. The pre-commit hook (`.husky/pre-commit`) will:
+
+1. Run all backend tests (`cargo test`)
+2. Run all frontend tests (`npm test`)
+3. Block the commit if any tests fail
+
+This ensures that broken code is never committed to the repository.
+
+To bypass the hook in exceptional cases (not recommended):
+```bash
+git commit --no-verify -m "message"
+```
+
+### Continuous Integration
+
+GitHub Actions automatically runs tests on every push and pull request to `main` and `develop` branches.
+
+The workflow (`.github/workflows/test.yml`) includes:
+
+**Backend CI**:
+- Rust toolchain setup
+- Cargo dependency caching
+- Unit tests (`cargo test`)
+- Code formatting check (`cargo fmt --check`)
+- Linting with Clippy (`cargo clippy`)
+
+**Frontend CI**:
+- Node.js 20 setup
+- npm dependency caching
+- Unit tests (`npm test`)
+- Type checking (`npm run check`)
+- Linting (`npm run lint`)
 
 ### Before Committing Changes
 
-1. **Run backend tests**: `cargo test` - especially important for financial calculations
-2. **Run frontend checks**: `npm run check`
+**Automated checks** (via pre-commit hook):
+- Backend unit tests will run automatically
+- Frontend unit tests will run automatically
+- Commit will be blocked if tests fail
+
+**Manual checks for critical changes**:
+1. **Financial calculations**: Run `cargo test` and verify debt_calculator tests pass
+2. **Type safety**: Run `npm run check` for TypeScript validation
 3. **Test edge cases manually** when modifying:
    - Settlement calculations (pool + user combinations)
    - Recurring payment expansion

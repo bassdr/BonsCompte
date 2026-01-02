@@ -1,9 +1,26 @@
 import { auth, type User, type UserPreferences } from './auth';
 import { browser } from '$app/environment';
 
+// Function to get API base URL - exported for testing
+export function getApiBaseUrl(): string {
+	// 1. Environment variable takes precedence (for custom deployments)
+	if (import.meta.env.VITE_API_BASE) {
+		return import.meta.env.VITE_API_BASE;
+	}
+
+	// 2. In browser and HTTPS (production), use /api (NGINX reverse proxy)
+	if (browser && window.location.protocol === 'https:') {
+		return '/api';
+	}
+
+	// 3. Development default
+	return 'http://localhost:8000';
+}
+
 // Default to localhost:8000 for development
-// Override with VITE_API_BASE in docker builds or production
-const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
+// In production (served over HTTPS), use /api which NGINX proxies to backend
+// Override with VITE_API_BASE in docker builds or custom deployments
+const BASE = getApiBaseUrl();
 
 // Error codes returned by the backend for structured error handling
 export type AuthErrorCode =

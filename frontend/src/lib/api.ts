@@ -2,8 +2,10 @@ import { auth, type User, type UserPreferences } from './auth';
 import { browser } from '$app/environment';
 
 // Default to localhost:8000 for development
-// Override with VITE_API_BASE in docker builds or production
-const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
+// In production (served over HTTPS), use /api which NGINX proxies to backend
+// Override with VITE_API_BASE in docker builds or custom deployments
+const BASE = import.meta.env.VITE_API_BASE ??
+	(browser && window.location.protocol === 'https:' ? '/api' : 'http://localhost:8000');
 
 // Error codes returned by the backend for structured error handling
 export type AuthErrorCode =

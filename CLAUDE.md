@@ -258,8 +258,11 @@ PORT=8000
 
 Frontend (`.env` or inline):
 ```
-VITE_API_BASE=http://localhost:8000
+VITE_API_BASE=http://localhost:8000  # Development (optional, auto-detected)
+VITE_API_BASE=/api                   # Production with NGINX proxy (optional, auto-detected)
 ```
+
+**Note:** The frontend automatically detects production (HTTPS) and uses `/api` as the base URL. You only need to set `VITE_API_BASE` for custom deployment configurations.
 
 ## Development Guidelines
 

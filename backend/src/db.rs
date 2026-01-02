@@ -1,4 +1,7 @@
-use sqlx::{sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteJournalMode, SqliteSynchronous}, SqlitePool, ConnectOptions};
+use sqlx::{
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
+    ConnectOptions, SqlitePool,
+};
 use std::{path::Path, str::FromStr, time::Duration};
 
 pub async fn init_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> {
@@ -25,8 +28,8 @@ pub async fn init_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> {
     // - Higher slow query threshold for large receipt images
     let connect_options = SqliteConnectOptions::from_str(&connect_url)?
         .journal_mode(SqliteJournalMode::Wal)
-        .synchronous(SqliteSynchronous::Normal)  // Faster writes, still safe with WAL
-        .busy_timeout(Duration::from_secs(30))   // Wait up to 30s for locks
+        .synchronous(SqliteSynchronous::Normal) // Faster writes, still safe with WAL
+        .busy_timeout(Duration::from_secs(30)) // Wait up to 30s for locks
         .log_slow_statements(log::LevelFilter::Warn, Duration::from_secs(5));
 
     // SQLite prefers smaller connection pools (1-3 connections)
@@ -63,7 +66,7 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             display_name TEXT,
             password_hash TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )"
+        )",
     )
     .execute(pool)
     .await?;
@@ -81,7 +84,7 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             invite_code TEXT UNIQUE,
             created_by INTEGER NOT NULL REFERENCES users(id),
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )"
+        )",
     )
     .execute(pool)
     .await?;
@@ -95,7 +98,7 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             user_id INTEGER REFERENCES users(id),
             default_weight REAL NOT NULL DEFAULT 1.0,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )"
+        )",
     )
     .execute(pool)
     .await?;
@@ -110,7 +113,7 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             participant_id INTEGER REFERENCES participants(id),
             joined_at TEXT NOT NULL DEFAULT (datetime('now')),
             UNIQUE(project_id, user_id)
-        )"
+        )",
     )
     .execute(pool)
     .await?;
@@ -125,7 +128,7 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             description TEXT NOT NULL DEFAULT '',
             payment_date TEXT NOT NULL DEFAULT (datetime('now')),
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )"
+        )",
     )
     .execute(pool)
     .await?;
@@ -139,7 +142,7 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             amount REAL NOT NULL,
             weight REAL NOT NULL DEFAULT 1.0,
             UNIQUE(participant_id, payment_id)
-        )"
+        )",
     )
     .execute(pool)
     .await?;
@@ -149,9 +152,11 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         .execute(pool)
         .await?;
 
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_project_members_project ON project_members(project_id)")
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_project_members_project ON project_members(project_id)",
+    )
+    .execute(pool)
+    .await?;
 
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_project_members_user ON project_members(user_id)")
         .execute(pool)
@@ -177,13 +182,17 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         .execute(pool)
         .await?;
 
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_contributions_participant ON contributions(participant_id)")
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_contributions_participant ON contributions(participant_id)",
+    )
+    .execute(pool)
+    .await?;
 
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_contributions_payment ON contributions(payment_id)")
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_contributions_payment ON contributions(payment_id)",
+    )
+    .execute(pool)
+    .await?;
 
     // Unique constraint: one user can only be linked to one participant per project
     sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_project_user ON participants(project_id, user_id) WHERE user_id IS NOT NULL")
@@ -195,75 +204,57 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     // =====================
 
     // Add receipt_image column if not exists
-    sqlx::query(
-        "ALTER TABLE payments ADD COLUMN receipt_image TEXT"
-    )
-    .execute(pool)
-    .await
-    .ok(); // Ignore error if column already exists
+    sqlx::query("ALTER TABLE payments ADD COLUMN receipt_image TEXT")
+        .execute(pool)
+        .await
+        .ok(); // Ignore error if column already exists
 
     // Add recurrence columns if not exist
-    sqlx::query(
-        "ALTER TABLE payments ADD COLUMN is_recurring INTEGER NOT NULL DEFAULT 0"
-    )
-    .execute(pool)
-    .await
-    .ok();
+    sqlx::query("ALTER TABLE payments ADD COLUMN is_recurring INTEGER NOT NULL DEFAULT 0")
+        .execute(pool)
+        .await
+        .ok();
 
-    sqlx::query(
-        "ALTER TABLE payments ADD COLUMN recurrence_type TEXT"
-    )
-    .execute(pool)
-    .await
-    .ok();
+    sqlx::query("ALTER TABLE payments ADD COLUMN recurrence_type TEXT")
+        .execute(pool)
+        .await
+        .ok();
 
-    sqlx::query(
-        "ALTER TABLE payments ADD COLUMN recurrence_interval INTEGER DEFAULT 1"
-    )
-    .execute(pool)
-    .await
-    .ok();
+    sqlx::query("ALTER TABLE payments ADD COLUMN recurrence_interval INTEGER DEFAULT 1")
+        .execute(pool)
+        .await
+        .ok();
 
-    sqlx::query(
-        "ALTER TABLE payments ADD COLUMN recurrence_times_per INTEGER"
-    )
-    .execute(pool)
-    .await
-    .ok();
+    sqlx::query("ALTER TABLE payments ADD COLUMN recurrence_times_per INTEGER")
+        .execute(pool)
+        .await
+        .ok();
 
-    sqlx::query(
-        "ALTER TABLE payments ADD COLUMN recurrence_end_date TEXT"
-    )
-    .execute(pool)
-    .await
-    .ok();
+    sqlx::query("ALTER TABLE payments ADD COLUMN recurrence_end_date TEXT")
+        .execute(pool)
+        .await
+        .ok();
 
     // =====================
     // Migration 004: User Management & Advanced Invite System
     // =====================
 
     // Add project settings for invite control
-    sqlx::query(
-        "ALTER TABLE projects ADD COLUMN invites_enabled INTEGER NOT NULL DEFAULT 1"
-    )
-    .execute(pool)
-    .await
-    .ok();
+    sqlx::query("ALTER TABLE projects ADD COLUMN invites_enabled INTEGER NOT NULL DEFAULT 1")
+        .execute(pool)
+        .await
+        .ok();
 
-    sqlx::query(
-        "ALTER TABLE projects ADD COLUMN require_approval INTEGER NOT NULL DEFAULT 0"
-    )
-    .execute(pool)
-    .await
-    .ok();
+    sqlx::query("ALTER TABLE projects ADD COLUMN require_approval INTEGER NOT NULL DEFAULT 0")
+        .execute(pool)
+        .await
+        .ok();
 
     // Add status to project_members for approval workflow
-    sqlx::query(
-        "ALTER TABLE project_members ADD COLUMN status TEXT NOT NULL DEFAULT 'active'"
-    )
-    .execute(pool)
-    .await
-    .ok();
+    sqlx::query("ALTER TABLE project_members ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+        .execute(pool)
+        .await
+        .ok();
 
     // Add invite tokens for participant-specific invites
     sqlx::query(
@@ -277,7 +268,7 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             used_by INTEGER REFERENCES users(id),
             used_at TEXT,
             UNIQUE(participant_id)
-        )"
+        )",
     )
     .execute(pool)
     .await?;
@@ -296,12 +287,10 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     // =====================
 
     // Add account_type column to participants (user or pool)
-    sqlx::query(
-        "ALTER TABLE participants ADD COLUMN account_type TEXT NOT NULL DEFAULT 'user'"
-    )
-    .execute(pool)
-    .await
-    .ok(); // Ignore error if column already exists
+    sqlx::query("ALTER TABLE participants ADD COLUMN account_type TEXT NOT NULL DEFAULT 'user'")
+        .execute(pool)
+        .await
+        .ok(); // Ignore error if column already exists
 
     // =====================
     // Migration 006: Internal Transfer Support
@@ -330,42 +319,34 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .ok(); // Ignore error if column already exists
 
     // Add token_version for JWT invalidation
-    sqlx::query(
-        "ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 1"
-    )
-    .execute(pool)
-    .await
-    .ok(); // Ignore error if column already exists
+    sqlx::query("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 1")
+        .execute(pool)
+        .await
+        .ok(); // Ignore error if column already exists
 
     // =====================
     // Migration 008: Enhanced Recurrence Patterns
     // =====================
     // Store selected weekdays for weekly recurrence (JSON array of arrays)
     // Example: [[1,3],[0,5]] means week 1: Mon/Wed, week 2: Sun/Fri
-    sqlx::query(
-        "ALTER TABLE payments ADD COLUMN recurrence_weekdays TEXT"
-    )
-    .execute(pool)
-    .await
-    .ok();
+    sqlx::query("ALTER TABLE payments ADD COLUMN recurrence_weekdays TEXT")
+        .execute(pool)
+        .await
+        .ok();
 
     // Store selected days for monthly recurrence (JSON array)
     // Example: [1, 15] means 1st and 15th of each month
-    sqlx::query(
-        "ALTER TABLE payments ADD COLUMN recurrence_monthdays TEXT"
-    )
-    .execute(pool)
-    .await
-    .ok();
+    sqlx::query("ALTER TABLE payments ADD COLUMN recurrence_monthdays TEXT")
+        .execute(pool)
+        .await
+        .ok();
 
     // Store selected months for yearly recurrence (JSON array)
     // Example: [1, 6, 12] means January, June, December
-    sqlx::query(
-        "ALTER TABLE payments ADD COLUMN recurrence_months TEXT"
-    )
-    .execute(pool)
-    .await
-    .ok();
+    sqlx::query("ALTER TABLE payments ADD COLUMN recurrence_months TEXT")
+        .execute(pool)
+        .await
+        .ok();
 
     // =====================
     // Migration 009: Immutable History Log
@@ -388,7 +369,7 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             undoes_history_id INTEGER,
             previous_hash TEXT,
             entry_hash TEXT NOT NULL
-        )"
+        )",
     )
     .execute(pool)
     .await?;
@@ -399,7 +380,7 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         BEFORE UPDATE ON history_log
         BEGIN
             SELECT RAISE(FAIL, 'history_log is append-only');
-        END"
+        END",
     )
     .execute(pool)
     .await?;
@@ -410,7 +391,7 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         BEFORE DELETE ON history_log
         BEGIN
             SELECT RAISE(FAIL, 'history_log is append-only');
-        END"
+        END",
     )
     .execute(pool)
     .await?;
@@ -420,13 +401,17 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         .execute(pool)
         .await?;
 
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_history_entity ON history_log(entity_type, entity_id)")
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_history_entity ON history_log(entity_type, entity_id)",
+    )
+    .execute(pool)
+    .await?;
 
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_history_correlation ON history_log(correlation_id)")
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_history_correlation ON history_log(correlation_id)",
+    )
+    .execute(pool)
+    .await?;
 
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_history_created ON history_log(created_at)")
         .execute(pool)

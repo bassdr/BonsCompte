@@ -1,21 +1,10 @@
-use axum::{
-    http::Method,
-    middleware,
-    routing::get,
-    Router,
-};
+use axum::{http::Method, middleware, routing::get, Router};
 use std::{net::SocketAddr, sync::Arc};
+use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
-use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
 
-use bonscompte_backend::{
-    auth::middleware::JwtSecret,
-    config::Config,
-    db,
-    routes,
-    AppState,
-};
+use bonscompte_backend::{auth::middleware::JwtSecret, config::Config, db, routes, AppState};
 
 /// Middleware to inject JWT secret and pool into request extensions
 async fn inject_extensions(
@@ -23,7 +12,9 @@ async fn inject_extensions(
     mut request: axum::http::Request<axum::body::Body>,
     next: axum::middleware::Next,
 ) -> axum::response::Response {
-    request.extensions_mut().insert(JwtSecret(state.jwt_secret.clone()));
+    request
+        .extensions_mut()
+        .insert(JwtSecret(state.jwt_secret.clone()));
     request.extensions_mut().insert(state.pool.clone());
     next.run(request).await
 }
@@ -57,26 +48,11 @@ const BLOCKED_PREFIXES: &[&str] = &[
 ];
 
 /// Blocked exact paths
-const BLOCKED_PATHS: &[&str] = &[
-    "/robots.txt",
-    "/sitemap.xml",
-    "/favicon.ico",
-];
+const BLOCKED_PATHS: &[&str] = &["/robots.txt", "/sitemap.xml", "/favicon.ico"];
 
 /// Blocked file extensions
 const BLOCKED_EXTENSIONS: &[&str] = &[
-    ".php",
-    ".asp",
-    ".aspx",
-    ".jsp",
-    ".cgi",
-    ".sql",
-    ".bak",
-    ".old",
-    ".zip",
-    ".tar",
-    ".gz",
-    ".rar",
+    ".php", ".asp", ".aspx", ".jsp", ".cgi", ".sql", ".bak", ".old", ".zip", ".tar", ".gz", ".rar",
 ];
 
 /// Middleware to block common scanner probe paths
@@ -179,8 +155,9 @@ async fn main() {
         .nest("/history", routes::history::router());
 
     // Auth routes with strict rate limiting (5 requests per 60s to prevent brute-force)
-    let auth_routes = routes::auth::router()
-        .layer(GovernorLayer { config: auth_rate_limit });
+    let auth_routes = routes::auth::router().layer(GovernorLayer {
+        config: auth_rate_limit,
+    });
 
     // Build router - all routes at root level (use reverse proxy for /api prefix if needed)
     let app = Router::new()
@@ -193,9 +170,14 @@ async fn main() {
         .nest("/projects", routes::projects::router())
         // Project-scoped routes
         .nest("/projects/{id}", project_routes)
-        .layer(middleware::from_fn_with_state(state.clone(), inject_extensions))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            inject_extensions,
+        ))
         // General rate limiting (100 requests per second)
-        .layer(GovernorLayer { config: api_rate_limit })
+        .layer(GovernorLayer {
+            config: api_rate_limit,
+        })
         // Global middleware
         .layer(TraceLayer::new_for_http())
         // Block scanner probes before logging to reduce noise

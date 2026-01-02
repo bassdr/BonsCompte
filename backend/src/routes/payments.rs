@@ -9,7 +9,9 @@ use sqlx::SqlitePool;
 use crate::{
     auth::ProjectMember,
     error::{AppError, AppResult},
-    models::{ContributionWithParticipant, CreatePayment, EntityType, Payment, PaymentWithContributions},
+    models::{
+        ContributionWithParticipant, CreatePayment, EntityType, Payment, PaymentWithContributions,
+    },
     services::{validate_image_base64, HistoryService},
     AppState,
 };
@@ -22,19 +24,21 @@ struct PaymentPath {
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_payments).post(create_payment))
-        .route("/{payment_id}", get(get_payment).put(update_payment).delete(delete_payment))
+        .route(
+            "/{payment_id}",
+            get(get_payment).put(update_payment).delete(delete_payment),
+        )
 }
 
 async fn list_payments(
     member: ProjectMember,
     State(pool): State<SqlitePool>,
 ) -> AppResult<Json<Vec<PaymentWithContributions>>> {
-    let payments: Vec<Payment> = sqlx::query_as(
-        "SELECT * FROM payments WHERE project_id = ? ORDER BY payment_date DESC"
-    )
-    .bind(member.project_id)
-    .fetch_all(&pool)
-    .await?;
+    let payments: Vec<Payment> =
+        sqlx::query_as("SELECT * FROM payments WHERE project_id = ? ORDER BY payment_date DESC")
+            .bind(member.project_id)
+            .fetch_all(&pool)
+            .await?;
 
     let mut result = Vec::new();
     for payment in payments {
@@ -74,13 +78,12 @@ async fn get_payment(
     member: ProjectMember,
     State(pool): State<SqlitePool>,
 ) -> AppResult<Json<PaymentWithContributions>> {
-    let payment: Option<Payment> = sqlx::query_as(
-        "SELECT * FROM payments WHERE id = ? AND project_id = ?"
-    )
-    .bind(path.payment_id)
-    .bind(member.project_id)
-    .fetch_optional(&pool)
-    .await?;
+    let payment: Option<Payment> =
+        sqlx::query_as("SELECT * FROM payments WHERE id = ? AND project_id = ?")
+            .bind(path.payment_id)
+            .bind(member.project_id)
+            .fetch_optional(&pool)
+            .await?;
 
     let payment = payment.ok_or_else(|| AppError::NotFound("Payment not found".to_string()))?;
 
@@ -126,18 +129,19 @@ async fn create_payment(
         return Err(AppError::BadRequest("Amount must be positive".to_string()));
     }
     if input.contributions.is_empty() {
-        return Err(AppError::BadRequest("At least one contribution required".to_string()));
+        return Err(AppError::BadRequest(
+            "At least one contribution required".to_string(),
+        ));
     }
 
     // Validate payer belongs to project
     if let Some(payer_id) = input.payer_id {
-        let payer_exists: Option<i64> = sqlx::query_scalar(
-            "SELECT id FROM participants WHERE id = ? AND project_id = ?"
-        )
-        .bind(payer_id)
-        .bind(member.project_id)
-        .fetch_optional(&pool)
-        .await?;
+        let payer_exists: Option<i64> =
+            sqlx::query_scalar("SELECT id FROM participants WHERE id = ? AND project_id = ?")
+                .bind(payer_id)
+                .bind(member.project_id)
+                .fetch_optional(&pool)
+                .await?;
 
         if payer_exists.is_none() {
             return Err(AppError::BadRequest("Invalid payer".to_string()));
@@ -146,13 +150,12 @@ async fn create_payment(
 
     // Validate receiver_account_id belongs to project (for internal transfers)
     if let Some(receiver_id) = input.receiver_account_id {
-        let receiver_exists: Option<i64> = sqlx::query_scalar(
-            "SELECT id FROM participants WHERE id = ? AND project_id = ?"
-        )
-        .bind(receiver_id)
-        .bind(member.project_id)
-        .fetch_optional(&pool)
-        .await?;
+        let receiver_exists: Option<i64> =
+            sqlx::query_scalar("SELECT id FROM participants WHERE id = ? AND project_id = ?")
+                .bind(receiver_id)
+                .bind(member.project_id)
+                .fetch_optional(&pool)
+                .await?;
 
         if receiver_exists.is_none() {
             return Err(AppError::BadRequest("Invalid receiver account".to_string()));
@@ -161,17 +164,17 @@ async fn create_payment(
 
     // Validate all participants belong to project
     for contrib in &input.contributions {
-        let participant_exists: Option<i64> = sqlx::query_scalar(
-            "SELECT id FROM participants WHERE id = ? AND project_id = ?"
-        )
-        .bind(contrib.participant_id)
-        .bind(member.project_id)
-        .fetch_optional(&pool)
-        .await?;
+        let participant_exists: Option<i64> =
+            sqlx::query_scalar("SELECT id FROM participants WHERE id = ? AND project_id = ?")
+                .bind(contrib.participant_id)
+                .bind(member.project_id)
+                .fetch_optional(&pool)
+                .await?;
 
         if participant_exists.is_none() {
             return Err(AppError::BadRequest(format!(
-                "Invalid participant: {}", contrib.participant_id
+                "Invalid participant: {}",
+                contrib.participant_id
             )));
         }
     }
@@ -179,7 +182,9 @@ async fn create_payment(
     // Calculate total weight
     let total_weight: f64 = input.contributions.iter().map(|c| c.weight).sum();
     if total_weight <= 0.0 {
-        return Err(AppError::BadRequest("Total weight must be positive".to_string()));
+        return Err(AppError::BadRequest(
+            "Total weight must be positive".to_string(),
+        ));
     }
 
     // Validate receipt image if provided
@@ -188,9 +193,9 @@ async fn create_payment(
     }
 
     // Insert payment
-    let payment_date = input.payment_date.unwrap_or_else(|| {
-        chrono::Utc::now().format("%Y-%m-%d").to_string()
-    });
+    let payment_date = input
+        .payment_date
+        .unwrap_or_else(|| chrono::Utc::now().format("%Y-%m-%d").to_string());
 
     let is_recurring = input.is_recurring.unwrap_or(false);
 
@@ -224,12 +229,11 @@ async fn create_payment(
         let share_amount = (input.amount * contrib.weight / total_weight * 100.0).round() / 100.0;
 
         // Get participant name
-        let participant_name: String = sqlx::query_scalar(
-            "SELECT name FROM participants WHERE id = ?"
-        )
-        .bind(contrib.participant_id)
-        .fetch_one(&pool)
-        .await?;
+        let participant_name: String =
+            sqlx::query_scalar("SELECT name FROM participants WHERE id = ?")
+                .bind(contrib.participant_id)
+                .fetch_one(&pool)
+                .await?;
 
         let result = sqlx::query(
             "INSERT INTO contributions (participant_id, payment_id, amount, weight) VALUES (?, ?, ?, ?)"
@@ -301,14 +305,13 @@ async fn update_payment(
     }
 
     // Verify payment exists and belongs to project
-    let existing: Payment = sqlx::query_as(
-        "SELECT * FROM payments WHERE id = ? AND project_id = ?"
-    )
-    .bind(path.payment_id)
-    .bind(member.project_id)
-    .fetch_optional(&pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Payment not found".to_string()))?;
+    let existing: Payment =
+        sqlx::query_as("SELECT * FROM payments WHERE id = ? AND project_id = ?")
+            .bind(path.payment_id)
+            .bind(member.project_id)
+            .fetch_optional(&pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Payment not found".to_string()))?;
 
     // Capture before state for history (including contributions)
     let existing_contributions: Vec<ContributionWithParticipant> = sqlx::query_as(
@@ -341,18 +344,19 @@ async fn update_payment(
         return Err(AppError::BadRequest("Amount must be positive".to_string()));
     }
     if input.contributions.is_empty() {
-        return Err(AppError::BadRequest("At least one contribution required".to_string()));
+        return Err(AppError::BadRequest(
+            "At least one contribution required".to_string(),
+        ));
     }
 
     // Validate payer belongs to project
     if let Some(payer_id) = input.payer_id {
-        let payer_exists: Option<i64> = sqlx::query_scalar(
-            "SELECT id FROM participants WHERE id = ? AND project_id = ?"
-        )
-        .bind(payer_id)
-        .bind(member.project_id)
-        .fetch_optional(&pool)
-        .await?;
+        let payer_exists: Option<i64> =
+            sqlx::query_scalar("SELECT id FROM participants WHERE id = ? AND project_id = ?")
+                .bind(payer_id)
+                .bind(member.project_id)
+                .fetch_optional(&pool)
+                .await?;
 
         if payer_exists.is_none() {
             return Err(AppError::BadRequest("Invalid payer".to_string()));
@@ -361,13 +365,12 @@ async fn update_payment(
 
     // Validate receiver_account_id belongs to project (for internal transfers)
     if let Some(receiver_id) = input.receiver_account_id {
-        let receiver_exists: Option<i64> = sqlx::query_scalar(
-            "SELECT id FROM participants WHERE id = ? AND project_id = ?"
-        )
-        .bind(receiver_id)
-        .bind(member.project_id)
-        .fetch_optional(&pool)
-        .await?;
+        let receiver_exists: Option<i64> =
+            sqlx::query_scalar("SELECT id FROM participants WHERE id = ? AND project_id = ?")
+                .bind(receiver_id)
+                .bind(member.project_id)
+                .fetch_optional(&pool)
+                .await?;
 
         if receiver_exists.is_none() {
             return Err(AppError::BadRequest("Invalid receiver account".to_string()));
@@ -376,17 +379,17 @@ async fn update_payment(
 
     // Validate all participants belong to project
     for contrib in &input.contributions {
-        let participant_exists: Option<i64> = sqlx::query_scalar(
-            "SELECT id FROM participants WHERE id = ? AND project_id = ?"
-        )
-        .bind(contrib.participant_id)
-        .bind(member.project_id)
-        .fetch_optional(&pool)
-        .await?;
+        let participant_exists: Option<i64> =
+            sqlx::query_scalar("SELECT id FROM participants WHERE id = ? AND project_id = ?")
+                .bind(contrib.participant_id)
+                .bind(member.project_id)
+                .fetch_optional(&pool)
+                .await?;
 
         if participant_exists.is_none() {
             return Err(AppError::BadRequest(format!(
-                "Invalid participant: {}", contrib.participant_id
+                "Invalid participant: {}",
+                contrib.participant_id
             )));
         }
     }
@@ -394,7 +397,9 @@ async fn update_payment(
     // Calculate total weight
     let total_weight: f64 = input.contributions.iter().map(|c| c.weight).sum();
     if total_weight <= 0.0 {
-        return Err(AppError::BadRequest("Total weight must be positive".to_string()));
+        return Err(AppError::BadRequest(
+            "Total weight must be positive".to_string(),
+        ));
     }
 
     // Validate receipt image if provided
@@ -402,9 +407,10 @@ async fn update_payment(
         validate_image_base64(image)?;
     }
 
-    let payment_date = input.payment_date.clone().unwrap_or_else(|| {
-        chrono::Utc::now().format("%Y-%m-%d").to_string()
-    });
+    let payment_date = input
+        .payment_date
+        .clone()
+        .unwrap_or_else(|| chrono::Utc::now().format("%Y-%m-%d").to_string());
 
     let is_recurring = input.is_recurring.unwrap_or(false);
 
@@ -414,7 +420,7 @@ async fn update_payment(
          receipt_image = ?, is_recurring = ?, recurrence_type = ?, recurrence_interval = ?,
          recurrence_times_per = ?, recurrence_end_date = ?, recurrence_weekdays = ?,
          recurrence_monthdays = ?, recurrence_months = ?, receiver_account_id = ?
-         WHERE id = ? AND project_id = ?"
+         WHERE id = ? AND project_id = ?",
     )
     .bind(input.payer_id)
     .bind(input.amount)
@@ -446,12 +452,11 @@ async fn update_payment(
     for contrib in &input.contributions {
         let share_amount = (input.amount * contrib.weight / total_weight * 100.0).round() / 100.0;
 
-        let participant_name: String = sqlx::query_scalar(
-            "SELECT name FROM participants WHERE id = ?"
-        )
-        .bind(contrib.participant_id)
-        .fetch_one(&pool)
-        .await?;
+        let participant_name: String =
+            sqlx::query_scalar("SELECT name FROM participants WHERE id = ?")
+                .bind(contrib.participant_id)
+                .fetch_one(&pool)
+                .await?;
 
         let result = sqlx::query(
             "INSERT INTO contributions (participant_id, payment_id, amount, weight) VALUES (?, ?, ?, ?)"
@@ -523,13 +528,12 @@ async fn delete_payment(
     }
 
     // Capture the before state for history
-    let existing: Option<Payment> = sqlx::query_as(
-        "SELECT * FROM payments WHERE id = ? AND project_id = ?"
-    )
-    .bind(path.payment_id)
-    .bind(member.project_id)
-    .fetch_optional(&pool)
-    .await?;
+    let existing: Option<Payment> =
+        sqlx::query_as("SELECT * FROM payments WHERE id = ? AND project_id = ?")
+            .bind(path.payment_id)
+            .bind(member.project_id)
+            .fetch_optional(&pool)
+            .await?;
 
     let existing = existing.ok_or_else(|| AppError::NotFound("Payment not found".to_string()))?;
 

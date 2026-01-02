@@ -21,10 +21,10 @@ pub fn validate_image_base64(base64_data: &str) -> AppResult<()> {
 
     // Check size
     if image_data.len() > MAX_IMAGE_SIZE {
-        return Err(AppError::BadRequest(
-            format!("Image exceeds maximum size of 5MB (actual: {:.2}MB)",
-                    image_data.len() as f64 / (1024.0 * 1024.0))
-        ));
+        return Err(AppError::BadRequest(format!(
+            "Image exceeds maximum size of 5MB (actual: {:.2}MB)",
+            image_data.len() as f64 / (1024.0 * 1024.0)
+        )));
     }
 
     if image_data.len() == 0 {
@@ -34,7 +34,7 @@ pub fn validate_image_base64(base64_data: &str) -> AppResult<()> {
     // Validate image format by magic bytes
     if !is_valid_image_format(&image_data) {
         return Err(AppError::BadRequest(
-            "Invalid image format. Only JPEG, PNG, GIF, and WebP are supported".to_string()
+            "Invalid image format. Only JPEG, PNG, GIF, and WebP are supported".to_string(),
         ));
     }
 
@@ -138,7 +138,10 @@ mod tests {
         let text = "VGhpcyBpcyBub3QgYW4gaW1hZ2U="; // "This is not an image"
         let err = validate_image_base64(text);
         assert!(err.is_err());
-        assert!(err.unwrap_err().to_string().contains("Invalid image format"));
+        assert!(err
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid image format"));
     }
 
     #[test]

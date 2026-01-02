@@ -1,4 +1,11 @@
-import { register, init, getLocaleFromNavigator, locale, _, isLoading as i18nIsLoading } from 'svelte-i18n';
+import {
+	register,
+	init,
+	getLocaleFromNavigator,
+	locale,
+	_,
+	isLoading as i18nIsLoading
+} from 'svelte-i18n';
 import { derived } from 'svelte/store';
 import { browser } from '$app/environment';
 

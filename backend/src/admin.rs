@@ -9,12 +9,7 @@
 use clap::{Parser, Subcommand};
 use rand::Rng;
 
-use bonscompte_backend::{
-    auth::password::hash_password,
-    config::Config,
-    db,
-    models::UserState,
-};
+use bonscompte_backend::{auth::password::hash_password, config::Config, db, models::UserState};
 
 #[derive(Parser)]
 #[command(name = "bonscompte-admin")]
@@ -71,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::ResetPassword { username } => {
             // Check if user exists
             let user: Option<(i64, String, i64)> = sqlx::query_as(
-                "SELECT id, user_state, token_version FROM users WHERE username = ?"
+                "SELECT id, user_state, token_version FROM users WHERE username = ?",
             )
             .bind(&username)
             .fetch_optional(&pool)
@@ -109,13 +104,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!();
             println!("IMPORTANT: The user must:");
             println!("  1. Log in with this temporary password");
-            println!("  2. Wait for admin approval (run: bonscompte-admin approve {})", username);
+            println!(
+                "  2. Wait for admin approval (run: bonscompte-admin approve {})",
+                username
+            );
         }
 
         Commands::Approve { username } => {
             // Check if user exists and is pending
             let user: Option<(i64, String, i64)> = sqlx::query_as(
-                "SELECT id, user_state, token_version FROM users WHERE username = ?"
+                "SELECT id, user_state, token_version FROM users WHERE username = ?",
             )
             .bind(&username)
             .fetch_optional(&pool)
@@ -150,7 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Revoke { username } => {
             // Check if user exists
             let user: Option<(i64, String, i64)> = sqlx::query_as(
-                "SELECT id, user_state, token_version FROM users WHERE username = ?"
+                "SELECT id, user_state, token_version FROM users WHERE username = ?",
             )
             .bind(&username)
             .fetch_optional(&pool)
@@ -181,7 +179,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("User '{}' revoked", username);
             println!("Previous state: {}", current_state);
             println!("New state: revoked");
-            println!("Token version: {} -> {} (all tokens invalidated)", current_version, new_version);
+            println!(
+                "Token version: {} -> {} (all tokens invalidated)",
+                current_version, new_version
+            );
         }
 
         Commands::ListUsers => {
@@ -194,11 +195,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if users.is_empty() {
                 println!("No users found");
             } else {
-                println!("{:<5} {:<20} {:<20} {:<18} {:<8} {}",
-                    "ID", "Username", "Display Name", "State", "TokVer", "Created");
+                println!(
+                    "{:<5} {:<20} {:<20} {:<18} {:<8} {}",
+                    "ID", "Username", "Display Name", "State", "TokVer", "Created"
+                );
                 println!("{}", "-".repeat(90));
                 for (id, username, display_name, state, token_version, created_at) in users {
-                    println!("{:<5} {:<20} {:<20} {:<18} {:<8} {}",
+                    println!(
+                        "{:<5} {:<20} {:<20} {:<18} {:<8} {}",
                         id,
                         username,
                         display_name.unwrap_or_else(|| "-".to_string()),

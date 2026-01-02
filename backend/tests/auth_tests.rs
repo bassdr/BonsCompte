@@ -3,7 +3,7 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use bonscompte_backend::{auth::handlers, config::Config, db, AppState};
+use bonscompte_backend::{auth::handlers, db, AppState};
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
 use tower::ServiceExt;

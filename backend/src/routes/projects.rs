@@ -8,10 +8,13 @@ use serde::Serialize;
 use sqlx::SqlitePool;
 
 use crate::{
-    auth::{AuthUser, ProjectMember, AdminMember},
+    auth::{AdminMember, AuthUser, ProjectMember},
     error::{AppError, AppResult},
-    models::{Project, ProjectListItem, CreateProject, UpdateProject, JoinProject, UpdateProjectSettings, EntityType},
-    services::{HistoryService, debt_calculator},
+    models::{
+        CreateProject, EntityType, JoinProject, Project, ProjectListItem, UpdateProject,
+        UpdateProjectSettings,
+    },
+    services::{debt_calculator, HistoryService},
     AppState,
 };
 
@@ -19,7 +22,10 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_projects).post(create_project))
         .route("/join", post(join_project))
-        .route("/{id}", get(get_project).put(update_project).delete(delete_project))
+        .route(
+            "/{id}",
+            get(get_project).put(update_project).delete(delete_project),
+        )
         .route("/{id}/regenerate-invite", post(regenerate_invite))
         .route("/{id}/settings", put(update_project_settings))
 }
@@ -67,7 +73,7 @@ async fn list_projects(
          JOIN project_members pm ON p.id = pm.project_id
          JOIN users u ON p.created_by = u.id
          WHERE pm.user_id = ? AND pm.status = 'active'
-         ORDER BY p.created_at DESC"
+         ORDER BY p.created_at DESC",
     )
     .bind(auth.user_id)
     .fetch_all(&pool)
@@ -84,13 +90,21 @@ async fn list_projects(
             // Use the debt calculator to get accurate balances (including recurring payments)
             if let Ok(debt_summary) = debt_calculator::calculate_debts(&pool, row.id).await {
                 // Find user's balance
-                if let Some(balance) = debt_summary.balances.iter().find(|b| b.participant_id == participant_id) {
+                if let Some(balance) = debt_summary
+                    .balances
+                    .iter()
+                    .find(|b| b.participant_id == participant_id)
+                {
                     user_balance = Some(balance.net_balance);
                 }
 
                 // Get user's pool ownerships
                 for pool_ownership in &debt_summary.pool_ownerships {
-                    if let Some(entry) = pool_ownership.entries.iter().find(|e| e.participant_id == participant_id) {
+                    if let Some(entry) = pool_ownership
+                        .entries
+                        .iter()
+                        .find(|e| e.participant_id == participant_id)
+                    {
                         if entry.ownership.abs() >= 0.01 {
                             user_pools.push(PoolSummary {
                                 pool_name: pool_ownership.pool_name.clone(),
@@ -133,7 +147,7 @@ async fn create_project(
 
     // Create project
     let result = sqlx::query(
-        "INSERT INTO projects (name, description, invite_code, created_by) VALUES (?, ?, ?, ?)"
+        "INSERT INTO projects (name, description, invite_code, created_by) VALUES (?, ?, ?, ?)",
     )
     .bind(&input.name)
     .bind(&input.description)
@@ -357,31 +371,32 @@ async fn join_project(
     Json(input): Json<JoinProject>,
 ) -> AppResult<Json<JoinProjectResponse>> {
     // Find project by invite code
-    let project: Option<Project> = sqlx::query_as(
-        "SELECT * FROM projects WHERE invite_code = ?"
-    )
-    .bind(&input.invite_code)
-    .fetch_optional(&pool)
-    .await?;
+    let project: Option<Project> = sqlx::query_as("SELECT * FROM projects WHERE invite_code = ?")
+        .bind(&input.invite_code)
+        .fetch_optional(&pool)
+        .await?;
 
     let project = project.ok_or_else(|| AppError::NotFound("Invalid invite code".to_string()))?;
 
     // Check if invites are enabled
     if !project.invites_enabled {
-        return Err(AppError::Forbidden("Invites are disabled for this project".to_string()));
+        return Err(AppError::Forbidden(
+            "Invites are disabled for this project".to_string(),
+        ));
     }
 
     // Check if already a member
-    let existing: Option<i64> = sqlx::query_scalar(
-        "SELECT id FROM project_members WHERE project_id = ? AND user_id = ?"
-    )
-    .bind(project.id)
-    .bind(auth.user_id)
-    .fetch_optional(&pool)
-    .await?;
+    let existing: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM project_members WHERE project_id = ? AND user_id = ?")
+            .bind(project.id)
+            .bind(auth.user_id)
+            .fetch_optional(&pool)
+            .await?;
 
     if existing.is_some() {
-        return Err(AppError::BadRequest("Already a member of this project".to_string()));
+        return Err(AppError::BadRequest(
+            "Already a member of this project".to_string(),
+        ));
     }
 
     let mut tx = pool.begin().await?;
@@ -399,7 +414,7 @@ async fn join_project(
 
         let invite: Option<ParticipantInvite> = sqlx::query_as(
             "SELECT id, participant_id, used_by FROM participant_invites
-             WHERE invite_token = ? AND project_id = ?"
+             WHERE invite_token = ? AND project_id = ?",
         )
         .bind(token)
         .bind(project.id)
@@ -408,19 +423,23 @@ async fn join_project(
 
         if let Some(invite) = invite {
             if invite.used_by.is_some() {
-                return Err(AppError::BadRequest("This invite link has already been used".to_string()));
+                return Err(AppError::BadRequest(
+                    "This invite link has already been used".to_string(),
+                ));
             }
 
             // Check if participant already has a user linked
             let existing_user: Option<i64> = sqlx::query_scalar(
-                "SELECT user_id FROM participants WHERE id = ? AND user_id IS NOT NULL"
+                "SELECT user_id FROM participants WHERE id = ? AND user_id IS NOT NULL",
             )
             .bind(invite.participant_id)
             .fetch_optional(&mut *tx)
             .await?;
 
             if existing_user.is_some() {
-                return Err(AppError::BadRequest("This participant is already linked to a user".to_string()));
+                return Err(AppError::BadRequest(
+                    "This participant is already linked to a user".to_string(),
+                ));
             }
 
             // Link user to participant
@@ -443,7 +462,11 @@ async fn join_project(
     }
 
     // Determine status based on require_approval
-    let status = if project.require_approval { "pending" } else { "active" };
+    let status = if project.require_approval {
+        "pending"
+    } else {
+        "active"
+    };
 
     // Add as editor member
     sqlx::query(

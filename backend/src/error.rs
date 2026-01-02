@@ -83,11 +83,7 @@ pub enum AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, code, message) = match &self {
-            AppError::Unauthorized => (
-                StatusCode::UNAUTHORIZED,
-                "UNAUTHORIZED",
-                self.to_string(),
-            ),
+            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "UNAUTHORIZED", self.to_string()),
             AppError::InvalidCredentials => (
                 StatusCode::UNAUTHORIZED,
                 AuthFailureReason::InvalidCredentials.as_code(),

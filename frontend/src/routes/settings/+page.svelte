@@ -1,676 +1,685 @@
 <script lang="ts">
-    import { goto } from '$app/navigation';
-    import { changePassword, deleteAccount, updatePreferences, updateProfile, type DeleteAccountResponse } from '$lib/api';
-    import { auth, type UserPreferences } from '$lib/auth';
-    import { _ } from '$lib/i18n';
-    import { preferences } from '$lib/stores/preferences';
+	import { goto } from '$app/navigation';
+	import { changePassword, deleteAccount, updatePreferences, updateProfile } from '$lib/api';
+	import { auth } from '$lib/auth';
+	import { _ } from '$lib/i18n';
+	import { preferences } from '$lib/stores/preferences';
 
-    // Profile state
-    let editingProfile = $state(false);
-    let profileDisplayName = $state($auth.user?.display_name ?? '');
-    let profileSaving = $state(false);
-    let profileError = $state('');
-    let profileSuccess = $state('');
+	// Profile state
+	let editingProfile = $state(false);
+	let profileDisplayName = $state($auth.user?.display_name ?? '');
+	let profileSaving = $state(false);
+	let profileError = $state('');
+	let profileSuccess = $state('');
 
-    // Password change state
-    let currentPassword = $state('');
-    let newPassword = $state('');
-    let confirmPassword = $state('');
-    let passwordError = $state('');
-    let passwordSuccess = $state('');
-    let changingPassword = $state(false);
+	// Password change state
+	let currentPassword = $state('');
+	let newPassword = $state('');
+	let confirmPassword = $state('');
+	let passwordError = $state('');
+	let passwordSuccess = $state('');
+	let changingPassword = $state(false);
 
-    // Delete account state
-    let deletePassword = $state('');
-    let deleteError = $state('');
-    let deleting = $state(false);
-    let showDeleteConfirm = $state(false);
-    let deleteResult = $state<DeleteAccountResponse | null>(null);
+	// Delete account state
+	let deletePassword = $state('');
+	let deleteError = $state('');
+	let deleting = $state(false);
+	let showDeleteConfirm = $state(false);
 
-    // Preferences state
-    let prefsDateFormat = $state($preferences.date_format);
-    let prefsDecimalSeparator = $state($preferences.decimal_separator);
-    let prefsCurrencySymbol = $state($preferences.currency_symbol);
-    let prefsCurrencyPosition = $state($preferences.currency_symbol_position);
-    let prefsSaving = $state(false);
-    let prefsSuccess = $state('');
-    let prefsError = $state('');
+	// Preferences state
+	let prefsDateFormat = $state($preferences.date_format);
+	let prefsDecimalSeparator = $state($preferences.decimal_separator);
+	let prefsCurrencySymbol = $state($preferences.currency_symbol);
+	let prefsCurrencyPosition = $state($preferences.currency_symbol_position);
+	let prefsSaving = $state(false);
+	let prefsSuccess = $state('');
+	let prefsError = $state('');
 
-    // Sync preferences state when store changes
-    $effect(() => {
-        prefsDateFormat = $preferences.date_format;
-        prefsDecimalSeparator = $preferences.decimal_separator;
-        prefsCurrencySymbol = $preferences.currency_symbol;
-        prefsCurrencyPosition = $preferences.currency_symbol_position;
-    });
+	// Sync preferences state when store changes
+	$effect(() => {
+		prefsDateFormat = $preferences.date_format;
+		prefsDecimalSeparator = $preferences.decimal_separator;
+		prefsCurrencySymbol = $preferences.currency_symbol;
+		prefsCurrencyPosition = $preferences.currency_symbol_position;
+	});
 
-    function startEditProfile() {
-        profileDisplayName = $auth.user?.display_name ?? '';
-        editingProfile = true;
-        profileError = '';
-        profileSuccess = '';
-    }
+	function startEditProfile() {
+		profileDisplayName = $auth.user?.display_name ?? '';
+		editingProfile = true;
+		profileError = '';
+		profileSuccess = '';
+	}
 
-    function cancelEditProfile() {
-        editingProfile = false;
-        profileDisplayName = $auth.user?.display_name ?? '';
-        profileError = '';
-    }
+	function cancelEditProfile() {
+		editingProfile = false;
+		profileDisplayName = $auth.user?.display_name ?? '';
+		profileError = '';
+	}
 
-    async function handleProfileSave() {
-        profileSaving = true;
-        profileError = '';
-        profileSuccess = '';
+	async function handleProfileSave() {
+		profileSaving = true;
+		profileError = '';
+		profileSuccess = '';
 
-        try {
-            const updatedUser = await updateProfile({
-                display_name: profileDisplayName.trim() || null
-            });
-            auth.updateUser({ display_name: updatedUser.display_name });
-            profileSuccess = $_('settings.profileSaved');
-            editingProfile = false;
-        } catch (err) {
-            profileError = err instanceof Error ? err.message : $_('settings.failedToSaveProfile');
-        } finally {
-            profileSaving = false;
-        }
-    }
+		try {
+			const updatedUser = await updateProfile({
+				display_name: profileDisplayName.trim() || null
+			});
+			auth.updateUser({ display_name: updatedUser.display_name });
+			profileSuccess = $_('settings.profileSaved');
+			editingProfile = false;
+		} catch (err) {
+			profileError = err instanceof Error ? err.message : $_('settings.failedToSaveProfile');
+		} finally {
+			profileSaving = false;
+		}
+	}
 
-    async function handlePreferenceSave() {
-        prefsSaving = true;
-        prefsSuccess = '';
-        prefsError = '';
+	async function handlePreferenceSave() {
+		prefsSaving = true;
+		prefsSuccess = '';
+		prefsError = '';
 
-        try {
-            const updatedPrefs = await updatePreferences({
-                date_format: prefsDateFormat,
-                decimal_separator: prefsDecimalSeparator,
-                currency_symbol: prefsCurrencySymbol,
-                currency_symbol_position: prefsCurrencyPosition
-            });
+		try {
+			const updatedPrefs = await updatePreferences({
+				date_format: prefsDateFormat,
+				decimal_separator: prefsDecimalSeparator,
+				currency_symbol: prefsCurrencySymbol,
+				currency_symbol_position: prefsCurrencyPosition
+			});
 
-            preferences.setAll(updatedPrefs);
-            prefsSuccess = $_('settings.preferencesSaved');
-        } catch (err) {
-            prefsError = err instanceof Error ? err.message : 'Failed to save preferences';
-        } finally {
-            prefsSaving = false;
-        }
-    }
+			preferences.setAll(updatedPrefs);
+			prefsSuccess = $_('settings.preferencesSaved');
+		} catch (err) {
+			prefsError = err instanceof Error ? err.message : 'Failed to save preferences';
+		} finally {
+			prefsSaving = false;
+		}
+	}
 
-    async function handleChangePassword(e: Event) {
-        e.preventDefault();
-        passwordError = '';
-        passwordSuccess = '';
+	async function handleChangePassword(e: Event) {
+		e.preventDefault();
+		passwordError = '';
+		passwordSuccess = '';
 
-        if (newPassword !== confirmPassword) {
-            passwordError = 'Passwords do not match';
-            return;
-        }
+		if (newPassword !== confirmPassword) {
+			passwordError = 'Passwords do not match';
+			return;
+		}
 
-        if (newPassword.length < 6) {
-            passwordError = 'New password must be at least 6 characters';
-            return;
-        }
+		if (newPassword.length < 6) {
+			passwordError = 'New password must be at least 6 characters';
+			return;
+		}
 
-        changingPassword = true;
+		changingPassword = true;
 
-        try {
-            await changePassword(currentPassword, newPassword);
-            passwordSuccess = 'Password changed successfully';
-            currentPassword = '';
-            newPassword = '';
-            confirmPassword = '';
-        } catch (err) {
-            passwordError = err instanceof Error ? err.message : 'Failed to change password';
-        } finally {
-            changingPassword = false;
-        }
-    }
+		try {
+			await changePassword(currentPassword, newPassword);
+			passwordSuccess = 'Password changed successfully';
+			currentPassword = '';
+			newPassword = '';
+			confirmPassword = '';
+		} catch (err) {
+			passwordError = err instanceof Error ? err.message : 'Failed to change password';
+		} finally {
+			changingPassword = false;
+		}
+	}
 
-    async function handleDeleteAccount(e: Event) {
-        e.preventDefault();
-        deleteError = '';
+	async function handleDeleteAccount(e: Event) {
+		e.preventDefault();
+		deleteError = '';
 
-        if (!deletePassword) {
-            deleteError = 'Password is required';
-            return;
-        }
+		if (!deletePassword) {
+			deleteError = 'Password is required';
+			return;
+		}
 
-        deleting = true;
+		deleting = true;
 
-        try {
-            deleteResult = await deleteAccount(deletePassword);
-            // Log out and redirect
-            auth.logout();
-            goto('/login');
-        } catch (err) {
-            deleteError = err instanceof Error ? err.message : 'Failed to delete account';
-        } finally {
-            deleting = false;
-        }
-    }
+		try {
+			await deleteAccount(deletePassword);
+			// Log out and redirect
+			auth.logout();
+			await goto('/login');
+		} catch (err) {
+			deleteError = err instanceof Error ? err.message : 'Failed to delete account';
+		} finally {
+			deleting = false;
+		}
+	}
 </script>
 
 <div class="settings-container">
-    <button type="button" class="back-link" onclick={() => history.back()}>{$_('common.back')}</button>
-    <h1>{$_('settings.title')}</h1>
+	<button type="button" class="back-link" onclick={() => history.back()}>{$_('common.back')}</button
+	>
+	<h1>{$_('settings.title')}</h1>
 
-    {#if $auth.user}
-        <section class="section">
-            <h2>{$_('settings.accountInfo')}</h2>
+	{#if $auth.user}
+		<section class="section">
+			<h2>{$_('settings.accountInfo')}</h2>
 
-            {#if profileError}
-                <div class="error">{profileError}</div>
-            {/if}
-            {#if profileSuccess}
-                <div class="success">{profileSuccess}</div>
-            {/if}
+			{#if profileError}
+				<div class="error">{profileError}</div>
+			{/if}
+			{#if profileSuccess}
+				<div class="success">{profileSuccess}</div>
+			{/if}
 
-            <div class="info-grid">
-                <div class="info-item">
-                    <span class="label">{$_('auth.username')}</span>
-                    <span class="value">{$auth.user?.username}</span>
-                </div>
-                <div class="info-item">
-                    <span class="label">{$_('auth.displayName')}</span>
-                    {#if editingProfile}
-                        <div class="edit-inline">
-                            <input
-                                type="text"
-                                bind:value={profileDisplayName}
-                                placeholder={$_('settings.displayNamePlaceholder')}
-                                disabled={profileSaving}
-                            />
-                            <div class="edit-buttons">
-                                <button type="button" onclick={handleProfileSave} disabled={profileSaving}>
-                                    {profileSaving ? $_('common.saving') : $_('common.save')}
-                                </button>
-                                <button type="button" class="btn-secondary" onclick={cancelEditProfile} disabled={profileSaving}>
-                                    {$_('common.cancel')}
-                                </button>
-                            </div>
-                        </div>
-                    {:else}
-                        <button type="button" class="value-button" onclick={startEditProfile}>
-                            <span class="value-text">{$auth.user?.display_name || $_('settings.notSet')}</span>
-                            <span class="edit-hint">{$_('common.edit')}</span>
-                        </button>
-                    {/if}
-                </div>
-            </div>
-        </section>
-    {/if}
+			<div class="info-grid">
+				<div class="info-item">
+					<span class="label">{$_('auth.username')}</span>
+					<span class="value">{$auth.user?.username}</span>
+				</div>
+				<div class="info-item">
+					<span class="label">{$_('auth.displayName')}</span>
+					{#if editingProfile}
+						<div class="edit-inline">
+							<input
+								type="text"
+								bind:value={profileDisplayName}
+								placeholder={$_('settings.displayNamePlaceholder')}
+								disabled={profileSaving}
+							/>
+							<div class="edit-buttons">
+								<button type="button" onclick={handleProfileSave} disabled={profileSaving}>
+									{profileSaving ? $_('common.saving') : $_('common.save')}
+								</button>
+								<button
+									type="button"
+									class="btn-secondary"
+									onclick={cancelEditProfile}
+									disabled={profileSaving}
+								>
+									{$_('common.cancel')}
+								</button>
+							</div>
+						</div>
+					{:else}
+						<button type="button" class="value-button" onclick={startEditProfile}>
+							<span class="value-text">{$auth.user?.display_name || $_('settings.notSet')}</span>
+							<span class="edit-hint">{$_('common.edit')}</span>
+						</button>
+					{/if}
+				</div>
+			</div>
+		</section>
+	{/if}
 
-    <section class="section">
-        <h2>{$_('settings.preferences')}</h2>
+	<section class="section">
+		<h2>{$_('settings.preferences')}</h2>
 
-        <div class="info-notice">
-            {$_('settings.preferencesNotice')}
-        </div>
+		<div class="info-notice">
+			{$_('settings.preferencesNotice')}
+		</div>
 
-        {#if prefsError}
-            <div class="error">{prefsError}</div>
-        {/if}
-        {#if prefsSuccess}
-            <div class="success">{prefsSuccess}</div>
-        {/if}
+		{#if prefsError}
+			<div class="error">{prefsError}</div>
+		{/if}
+		{#if prefsSuccess}
+			<div class="success">{prefsSuccess}</div>
+		{/if}
 
-        <div class="prefs-grid">
-            <div class="field">
-                <label for="pref-dateformat">{$_('settings.dateFormat')}</label>
-                <select id="pref-dateformat" bind:value={prefsDateFormat}>
-                    <option value="mdy">{$_('settings.dateFormatMDY')}</option>
-                    <option value="dmy">{$_('settings.dateFormatDMY')}</option>
-                    <option value="ymd">{$_('settings.dateFormatYMD')}</option>
-                    <option value="iso">{$_('settings.dateFormatISO')}</option>
-                </select>
-            </div>
+		<div class="prefs-grid">
+			<div class="field">
+				<label for="pref-dateformat">{$_('settings.dateFormat')}</label>
+				<select id="pref-dateformat" bind:value={prefsDateFormat}>
+					<option value="mdy">{$_('settings.dateFormatMDY')}</option>
+					<option value="dmy">{$_('settings.dateFormatDMY')}</option>
+					<option value="ymd">{$_('settings.dateFormatYMD')}</option>
+					<option value="iso">{$_('settings.dateFormatISO')}</option>
+				</select>
+			</div>
 
-            <div class="field">
-                <label for="pref-decimal">{$_('settings.decimalSeparator')}</label>
-                <select id="pref-decimal" bind:value={prefsDecimalSeparator}>
-                    <option value=".">{$_('settings.decimalPeriod')}</option>
-                    <option value=",">{$_('settings.decimalComma')}</option>
-                </select>
-            </div>
+			<div class="field">
+				<label for="pref-decimal">{$_('settings.decimalSeparator')}</label>
+				<select id="pref-decimal" bind:value={prefsDecimalSeparator}>
+					<option value=".">{$_('settings.decimalPeriod')}</option>
+					<option value=",">{$_('settings.decimalComma')}</option>
+				</select>
+			</div>
 
-            <div class="field">
-                <label for="pref-currency">{$_('settings.currencySymbol')}</label>
-                <input
-                    id="pref-currency"
-                    type="text"
-                    bind:value={prefsCurrencySymbol}
-                    maxlength="5"
-                    placeholder="$"
-                />
-            </div>
+			<div class="field">
+				<label for="pref-currency">{$_('settings.currencySymbol')}</label>
+				<input
+					id="pref-currency"
+					type="text"
+					bind:value={prefsCurrencySymbol}
+					maxlength="5"
+					placeholder="$"
+				/>
+			</div>
 
-            <div class="field">
-                <label for="pref-currpos">{$_('settings.currencyPosition')}</label>
-                <select id="pref-currpos" bind:value={prefsCurrencyPosition}>
-                    <option value="before">{$_('settings.currencyBefore')}</option>
-                    <option value="after">{$_('settings.currencyAfter')}</option>
-                </select>
-            </div>
-        </div>
+			<div class="field">
+				<label for="pref-currpos">{$_('settings.currencyPosition')}</label>
+				<select id="pref-currpos" bind:value={prefsCurrencyPosition}>
+					<option value="before">{$_('settings.currencyBefore')}</option>
+					<option value="after">{$_('settings.currencyAfter')}</option>
+				</select>
+			</div>
+		</div>
 
-        <button type="button" onclick={handlePreferenceSave} disabled={prefsSaving}>
-            {prefsSaving ? $_('settings.savingPreferences') : $_('common.save')}
-        </button>
-    </section>
+		<button type="button" onclick={handlePreferenceSave} disabled={prefsSaving}>
+			{prefsSaving ? $_('settings.savingPreferences') : $_('common.save')}
+		</button>
+	</section>
 
-    <section class="section">
-        <h2>{$_('settings.changePassword')}</h2>
+	<section class="section">
+		<h2>{$_('settings.changePassword')}</h2>
 
-        <form onsubmit={handleChangePassword}>
-            {#if passwordError}
-                <div class="error">{passwordError}</div>
-            {/if}
-            {#if passwordSuccess}
-                <div class="success">{passwordSuccess}</div>
-            {/if}
+		<form onsubmit={handleChangePassword}>
+			{#if passwordError}
+				<div class="error">{passwordError}</div>
+			{/if}
+			{#if passwordSuccess}
+				<div class="success">{passwordSuccess}</div>
+			{/if}
 
-            <div class="field">
-                <label for="current-password">{$_('settings.currentPassword')}</label>
-                <input
-                    id="current-password"
-                    type="password"
-                    bind:value={currentPassword}
-                    required
-                    disabled={changingPassword}
-                />
-            </div>
+			<div class="field">
+				<label for="current-password">{$_('settings.currentPassword')}</label>
+				<input
+					id="current-password"
+					type="password"
+					bind:value={currentPassword}
+					required
+					disabled={changingPassword}
+				/>
+			</div>
 
-            <div class="field">
-                <label for="new-password">{$_('settings.newPassword')}</label>
-                <input
-                    id="new-password"
-                    type="password"
-                    bind:value={newPassword}
-                    required
-                    disabled={changingPassword}
-                    minlength="6"
-                />
-            </div>
+			<div class="field">
+				<label for="new-password">{$_('settings.newPassword')}</label>
+				<input
+					id="new-password"
+					type="password"
+					bind:value={newPassword}
+					required
+					disabled={changingPassword}
+					minlength="6"
+				/>
+			</div>
 
-            <div class="field">
-                <label for="confirm-password">{$_('settings.confirmNewPassword')}</label>
-                <input
-                    id="confirm-password"
-                    type="password"
-                    bind:value={confirmPassword}
-                    required
-                    disabled={changingPassword}
-                />
-            </div>
+			<div class="field">
+				<label for="confirm-password">{$_('settings.confirmNewPassword')}</label>
+				<input
+					id="confirm-password"
+					type="password"
+					bind:value={confirmPassword}
+					required
+					disabled={changingPassword}
+				/>
+			</div>
 
-            <button type="submit" disabled={changingPassword}>
-                {changingPassword ? $_('settings.changingPassword') : $_('settings.changePassword')}
-            </button>
-        </form>
-    </section>
+			<button type="submit" disabled={changingPassword}>
+				{changingPassword ? $_('settings.changingPassword') : $_('settings.changePassword')}
+			</button>
+		</form>
+	</section>
 
-    <section class="section danger-zone">
-        <h2>{$_('settings.dangerZone')}</h2>
-        <p class="warning-text">
-            {$_('settings.deleteAccountWarning')}
-        </p>
+	<section class="section danger-zone">
+		<h2>{$_('settings.dangerZone')}</h2>
+		<p class="warning-text">
+			{$_('settings.deleteAccountWarning')}
+		</p>
 
-        {#if !showDeleteConfirm}
-            <button class="btn-danger" onclick={() => showDeleteConfirm = true}>
-                {$_('settings.deleteAccount')}
-            </button>
-        {:else}
-            <div class="delete-confirm">
-                <h3>{$_('settings.confirmDeletion')}</h3>
+		{#if !showDeleteConfirm}
+			<button class="btn-danger" onclick={() => (showDeleteConfirm = true)}>
+				{$_('settings.deleteAccount')}
+			</button>
+		{:else}
+			<div class="delete-confirm">
+				<h3>{$_('settings.confirmDeletion')}</h3>
 
-                <form onsubmit={handleDeleteAccount}>
-                    {#if deleteError}
-                        <div class="error">{deleteError}</div>
-                    {/if}
+				<form onsubmit={handleDeleteAccount}>
+					{#if deleteError}
+						<div class="error">{deleteError}</div>
+					{/if}
 
-                    <div class="field">
-                        <label for="delete-password">{$_('settings.enterPasswordToConfirm')}</label>
-                        <input
-                            id="delete-password"
-                            type="password"
-                            bind:value={deletePassword}
-                            required
-                            disabled={deleting}
-                            placeholder={$_('settings.yourPassword')}
-                        />
-                    </div>
+					<div class="field">
+						<label for="delete-password">{$_('settings.enterPasswordToConfirm')}</label>
+						<input
+							id="delete-password"
+							type="password"
+							bind:value={deletePassword}
+							required
+							disabled={deleting}
+							placeholder={$_('settings.yourPassword')}
+						/>
+					</div>
 
-                    <div class="button-group">
-                        <button
-                            type="button"
-                            class="btn-secondary"
-                            onclick={() => { showDeleteConfirm = false; deletePassword = ''; deleteError = ''; }}
-                            disabled={deleting}
-                        >
-                            {$_('common.cancel')}
-                        </button>
-                        <button type="submit" class="btn-danger" disabled={deleting}>
-                            {deleting ? $_('settings.deleting') : $_('settings.deleteMyAccount')}
-                        </button>
-                    </div>
-                </form>
-            </div>
-        {/if}
-    </section>
+					<div class="button-group">
+						<button
+							type="button"
+							class="btn-secondary"
+							onclick={() => {
+								showDeleteConfirm = false;
+								deletePassword = '';
+								deleteError = '';
+							}}
+							disabled={deleting}
+						>
+							{$_('common.cancel')}
+						</button>
+						<button type="submit" class="btn-danger" disabled={deleting}>
+							{deleting ? $_('settings.deleting') : $_('settings.deleteMyAccount')}
+						</button>
+					</div>
+				</form>
+			</div>
+		{/if}
+	</section>
 </div>
 
 <style>
-    .settings-container {
-        max-width: 600px;
-        margin: 2rem auto;
-        padding: 2rem;
-    }
+	.settings-container {
+		max-width: 600px;
+		margin: 2rem auto;
+		padding: 2rem;
+	}
 
-    .back-link {
-        display: block;
-        background: none;
-        border: none;
-        padding: 0;
-        color: var(--accent, #7b61ff);
-        text-decoration: none;
-        font-size: 0.95rem;
-        font-weight: 500;
-        margin-bottom: 1rem;
-        cursor: pointer;
-        text-align: left;
-    }
+	.back-link {
+		display: block;
+		background: none;
+		border: none;
+		padding: 0;
+		color: var(--accent, #7b61ff);
+		text-decoration: none;
+		font-size: 0.95rem;
+		font-weight: 500;
+		margin-bottom: 1rem;
+		cursor: pointer;
+		text-align: left;
+	}
 
-    .back-link:hover {
-        text-decoration: underline;
-    }
+	.back-link:hover {
+		text-decoration: underline;
+	}
 
-    h1 {
-        margin-bottom: 2rem;
-    }
+	h1 {
+		margin-bottom: 2rem;
+	}
 
-    h2 {
-        font-size: 1.25rem;
-        margin-bottom: 1rem;
-        color: #333;
-    }
+	h2 {
+		font-size: 1.25rem;
+		margin-bottom: 1rem;
+		color: #333;
+	}
 
-    .section {
-        background: white;
-        border-radius: 12px;
-        padding: 1.5rem;
-        margin-bottom: 1.5rem;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    }
+	.section {
+		background: white;
+		border-radius: 12px;
+		padding: 1.5rem;
+		margin-bottom: 1.5rem;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+	}
 
-    .info-grid {
-        display: grid;
-        gap: 1rem;
-    }
+	.info-grid {
+		display: grid;
+		gap: 1rem;
+	}
 
-    .info-item {
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-    }
+	.info-item {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
 
-    .info-item .label {
-        font-size: 0.85rem;
-        color: #666;
-    }
+	.info-item .label {
+		font-size: 0.85rem;
+		color: #666;
+	}
 
-    .info-item .value {
-        font-weight: 500;
-    }
+	.info-item .value {
+		font-weight: 500;
+	}
 
-    .value-button {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        background: none;
-        border: none;
-        padding: 0;
-        font: inherit;
-        cursor: pointer;
-        text-align: left;
-        color: inherit;
-    }
+	.value-button {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		background: none;
+		border: none;
+		padding: 0;
+		font: inherit;
+		cursor: pointer;
+		text-align: left;
+		color: inherit;
+	}
 
-    .value-button .value-text {
-        font-weight: 500;
-        color: #333;
-    }
+	.value-button .value-text {
+		font-weight: 500;
+		color: #333;
+	}
 
-    .value-button:hover .value-text {
-        color: var(--accent, #7b61ff);
-    }
+	.value-button:hover .value-text {
+		color: var(--accent, #7b61ff);
+	}
 
-    .edit-hint {
-        font-size: 0.75rem;
-        color: #999;
-        font-weight: 400;
-    }
+	.edit-hint {
+		font-size: 0.75rem;
+		color: #999;
+		font-weight: 400;
+	}
 
-    .value-button:hover .edit-hint {
-        color: var(--accent, #7b61ff);
-    }
+	.value-button:hover .edit-hint {
+		color: var(--accent, #7b61ff);
+	}
 
-    .edit-inline {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-    }
+	.edit-inline {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
 
-    .edit-inline input {
-        padding: 0.5rem;
-        font-size: 0.95rem;
-    }
+	.edit-inline input {
+		padding: 0.5rem;
+		font-size: 0.95rem;
+	}
 
-    .edit-buttons {
-        display: flex;
-        gap: 0.5rem;
-    }
+	.edit-buttons {
+		display: flex;
+		gap: 0.5rem;
+	}
 
-    .edit-buttons button {
-        padding: 0.5rem 1rem;
-        font-size: 0.85rem;
-    }
+	.edit-buttons button {
+		padding: 0.5rem 1rem;
+		font-size: 0.85rem;
+	}
 
-    .info-notice {
-        background: #e7f3ff;
-        color: #004085;
-        padding: 0.75rem;
-        border-radius: 8px;
-        margin-bottom: 1rem;
-        font-size: 0.9rem;
-        border-left: 4px solid #0066cc;
-    }
+	.info-notice {
+		background: #e7f3ff;
+		color: #004085;
+		padding: 0.75rem;
+		border-radius: 8px;
+		margin-bottom: 1rem;
+		font-size: 0.9rem;
+		border-left: 4px solid #0066cc;
+	}
 
-    .prefs-grid {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 1rem;
-        margin-bottom: 1rem;
-    }
+	.prefs-grid {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 1rem;
+		margin-bottom: 1rem;
+	}
 
-    @media (min-width: 600px) {
-        .prefs-grid {
-            grid-template-columns: 1fr 1fr;
-        }
-    }
+	@media (min-width: 600px) {
+		.prefs-grid {
+			grid-template-columns: 1fr 1fr;
+		}
+	}
 
-    .prefs-grid select,
-    .prefs-grid input {
-        width: 100%;
-        box-sizing: border-box;
-    }
+	.prefs-grid select,
+	.prefs-grid input {
+		width: 100%;
+		box-sizing: border-box;
+	}
 
-    .field {
-        margin-bottom: 0;
-        min-width: 0;
-    }
+	.field {
+		margin-bottom: 0;
+		min-width: 0;
+	}
 
-    label {
-        display: block;
-        margin-bottom: 0.5rem;
-        font-weight: 600;
-        font-size: 0.9rem;
-    }
+	label {
+		display: block;
+		margin-bottom: 0.5rem;
+		font-weight: 600;
+		font-size: 0.9rem;
+	}
 
-    input {
-        width: 100%;
-        padding: 0.75rem;
-        border: 1px solid #ddd;
-        border-radius: 8px;
-        font-size: 1rem;
-        box-sizing: border-box;
-    }
+	input {
+		width: 100%;
+		padding: 0.75rem;
+		border: 1px solid #ddd;
+		border-radius: 8px;
+		font-size: 1rem;
+		box-sizing: border-box;
+	}
 
-    select {
-        box-sizing: border-box;
-    }
+	select {
+		box-sizing: border-box;
+	}
 
-    input:focus {
-        outline: none;
-        border-color: var(--accent, #7b61ff);
-    }
+	input:focus {
+		outline: none;
+		border-color: var(--accent, #7b61ff);
+	}
 
-    button {
-        padding: 0.75rem 1.5rem;
-        background: var(--accent, #7b61ff);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        font-size: 1rem;
-        cursor: pointer;
-    }
+	button {
+		padding: 0.75rem 1.5rem;
+		background: var(--accent, #7b61ff);
+		color: white;
+		border: none;
+		border-radius: 8px;
+		font-size: 1rem;
+		cursor: pointer;
+	}
 
-    button:hover:not(:disabled) {
-        opacity: 0.9;
-    }
+	button:hover:not(:disabled) {
+		opacity: 0.9;
+	}
 
-    button:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
+	button:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
 
-    .btn-secondary {
-        background: #e0e0e0;
-        color: #333;
-    }
+	.btn-secondary {
+		background: #e0e0e0;
+		color: #333;
+	}
 
-    .btn-danger {
-        background: #dc3545;
-    }
+	.btn-danger {
+		background: #dc3545;
+	}
 
-    .error {
-        background: #fee;
-        color: #c00;
-        padding: 0.75rem;
-        border-radius: 8px;
-        margin-bottom: 1rem;
-    }
+	.error {
+		background: #fee;
+		color: #c00;
+		padding: 0.75rem;
+		border-radius: 8px;
+		margin-bottom: 1rem;
+	}
 
-    .success {
-        background: #efe;
-        color: #080;
-        padding: 0.75rem;
-        border-radius: 8px;
-        margin-bottom: 1rem;
-    }
+	.success {
+		background: #efe;
+		color: #080;
+		padding: 0.75rem;
+		border-radius: 8px;
+		margin-bottom: 1rem;
+	}
 
-    .danger-zone {
-        border: 1px solid #dc3545;
-    }
+	.danger-zone {
+		border: 1px solid #dc3545;
+	}
 
-    .danger-zone h2 {
-        color: #dc3545;
-    }
+	.danger-zone h2 {
+		color: #dc3545;
+	}
 
-    .warning-text {
-        color: #666;
-        margin-bottom: 1rem;
-        font-size: 0.9rem;
-    }
+	.warning-text {
+		color: #666;
+		margin-bottom: 1rem;
+		font-size: 0.9rem;
+	}
 
-    .delete-confirm {
-        background: #fff5f5;
-        padding: 1rem;
-        border-radius: 8px;
-        margin-top: 1rem;
-    }
+	.delete-confirm {
+		background: #fff5f5;
+		padding: 1rem;
+		border-radius: 8px;
+		margin-top: 1rem;
+	}
 
-    .delete-confirm h3 {
-        font-size: 1rem;
-        margin-bottom: 1rem;
-        color: #dc3545;
-    }
+	.delete-confirm h3 {
+		font-size: 1rem;
+		margin-bottom: 1rem;
+		color: #dc3545;
+	}
 
-    .button-group {
-        display: flex;
-        gap: 1rem;
-        margin-top: 1rem;
-    }
+	.button-group {
+		display: flex;
+		gap: 1rem;
+		margin-top: 1rem;
+	}
 
-    /* Mobile responsive */
-    @media (max-width: 768px) {
-        .settings-container {
-            margin: 1rem auto;
-            padding: 1rem;
-        }
+	/* Mobile responsive */
+	@media (max-width: 768px) {
+		.settings-container {
+			margin: 1rem auto;
+			padding: 1rem;
+		}
 
-        h1 {
-            font-size: 1.5rem;
-            margin-bottom: 1.5rem;
-        }
+		h1 {
+			font-size: 1.5rem;
+			margin-bottom: 1.5rem;
+		}
 
-        .section {
-            padding: 1rem;
-            border-radius: 8px;
-        }
+		.section {
+			padding: 1rem;
+			border-radius: 8px;
+		}
 
-        input {
-            padding: 0.875rem;
-            font-size: 16px;
-        }
+		input {
+			padding: 0.875rem;
+			font-size: 16px;
+		}
 
-        button {
-            width: 100%;
-            padding: 0.875rem;
-        }
+		button {
+			width: 100%;
+			padding: 0.875rem;
+		}
 
-        .button-group {
-            flex-direction: column;
-        }
-    }
+		.button-group {
+			flex-direction: column;
+		}
+	}
 
-    @media (max-width: 480px) {
-        .settings-container {
-            margin: 0;
-            padding: 1rem;
-            max-width: 100%;
-        }
+	@media (max-width: 480px) {
+		.settings-container {
+			margin: 0;
+			padding: 1rem;
+			max-width: 100%;
+		}
 
-        h1 {
-            font-size: 1.3rem;
-        }
+		h1 {
+			font-size: 1.3rem;
+		}
 
-        h2 {
-            font-size: 1.1rem;
-        }
+		h2 {
+			font-size: 1.1rem;
+		}
 
-        .section {
-            margin-bottom: 1rem;
-        }
+		.section {
+			margin-bottom: 1rem;
+		}
 
-        input {
-            padding: 1rem;
-            font-size: 16px;
-        }
+		input {
+			padding: 1rem;
+			font-size: 16px;
+		}
 
-        button {
-            padding: 1rem;
-        }
-    }
+		button {
+			padding: 1rem;
+		}
+	}
 </style>

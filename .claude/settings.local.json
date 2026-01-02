@@ -24,7 +24,20 @@
       "Bash(npm install:*)",
       "Bash(npm update:*)",
       "Bash(npm test)",
-      "Bash(npx husky:*)"
+      "Bash(npx husky:*)",
+      "Bash(npm run format:*)",
+      "Bash(npm run lint)",
+      "Bash(npx eslint:*)",
+      "Bash(timeout 30 npx eslint:*)",
+      "Bash(timeout 60 npx eslint:*)",
+      "Bash(cd:*)",
+      "Bash(for file in history/+page.svelte payments/+page.svelte)",
+      "Bash(do sed -i 's/= \\$state<SvelteSet/= new SvelteSet/g; s/= \\$state<SvelteMap/= new SvelteMap/g; s/>>(new Svelte/>(/g' \"$file\")",
+      "Bash(done)",
+      "Bash(cargo fmt:*)",
+      "Bash(cd /home/david/src/BonsCompte/backend && cargo clippy:*)",
+      "Bash(npx prettier:*)",
+      "Bash(git branch:*)"
     ],
     "deny": [
       "Read(*.csv)",

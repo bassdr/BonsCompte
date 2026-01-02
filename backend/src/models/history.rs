@@ -99,7 +99,11 @@ pub struct HistoryEntryResponse {
 
 impl HistoryEntry {
     /// Convert to response format with resolved actor name and undone status
-    pub fn into_response(self, actor_name: Option<String>, is_undone: bool) -> HistoryEntryResponse {
+    pub fn into_response(
+        self,
+        actor_name: Option<String>,
+        is_undone: bool,
+    ) -> HistoryEntryResponse {
         HistoryEntryResponse {
             id: self.id,
             created_at: self.created_at,
@@ -110,8 +114,12 @@ impl HistoryEntry {
             entity_type: self.entity_type,
             entity_id: self.entity_id,
             action: self.action,
-            payload_before: self.payload_before.and_then(|s| serde_json::from_str(&s).ok()),
-            payload_after: self.payload_after.and_then(|s| serde_json::from_str(&s).ok()),
+            payload_before: self
+                .payload_before
+                .and_then(|s| serde_json::from_str(&s).ok()),
+            payload_after: self
+                .payload_after
+                .and_then(|s| serde_json::from_str(&s).ok()),
             reason: self.reason,
             undoes_history_id: self.undoes_history_id,
             is_undone,

@@ -1,4 +1,4 @@
-use chrono::{Datelike, NaiveDate, Months};
+use chrono::{Datelike, Months, NaiveDate};
 use serde::Serialize;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
@@ -38,22 +38,22 @@ pub struct PairwiseBalance {
     pub participant_name: String,
     pub other_participant_id: i64,
     pub other_participant_name: String,
-    pub amount_paid_for: f64,    // Amount this participant paid for other
-    pub amount_owed_by: f64,     // Amount other paid for this participant
-    pub net: f64,                // paid_for - owed_by (positive = they owe you)
-    pub paid_for_breakdown: Vec<PairwisePaymentBreakdown>,  // Details of what we paid for them
-    pub owed_by_breakdown: Vec<PairwisePaymentBreakdown>,   // Details of what they paid for us
+    pub amount_paid_for: f64, // Amount this participant paid for other
+    pub amount_owed_by: f64,  // Amount other paid for this participant
+    pub net: f64,             // paid_for - owed_by (positive = they owe you)
+    pub paid_for_breakdown: Vec<PairwisePaymentBreakdown>, // Details of what we paid for them
+    pub owed_by_breakdown: Vec<PairwisePaymentBreakdown>, // Details of what they paid for us
 }
 
 #[derive(Debug, Serialize)]
 pub struct PoolOwnershipEntry {
     pub participant_id: i64,
     pub participant_name: String,
-    pub contributed: f64,     // Total deposited to pool
-    pub consumed: f64,        // Total share of pool-paid expenses
-    pub ownership: f64,       // contributed - consumed
-    pub contributed_breakdown: Vec<PairwisePaymentBreakdown>,  // Details of contributions
-    pub consumed_breakdown: Vec<PairwisePaymentBreakdown>,     // Details of consumption
+    pub contributed: f64, // Total deposited to pool
+    pub consumed: f64,    // Total share of pool-paid expenses
+    pub ownership: f64,   // contributed - consumed
+    pub contributed_breakdown: Vec<PairwisePaymentBreakdown>, // Details of contributions
+    pub consumed_breakdown: Vec<PairwisePaymentBreakdown>, // Details of consumption
 }
 
 #[derive(Debug, Serialize)]
@@ -101,35 +101,32 @@ pub async fn calculate_debts_at_date(
     project_id: i64,
     target_date: &str,
 ) -> AppResult<DebtSummary> {
-    let target = parse_date(target_date).unwrap_or_else(|| {
-        chrono::Utc::now().date_naive()
-    });
+    let target = parse_date(target_date).unwrap_or_else(|| chrono::Utc::now().date_naive());
 
     // Get all participants for this project (including account_type)
-    let participants: Vec<(i64, String, String)> = sqlx::query_as(
-        "SELECT id, name, account_type FROM participants WHERE project_id = ?"
-    )
-    .bind(project_id)
-    .fetch_all(pool)
-    .await?;
+    let participants: Vec<(i64, String, String)> =
+        sqlx::query_as("SELECT id, name, account_type FROM participants WHERE project_id = ?")
+            .bind(project_id)
+            .fetch_all(pool)
+            .await?;
 
-    let participant_map: HashMap<i64, String> = participants.iter()
+    let participant_map: HashMap<i64, String> = participants
+        .iter()
         .map(|(id, name, _)| (*id, name.clone()))
         .collect();
 
     // Track which participants are pool accounts (excluded from settlements)
-    let pool_participants: std::collections::HashSet<i64> = participants.iter()
+    let pool_participants: std::collections::HashSet<i64> = participants
+        .iter()
         .filter(|(_, _, account_type)| account_type == "pool")
         .map(|(id, _, _)| *id)
         .collect();
 
     // Get all payments for this project
-    let payments: Vec<Payment> = sqlx::query_as(
-        "SELECT * FROM payments WHERE project_id = ?"
-    )
-    .bind(project_id)
-    .fetch_all(pool)
-    .await?;
+    let payments: Vec<Payment> = sqlx::query_as("SELECT * FROM payments WHERE project_id = ?")
+        .bind(project_id)
+        .fetch_all(pool)
+        .await?;
 
     // Generate all payment occurrences (including recurring expansions)
     let mut all_occurrences: Vec<PaymentOccurrence> = Vec::new();
@@ -144,7 +141,7 @@ pub async fn calculate_debts_at_date(
         "SELECT c.payment_id, c.participant_id, c.amount
          FROM contributions c
          JOIN payments p ON c.payment_id = p.id
-         WHERE p.project_id = ?"
+         WHERE p.project_id = ?",
     )
     .bind(project_id)
     .fetch_all(pool)
@@ -169,13 +166,17 @@ pub async fn calculate_debts_at_date(
     // 4. Pool → User transfer: Only affects pool ownership, NOT settlements
     let mut paid_map: HashMap<i64, f64> = HashMap::new();
     let mut owed_map: HashMap<i64, f64> = HashMap::new();
-    let mut pairwise_map: HashMap<(i64, i64), (f64, Vec<PairwisePaymentBreakdown>)> = HashMap::new();
+    let mut pairwise_map: HashMap<(i64, i64), (f64, Vec<PairwisePaymentBreakdown>)> =
+        HashMap::new();
 
     for occurrence in &all_occurrences {
         // Check if this is a pool-related transfer (should not affect settlements)
         if let Some(receiver_id) = occurrence.receiver_account_id {
             let receiver_is_pool = pool_participants.contains(&receiver_id);
-            let payer_is_pool = occurrence.payer_id.map(|id| pool_participants.contains(&id)).unwrap_or(false);
+            let payer_is_pool = occurrence
+                .payer_id
+                .map(|id| pool_participants.contains(&id))
+                .unwrap_or(false);
 
             if receiver_is_pool || payer_is_pool {
                 // Pool transfer - skip for settlement calculations (handled in pool ownership)
@@ -192,7 +193,9 @@ pub async fn calculate_debts_at_date(
                 *owed_map.entry(receiver_id).or_insert(0.0) += occurrence.amount;
 
                 // Track pairwise: payer paid this amount directly to receiver
-                let entry = pairwise_map.entry((payer_id, receiver_id)).or_insert((0.0, Vec::new()));
+                let entry = pairwise_map
+                    .entry((payer_id, receiver_id))
+                    .or_insert((0.0, Vec::new()));
                 entry.0 += occurrence.amount;
                 entry.1.push(PairwisePaymentBreakdown {
                     payment_id: occurrence.payment_id,
@@ -206,7 +209,8 @@ pub async fn calculate_debts_at_date(
 
         // External expense (receiver_account_id IS NULL)
         // Add to paid total for payer
-        let payer_is_pool = occurrence.payer_id
+        let payer_is_pool = occurrence
+            .payer_id
             .map(|id| pool_participants.contains(&id))
             .unwrap_or(false);
 
@@ -219,7 +223,9 @@ pub async fn calculate_debts_at_date(
                 if let Some(contribs) = contribution_map.get(&occurrence.payment_id) {
                     for (contributor_id, amount) in contribs {
                         // payer paid this amount for contributor
-                        let entry = pairwise_map.entry((payer_id, *contributor_id)).or_insert((0.0, Vec::new()));
+                        let entry = pairwise_map
+                            .entry((payer_id, *contributor_id))
+                            .or_insert((0.0, Vec::new()));
                         entry.0 += amount;
                         entry.1.push(PairwisePaymentBreakdown {
                             payment_id: occurrence.payment_id,
@@ -334,7 +340,15 @@ pub async fn calculate_debts_at_date(
 
         // Track ownership amounts and transaction breakdowns
         // HashMap<participant_id, (contributed_total, consumed_total, contributed_breakdown, consumed_breakdown)>
-        let mut ownership_map: HashMap<i64, (f64, f64, Vec<PairwisePaymentBreakdown>, Vec<PairwisePaymentBreakdown>)> = HashMap::new();
+        let mut ownership_map: HashMap<
+            i64,
+            (
+                f64,
+                f64,
+                Vec<PairwisePaymentBreakdown>,
+                Vec<PairwisePaymentBreakdown>,
+            ),
+        > = HashMap::new();
 
         for occurrence in &all_occurrences {
             // Handle internal transfers (receiver_account_id IS NOT NULL)
@@ -342,7 +356,12 @@ pub async fn calculate_debts_at_date(
                 if let Some(payer_id) = occurrence.payer_id {
                     if receiver_id == pool_id && payer_id != pool_id {
                         // Internal transfer TO pool: payer's ownership increases
-                        let entry = ownership_map.entry(payer_id).or_insert((0.0, 0.0, Vec::new(), Vec::new()));
+                        let entry = ownership_map.entry(payer_id).or_insert((
+                            0.0,
+                            0.0,
+                            Vec::new(),
+                            Vec::new(),
+                        ));
                         entry.0 += occurrence.amount; // contributed (deposited to pool)
                         entry.2.push(PairwisePaymentBreakdown {
                             payment_id: occurrence.payment_id,
@@ -352,7 +371,12 @@ pub async fn calculate_debts_at_date(
                         });
                     } else if payer_id == pool_id && receiver_id != pool_id {
                         // Internal transfer FROM pool: receiver's ownership decreases
-                        let entry = ownership_map.entry(receiver_id).or_insert((0.0, 0.0, Vec::new(), Vec::new()));
+                        let entry = ownership_map.entry(receiver_id).or_insert((
+                            0.0,
+                            0.0,
+                            Vec::new(),
+                            Vec::new(),
+                        ));
                         entry.1 += occurrence.amount; // consumed (withdrawn from pool)
                         entry.3.push(PairwisePaymentBreakdown {
                             payment_id: occurrence.payment_id,
@@ -375,7 +399,12 @@ pub async fn calculate_debts_at_date(
                         // Pool is the payer: each contributor's ownership decreases
                         for (contributor_id, amount) in contribs {
                             if *contributor_id != pool_id {
-                                let entry = ownership_map.entry(*contributor_id).or_insert((0.0, 0.0, Vec::new(), Vec::new()));
+                                let entry = ownership_map.entry(*contributor_id).or_insert((
+                                    0.0,
+                                    0.0,
+                                    Vec::new(),
+                                    Vec::new(),
+                                ));
                                 entry.1 += amount; // consumed
                                 entry.3.push(PairwisePaymentBreakdown {
                                     payment_id: occurrence.payment_id,
@@ -387,7 +416,12 @@ pub async fn calculate_debts_at_date(
                         }
                     } else if let Some((_, pool_amount)) = pool_contrib {
                         // Pool is a contributor: the payer's ownership increases
-                        let entry = ownership_map.entry(payer_id).or_insert((0.0, 0.0, Vec::new(), Vec::new()));
+                        let entry = ownership_map.entry(payer_id).or_insert((
+                            0.0,
+                            0.0,
+                            Vec::new(),
+                            Vec::new(),
+                        ));
                         entry.0 += pool_amount; // contributed
                         entry.2.push(PairwisePaymentBreakdown {
                             payment_id: occurrence.payment_id,
@@ -406,7 +440,8 @@ pub async fn calculate_debts_at_date(
             .filter(|(id, _, account_type)| *id != pool_id && account_type != "pool")
             .filter_map(|(id, name, _)| {
                 let (contributed, consumed, contributed_breakdown, consumed_breakdown) =
-                    ownership_map.get(id)
+                    ownership_map
+                        .get(id)
                         .map(|(c, con, cb, conb)| (*c, *con, cb.clone(), conb.clone()))
                         .unwrap_or((0.0, 0.0, Vec::new(), Vec::new()));
                 if contributed > 0.01 || consumed > 0.01 {
@@ -426,7 +461,11 @@ pub async fn calculate_debts_at_date(
             .collect();
 
         // Sort by ownership descending
-        entries.sort_by(|a, b| b.ownership.partial_cmp(&a.ownership).unwrap_or(std::cmp::Ordering::Equal));
+        entries.sort_by(|a, b| {
+            b.ownership
+                .partial_cmp(&a.ownership)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let total_balance: f64 = entries.iter().map(|e| e.ownership).sum();
 
@@ -440,7 +479,8 @@ pub async fn calculate_debts_at_date(
 
     // Calculate direct-only settlements based on pairwise relationships
     // Pass balances to ensure we respect net balance constraints
-    let direct_settlements = calculate_direct_settlements(&pairwise_balances, &balances, &pool_participants);
+    let direct_settlements =
+        calculate_direct_settlements(&pairwise_balances, &balances, &pool_participants);
 
     Ok(DebtSummary {
         balances,
@@ -454,7 +494,10 @@ pub async fn calculate_debts_at_date(
 }
 
 /// Generate all occurrences of a payment up to target_date
-fn generate_payment_occurrences(payment: &Payment, target_date: NaiveDate) -> Vec<PaymentOccurrence> {
+fn generate_payment_occurrences(
+    payment: &Payment,
+    target_date: NaiveDate,
+) -> Vec<PaymentOccurrence> {
     let mut occurrences = Vec::new();
 
     let start_date = match parse_date(&payment.payment_date) {
@@ -484,7 +527,9 @@ fn generate_payment_occurrences(payment: &Payment, target_date: NaiveDate) -> Ve
     // Recurring payment - generate occurrences
     let recurrence_type = payment.recurrence_type.as_deref().unwrap_or("monthly");
     let interval = payment.recurrence_interval.unwrap_or(1) as u32;
-    let end_date = payment.recurrence_end_date.as_ref()
+    let end_date = payment
+        .recurrence_end_date
+        .as_ref()
         .and_then(|d| parse_date(d))
         .unwrap_or(target_date);
     let effective_end = end_date.min(target_date);
@@ -494,14 +539,25 @@ fn generate_payment_occurrences(payment: &Payment, target_date: NaiveDate) -> Ve
         "weekly" => {
             // Check for weekday selection pattern
             if let Some(weekdays_json) = &payment.recurrence_weekdays {
-                return generate_weekly_with_weekdays(payment, start_date, effective_end, interval, weekdays_json);
+                return generate_weekly_with_weekdays(
+                    payment,
+                    start_date,
+                    effective_end,
+                    interval,
+                    weekdays_json,
+                );
             }
         }
         "monthly" => {
             // Check for monthday selection pattern (only valid when interval = 1)
             if interval == 1 {
                 if let Some(monthdays_json) = &payment.recurrence_monthdays {
-                    return generate_monthly_with_monthdays(payment, start_date, effective_end, monthdays_json);
+                    return generate_monthly_with_monthdays(
+                        payment,
+                        start_date,
+                        effective_end,
+                        monthdays_json,
+                    );
                 }
             }
         }
@@ -509,7 +565,12 @@ fn generate_payment_occurrences(payment: &Payment, target_date: NaiveDate) -> Ve
             // Check for month selection pattern (only valid when interval = 1)
             if interval == 1 {
                 if let Some(months_json) = &payment.recurrence_months {
-                    return generate_yearly_with_months(payment, start_date, effective_end, months_json);
+                    return generate_yearly_with_months(
+                        payment,
+                        start_date,
+                        effective_end,
+                        months_json,
+                    );
                 }
             }
         }
@@ -664,7 +725,9 @@ fn generate_monthly_with_monthdays(
             // Clamp day to valid range (handle dates > 28 for short months)
             let actual_day = day.min(days_in_month);
 
-            if let Some(occurrence_date) = NaiveDate::from_ymd_opt(current_year, current_month, actual_day) {
+            if let Some(occurrence_date) =
+                NaiveDate::from_ymd_opt(current_year, current_month, actual_day)
+            {
                 // Must be >= start_date and <= end_date
                 if occurrence_date >= start_date && occurrence_date <= end_date {
                     occurrences.push(PaymentOccurrence {
@@ -742,7 +805,8 @@ fn generate_yearly_with_months(
             let days_in_month = get_days_in_month(current_year, month);
             let actual_day = base_day.min(days_in_month);
 
-            if let Some(occurrence_date) = NaiveDate::from_ymd_opt(current_year, month, actual_day) {
+            if let Some(occurrence_date) = NaiveDate::from_ymd_opt(current_year, month, actual_day)
+            {
                 // Must be >= start_date and <= end_date
                 if occurrence_date >= start_date && occurrence_date <= end_date {
                     occurrences.push(PaymentOccurrence {
@@ -793,7 +857,11 @@ fn get_days_in_month(year: i32, month: u32) -> u32 {
 }
 
 /// Calculate effective interval for "X times per period"
-fn calculate_times_per_interval(recurrence_type: &str, interval: u32, times_per: u32) -> (u32, String) {
+fn calculate_times_per_interval(
+    recurrence_type: &str,
+    interval: u32,
+    times_per: u32,
+) -> (u32, String) {
     if times_per == 0 {
         return (interval, recurrence_type.to_string());
     }
@@ -819,7 +887,7 @@ fn calculate_times_per_interval(recurrence_type: &str, interval: u32, times_per:
             let days = (365 * interval) / times_per;
             (days.max(1), "daily".to_string())
         }
-        _ => (interval, recurrence_type.to_string())
+        _ => (interval, recurrence_type.to_string()),
     }
 }
 
@@ -837,7 +905,8 @@ fn add_interval(date: NaiveDate, recurrence_type: &str, interval: u32) -> Option
 /// Parse date string to NaiveDate
 fn parse_date(date_str: &str) -> Option<NaiveDate> {
     // Try common formats
-    NaiveDate::parse_from_str(date_str, "%Y-%m-%d").ok()
+    NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+        .ok()
         .or_else(|| NaiveDate::parse_from_str(date_str, "%Y-%m-%d %H:%M:%S").ok())
 }
 
@@ -880,7 +949,10 @@ fn calculate_settlements(
                 from_participant_id: *debtor_id,
                 from_participant_name: participant_map.get(debtor_id).cloned().unwrap_or_default(),
                 to_participant_id: *creditor_id,
-                to_participant_name: participant_map.get(creditor_id).cloned().unwrap_or_default(),
+                to_participant_name: participant_map
+                    .get(creditor_id)
+                    .cloned()
+                    .unwrap_or_default(),
                 amount: (transfer * 100.0).round() / 100.0,
             });
         }
@@ -912,7 +984,9 @@ fn calculate_direct_settlements(
 
     for pw in pairwise_balances {
         // Skip if either participant is a pool account
-        if pool_participants.contains(&pw.participant_id) || pool_participants.contains(&pw.other_participant_id) {
+        if pool_participants.contains(&pw.participant_id)
+            || pool_participants.contains(&pw.other_participant_id)
+        {
             continue;
         }
 
@@ -954,7 +1028,11 @@ fn calculate_direct_settlements(
     }
 
     // Sort by amount descending for consistency
-    settlements.sort_by(|a, b| b.amount.partial_cmp(&a.amount).unwrap_or(std::cmp::Ordering::Equal));
+    settlements.sort_by(|a, b| {
+        b.amount
+            .partial_cmp(&a.amount)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     settlements
 }
@@ -984,10 +1062,10 @@ mod tests {
             },
         ];
 
-        let participant_map: HashMap<i64, String> = vec![
-            (1, "Carl".to_string()),
-            (2, "David".to_string()),
-        ].into_iter().collect();
+        let participant_map: HashMap<i64, String> =
+            vec![(1, "Carl".to_string()), (2, "David".to_string())]
+                .into_iter()
+                .collect();
 
         let pool_participants: std::collections::HashSet<i64> = std::collections::HashSet::new();
 
@@ -995,7 +1073,7 @@ mod tests {
 
         assert_eq!(settlements.len(), 1);
         assert_eq!(settlements[0].from_participant_id, 2); // David
-        assert_eq!(settlements[0].to_participant_id, 1);   // Carl
+        assert_eq!(settlements[0].to_participant_id, 1); // Carl
         assert_eq!(settlements[0].amount, 100.0);
     }
 
@@ -1021,10 +1099,10 @@ mod tests {
             },
         ];
 
-        let participant_map: HashMap<i64, String> = vec![
-            (1, "Carl".to_string()),
-            (2, "David".to_string()),
-        ].into_iter().collect();
+        let participant_map: HashMap<i64, String> =
+            vec![(1, "Carl".to_string()), (2, "David".to_string())]
+                .into_iter()
+                .collect();
 
         let pool_participants: std::collections::HashSet<i64> = std::collections::HashSet::new();
 
@@ -1032,7 +1110,7 @@ mod tests {
 
         assert_eq!(settlements.len(), 1);
         assert_eq!(settlements[0].from_participant_id, 2); // David
-        assert_eq!(settlements[0].to_participant_id, 1);   // Carl
+        assert_eq!(settlements[0].to_participant_id, 1); // Carl
         assert_eq!(settlements[0].amount, 100.0);
     }
 
@@ -1070,7 +1148,9 @@ mod tests {
             (1, "A".to_string()),
             (2, "B".to_string()),
             (3, "C".to_string()),
-        ].into_iter().collect();
+        ]
+        .into_iter()
+        .collect();
 
         let pool_participants: std::collections::HashSet<i64> = std::collections::HashSet::new();
 
@@ -1137,11 +1217,12 @@ mod tests {
 
         let pool_participants: std::collections::HashSet<i64> = std::collections::HashSet::new();
 
-        let settlements = calculate_direct_settlements(&pairwise_balances, &balances, &pool_participants);
+        let settlements =
+            calculate_direct_settlements(&pairwise_balances, &balances, &pool_participants);
 
         assert_eq!(settlements.len(), 1);
         assert_eq!(settlements[0].from_participant_id, 2); // David
-        assert_eq!(settlements[0].to_participant_id, 1);   // Carl
+        assert_eq!(settlements[0].to_participant_id, 1); // Carl
         assert_eq!(settlements[0].amount, 100.0);
     }
 
@@ -1163,7 +1244,7 @@ mod tests {
             ParticipantBalance {
                 participant_id: 1,
                 participant_name: "Carl".to_string(),
-                total_paid: 0.0,  // Pool transfer doesn't count as "paid"
+                total_paid: 0.0, // Pool transfer doesn't count as "paid"
                 total_owed: 0.0,
                 net_balance: 0.0,
             },
@@ -1176,10 +1257,10 @@ mod tests {
             },
         ];
 
-        let participant_map: HashMap<i64, String> = vec![
-            (1, "Carl".to_string()),
-            (2, "Pool".to_string()),
-        ].into_iter().collect();
+        let participant_map: HashMap<i64, String> =
+            vec![(1, "Carl".to_string()), (2, "Pool".to_string())]
+                .into_iter()
+                .collect();
 
         let pool_participants: std::collections::HashSet<i64> = [2].into_iter().collect();
 
@@ -1209,23 +1290,23 @@ mod tests {
             ParticipantBalance {
                 participant_id: 1,
                 participant_name: "Carl".to_string(),
-                total_paid: 100.0,   // Transfer of $100
-                total_owed: 100.0,   // His share of groceries
+                total_paid: 100.0, // Transfer of $100
+                total_owed: 100.0, // His share of groceries
                 net_balance: 0.0,
             },
             ParticipantBalance {
                 participant_id: 2,
                 participant_name: "David".to_string(),
-                total_paid: 200.0,   // Groceries
-                total_owed: 200.0,   // His share ($100) + received transfer ($100)
+                total_paid: 200.0, // Groceries
+                total_owed: 200.0, // His share ($100) + received transfer ($100)
                 net_balance: 0.0,
             },
         ];
 
-        let participant_map: HashMap<i64, String> = vec![
-            (1, "Carl".to_string()),
-            (2, "David".to_string()),
-        ].into_iter().collect();
+        let participant_map: HashMap<i64, String> =
+            vec![(1, "Carl".to_string()), (2, "David".to_string())]
+                .into_iter()
+                .collect();
 
         let pool_participants: std::collections::HashSet<i64> = std::collections::HashSet::new();
 
@@ -1252,23 +1333,23 @@ mod tests {
             ParticipantBalance {
                 participant_id: 1,
                 participant_name: "Carl".to_string(),
-                total_paid: 50.0,    // Transfer of $50
-                total_owed: 100.0,   // His share of groceries
+                total_paid: 50.0,  // Transfer of $50
+                total_owed: 100.0, // His share of groceries
                 net_balance: -50.0,
             },
             ParticipantBalance {
                 participant_id: 2,
                 participant_name: "David".to_string(),
-                total_paid: 200.0,   // Groceries
-                total_owed: 150.0,   // His share ($100) + received transfer ($50)
+                total_paid: 200.0, // Groceries
+                total_owed: 150.0, // His share ($100) + received transfer ($50)
                 net_balance: 50.0,
             },
         ];
 
-        let participant_map: HashMap<i64, String> = vec![
-            (1, "Carl".to_string()),
-            (2, "David".to_string()),
-        ].into_iter().collect();
+        let participant_map: HashMap<i64, String> =
+            vec![(1, "Carl".to_string()), (2, "David".to_string())]
+                .into_iter()
+                .collect();
 
         let pool_participants: std::collections::HashSet<i64> = std::collections::HashSet::new();
 
@@ -1277,7 +1358,7 @@ mod tests {
         // Carl still owes David $50
         assert_eq!(settlements.len(), 1);
         assert_eq!(settlements[0].from_participant_id, 1); // Carl
-        assert_eq!(settlements[0].to_participant_id, 2);   // David
+        assert_eq!(settlements[0].to_participant_id, 2); // David
         assert_eq!(settlements[0].amount, 50.0);
     }
 
@@ -1330,7 +1411,9 @@ mod tests {
             (2, "David".to_string()),
             (3, "Lise".to_string()),
             (4, "Pool".to_string()),
-        ].into_iter().collect();
+        ]
+        .into_iter()
+        .collect();
 
         // Pool is participant 4
         let pool_participants: std::collections::HashSet<i64> = [4].into_iter().collect();
@@ -1365,21 +1448,21 @@ mod tests {
                 participant_id: 1,
                 participant_name: "Carl".to_string(),
                 total_paid: 150.0,
-                total_owed: 50.0,  // Only Carl's share from his own payment
+                total_owed: 50.0, // Only Carl's share from his own payment
                 net_balance: 100.0,
             },
             ParticipantBalance {
                 participant_id: 2,
                 participant_name: "David".to_string(),
                 total_paid: 0.0,
-                total_owed: 50.0,  // Only David's share from Carl's payment
+                total_owed: 50.0, // Only David's share from Carl's payment
                 net_balance: -50.0,
             },
             ParticipantBalance {
                 participant_id: 3,
                 participant_name: "Lise".to_string(),
                 total_paid: 0.0,
-                total_owed: 50.0,  // Only Lise's share from Carl's payment
+                total_owed: 50.0, // Only Lise's share from Carl's payment
                 net_balance: -50.0,
             },
             ParticipantBalance {
@@ -1396,7 +1479,9 @@ mod tests {
             (2, "David".to_string()),
             (3, "Lise".to_string()),
             (4, "Pool".to_string()),
-        ].into_iter().collect();
+        ]
+        .into_iter()
+        .collect();
 
         let pool_participants: std::collections::HashSet<i64> = [4].into_iter().collect();
 
@@ -1456,7 +1541,9 @@ mod tests {
             (1, "Carl".to_string()),
             (2, "David".to_string()),
             (3, "Lise".to_string()),
-        ].into_iter().collect();
+        ]
+        .into_iter()
+        .collect();
 
         let pool_participants: std::collections::HashSet<i64> = std::collections::HashSet::new();
 
@@ -1484,7 +1571,7 @@ mod tests {
             ParticipantBalance {
                 participant_id: 1,
                 participant_name: "Carl".to_string(),
-                total_paid: 0.0,  // Pool transfers don't count
+                total_paid: 0.0, // Pool transfers don't count
                 total_owed: 0.0,
                 net_balance: 0.0,
             },
@@ -1516,7 +1603,9 @@ mod tests {
             (2, "David".to_string()),
             (3, "Lise".to_string()),
             (4, "Pool".to_string()),
-        ].into_iter().collect();
+        ]
+        .into_iter()
+        .collect();
 
         let pool_participants: std::collections::HashSet<i64> = [4].into_iter().collect();
 
@@ -1537,7 +1626,7 @@ mod tests {
             ParticipantBalance {
                 participant_id: 1,
                 participant_name: "Carl".to_string(),
-                total_paid: 100.0,  // Transfer
+                total_paid: 100.0, // Transfer
                 total_owed: 0.0,
                 net_balance: 100.0,
             },
@@ -1545,13 +1634,13 @@ mod tests {
                 participant_id: 2,
                 participant_name: "David".to_string(),
                 total_paid: 0.0,
-                total_owed: 100.0,  // Received transfer
+                total_owed: 100.0, // Received transfer
                 net_balance: -100.0,
             },
             ParticipantBalance {
                 participant_id: 3,
                 participant_name: "Lise".to_string(),
-                total_paid: 0.0,    // Not involved
+                total_paid: 0.0, // Not involved
                 total_owed: 0.0,
                 net_balance: 0.0,
             },
@@ -1561,7 +1650,9 @@ mod tests {
             (1, "Carl".to_string()),
             (2, "David".to_string()),
             (3, "Lise".to_string()),
-        ].into_iter().collect();
+        ]
+        .into_iter()
+        .collect();
 
         let pool_participants: std::collections::HashSet<i64> = std::collections::HashSet::new();
 
@@ -1571,7 +1662,7 @@ mod tests {
         // Lise is not involved at all
         assert_eq!(settlements.len(), 1);
         assert_eq!(settlements[0].from_participant_id, 2); // David
-        assert_eq!(settlements[0].to_participant_id, 1);   // Carl
+        assert_eq!(settlements[0].to_participant_id, 1); // Carl
 
         // Verify Lise is not in any settlement
         for s in &settlements {

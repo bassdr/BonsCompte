@@ -360,6 +360,21 @@ The workflow (`.github/workflows/test.yml`) includes:
 - Type checking (`npm run check`)
 - Linting (`npm run lint`)
 
+### Branch Protection (Required Status Checks)
+
+To prevent merging untested code, configure GitHub branch protection rules:
+
+1. Go to repository **Settings** → **Branches**
+2. Add protection rule for `main` (and optionally `develop`)
+3. Enable "Require status checks to pass before merging"
+4. Select required checks:
+   - `Backend Tests`
+   - `Frontend Tests`
+
+See [`docs/GITHUB_BRANCH_PROTECTION.md`](docs/GITHUB_BRANCH_PROTECTION.md) for detailed setup instructions.
+
+Once configured, pull requests **cannot be merged** until all tests pass.
+
 ### Before Committing Changes
 
 **Automated checks** (via pre-commit hook):

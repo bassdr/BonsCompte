@@ -1,5 +1,7 @@
 # BonsCompte
 
+[![Tests](https://github.com/bassdr/BonsCompte/actions/workflows/test.yml/badge.svg)](https://github.com/bassdr/BonsCompte/actions/workflows/test.yml)
+
 BonsCompte is a lightweight financial coordination tool designed for shared living situations such as housemates, cooperatives, or small collectives.
 It helps groups track recurring shared bills, future expenses, and fairness over time through a simple weighting system.
 

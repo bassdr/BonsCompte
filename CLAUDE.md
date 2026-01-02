@@ -303,6 +303,13 @@ Located in `frontend/src/tests/`, using Vitest with jsdom environment.
 - Username exists error handling
 - Password validation errors
 
+**Production NGINX proxy tests** (`frontend/src/tests/api-config.test.ts`):
+- API base URL selection logic (HTTPS → `/api`, HTTP → `localhost:8000`)
+- NGINX reverse proxy path mapping validation
+- Production deployment checklist
+- API endpoint path validation
+- Backend CORS requirements documentation
+
 Run tests:
 ```bash
 cd frontend

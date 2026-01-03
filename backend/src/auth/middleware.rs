@@ -69,7 +69,7 @@ where
         }
 
         // Check user state
-        let user_state = UserState::from_str(&user_state_str).unwrap_or(UserState::Active);
+        let user_state = user_state_str.parse().unwrap_or_default();
 
         match user_state {
             UserState::Active => {
@@ -162,8 +162,8 @@ where
 
         match member {
             Some((role_str, participant_id)) => {
-                let role = Role::from_str(&role_str)
-                    .ok_or(AppError::Internal("Invalid role in database".to_string()))?;
+                let role = role_str.parse::<Role>()
+                    .map_err(|_| AppError::Internal("Invalid role in database".to_string()))?;
 
                 Ok(ProjectMember {
                     user_id: auth_user.user_id,

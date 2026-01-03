@@ -37,7 +37,8 @@
       "Bash(cargo fmt:*)",
       "Bash(cd /home/david/src/BonsCompte/backend && cargo clippy:*)",
       "Bash(npx prettier:*)",
-      "Bash(git branch:*)"
+      "Bash(git branch:*)",
+      "Bash(cargo clippy:*)"
     ],
     "deny": [
       "Read(*.csv)",

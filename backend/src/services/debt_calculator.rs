@@ -634,7 +634,7 @@ fn generate_weekly_with_weekdays(
     let week_start = start_date - chrono::Duration::days(start_weekday as i64);
 
     // Total weeks in the pattern cycle
-    let cycle_weeks = if interval <= 4 { interval } else { interval };
+    let cycle_weeks = interval;
 
     // Iterate through weeks from start
     let mut cycle_week = 0u32; // Which week in the cycle (0-indexed)
@@ -678,7 +678,7 @@ fn generate_weekly_with_weekdays(
             // Move forward by cycle_weeks weeks (already processed them)
         }
 
-        current_week_start = current_week_start + chrono::Duration::weeks(1);
+        current_week_start += chrono::Duration::weeks(1);
     }
 
     // Sort by date
@@ -797,7 +797,7 @@ fn generate_yearly_with_months(
 
         // Generate occurrences for each selected month
         for &month in &months {
-            if month < 1 || month > 12 {
+            if !(1..=12).contains(&month) {
                 continue;
             }
 

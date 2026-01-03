@@ -196,8 +196,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("No users found");
             } else {
                 println!(
-                    "{:<5} {:<20} {:<20} {:<18} {:<8} {}",
-                    "ID", "Username", "Display Name", "State", "TokVer", "Created"
+                    "{:<5} {:<20} {:<20} {:<18} {:<8} Created",
+                    "ID", "Username", "Display Name", "State", "TokVer"
                 );
                 println!("{}", "-".repeat(90));
                 for (id, username, display_name, state, token_version, created_at) in users {

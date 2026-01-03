@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Role {
@@ -8,16 +9,20 @@ pub enum Role {
     Admin = 2,
 }
 
-impl Role {
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for Role {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "reader" => Some(Role::Reader),
-            "editor" => Some(Role::Editor),
-            "admin" => Some(Role::Admin),
-            _ => None,
+            "reader" => Ok(Role::Reader),
+            "editor" => Ok(Role::Editor),
+            "admin" => Ok(Role::Admin),
+            _ => Err(()),
         }
     }
+}
 
+impl Role {
     pub fn as_str(&self) -> &'static str {
         match self {
             Role::Reader => "reader",

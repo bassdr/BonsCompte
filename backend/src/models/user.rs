@@ -1,10 +1,12 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use std::str::FromStr;
 
 /// User account state for security workflow
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UserState {
+    #[default]
     Active,
     PendingApproval,
     Revoked,
@@ -18,20 +20,18 @@ impl UserState {
             UserState::Revoked => "revoked",
         }
     }
-
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s {
-            "active" => Some(UserState::Active),
-            "pending_approval" => Some(UserState::PendingApproval),
-            "revoked" => Some(UserState::Revoked),
-            _ => None,
-        }
-    }
 }
 
-impl Default for UserState {
-    fn default() -> Self {
-        UserState::Active
+impl FromStr for UserState {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "active" => Ok(UserState::Active),
+            "pending_approval" => Ok(UserState::PendingApproval),
+            "revoked" => Ok(UserState::Revoked),
+            _ => Err(()),
+        }
     }
 }
 
@@ -63,7 +63,7 @@ pub struct User {
 impl User {
     /// Get the parsed user state
     pub fn state(&self) -> UserState {
-        UserState::from_str(&self.user_state).unwrap_or(UserState::Active)
+        self.user_state.parse().unwrap_or_default()
     }
 
     /// Check if user can access protected resources

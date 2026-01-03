@@ -111,8 +111,8 @@ async fn update_member_role(
     }
 
     // Validate role
-    let new_role = Role::from_str(&input.role)
-        .ok_or_else(|| AppError::BadRequest("Invalid role".to_string()))?;
+    let new_role = input.role.parse::<Role>()
+        .map_err(|_| AppError::BadRequest("Invalid role".to_string()))?;
 
     // Capture before state
     let before: Option<ProjectMemberResponse> = sqlx::query_as(

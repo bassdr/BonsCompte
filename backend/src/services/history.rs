@@ -61,6 +61,7 @@ impl HistoryService {
     }
 
     /// Log a single event to the history log
+    #[allow(clippy::too_many_arguments)]
     pub async fn log_event(
         pool: &SqlitePool,
         correlation_id: &str,
@@ -151,6 +152,7 @@ impl HistoryService {
     }
 
     /// Log an UPDATE action
+    #[allow(clippy::too_many_arguments)]
     pub async fn log_update<T: Serialize>(
         pool: &SqlitePool,
         correlation_id: &str,

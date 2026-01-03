@@ -33,6 +33,7 @@
 	let undoReason = $state('');
 
 	// Expanded entries for viewing payload details
+	// svelte-ignore non_reactive_update (SvelteSet is already reactive)
 	let expandedEntries = new SvelteSet<number>();
 
 	let projectId = $derived(parseInt($page.params.id ?? ''));

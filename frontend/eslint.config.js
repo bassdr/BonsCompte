@@ -31,7 +31,9 @@ export default defineConfig(
 			'@typescript-eslint/no-unused-vars': [
 				'error',
 				{ argsIgnorePattern: '^_', varsIgnorePattern: '^_' }
-			]
+			],
+			// Allow svelte-ignore comments that are needed for svelte-check but not for ESLint
+			'svelte/no-unused-svelte-ignore': 'off'
 		}
 	},
 	{

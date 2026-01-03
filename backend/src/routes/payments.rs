@@ -504,13 +504,15 @@ async fn update_payment(
     let correlation_id = HistoryService::new_correlation_id();
     let _ = HistoryService::log_update(
         &pool,
-        &correlation_id,
-        member.user_id,
-        member.project_id,
-        EntityType::Payment,
-        path.payment_id,
-        &before_state,
-        &after_state,
+        crate::services::history::LogUpdateParams {
+            correlation_id: &correlation_id,
+            actor_user_id: member.user_id,
+            project_id: member.project_id,
+            entity_type: EntityType::Payment,
+            entity_id: path.payment_id,
+            before: &before_state,
+            after: &after_state,
+        },
     )
     .await;
 

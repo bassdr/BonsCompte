@@ -9,7 +9,7 @@ use crate::{
     auth::ProjectMember,
     error::{AppError, AppResult},
     models::{ChainVerification, HistoryEntryResponse, HistoryQuery, UndoRequest},
-    services::HistoryService,
+    services::{history::LogEventParams, HistoryService},
     AppState,
 };
 
@@ -183,16 +183,18 @@ async fn undo_payment(
             // Log the undo
             HistoryService::log_event(
                 pool,
-                correlation_id,
-                Some(member.user_id),
-                Some(member.project_id),
-                "payment",
-                Some(entity_id),
-                "UNDO",
-                entry.payload_after.as_deref(),
-                None,
-                reason,
-                Some(entry.id),
+                LogEventParams {
+                    correlation_id,
+                    actor_user_id: Some(member.user_id),
+                    project_id: Some(member.project_id),
+                    entity_type: "payment",
+                    entity_id: Some(entity_id),
+                    action: "UNDO",
+                    payload_before: entry.payload_after.as_deref(),
+                    payload_after: None,
+                    reason,
+                    undoes_history_id: Some(entry.id),
+                },
             )
             .await
         }
@@ -254,16 +256,18 @@ async fn undo_payment(
             // Log the undo
             HistoryService::log_event(
                 pool,
-                correlation_id,
-                Some(member.user_id),
-                Some(member.project_id),
-                "payment",
-                Some(entity_id),
-                "UNDO",
-                entry.payload_after.as_deref(),
-                entry.payload_before.as_deref(),
-                reason,
-                Some(entry.id),
+                LogEventParams {
+                    correlation_id,
+                    actor_user_id: Some(member.user_id),
+                    project_id: Some(member.project_id),
+                    entity_type: "payment",
+                    entity_id: Some(entity_id),
+                    action: "UNDO",
+                    payload_before: entry.payload_after.as_deref(),
+                    payload_after: entry.payload_before.as_deref(),
+                    reason,
+                    undoes_history_id: Some(entry.id),
+                },
             )
             .await
         }
@@ -377,16 +381,18 @@ async fn undo_payment(
             // Log the undo
             HistoryService::log_event(
                 pool,
-                correlation_id,
-                Some(member.user_id),
-                Some(member.project_id),
-                "payment",
-                Some(entity_id),
-                "UNDO",
-                None,
-                entry.payload_before.as_deref(),
-                reason,
-                Some(entry.id),
+                LogEventParams {
+                    correlation_id,
+                    actor_user_id: Some(member.user_id),
+                    project_id: Some(member.project_id),
+                    entity_type: "payment",
+                    entity_id: Some(entity_id),
+                    action: "UNDO",
+                    payload_before: None,
+                    payload_after: entry.payload_before.as_deref(),
+                    reason,
+                    undoes_history_id: Some(entry.id),
+                },
             )
             .await
         }
@@ -417,16 +423,18 @@ async fn undo_participant(
 
             HistoryService::log_event(
                 pool,
-                correlation_id,
-                Some(member.user_id),
-                Some(member.project_id),
-                "participant",
-                Some(entity_id),
-                "UNDO",
-                entry.payload_after.as_deref(),
-                None,
-                reason,
-                Some(entry.id),
+                LogEventParams {
+                    correlation_id,
+                    actor_user_id: Some(member.user_id),
+                    project_id: Some(member.project_id),
+                    entity_type: "participant",
+                    entity_id: Some(entity_id),
+                    action: "UNDO",
+                    payload_before: entry.payload_after.as_deref(),
+                    payload_after: None,
+                    reason,
+                    undoes_history_id: Some(entry.id),
+                },
             )
             .await
         }
@@ -466,16 +474,18 @@ async fn undo_participant(
 
             HistoryService::log_event(
                 pool,
-                correlation_id,
-                Some(member.user_id),
-                Some(member.project_id),
-                "participant",
-                Some(entity_id),
-                "UNDO",
-                entry.payload_after.as_deref(),
-                entry.payload_before.as_deref(),
-                reason,
-                Some(entry.id),
+                LogEventParams {
+                    correlation_id,
+                    actor_user_id: Some(member.user_id),
+                    project_id: Some(member.project_id),
+                    entity_type: "participant",
+                    entity_id: Some(entity_id),
+                    action: "UNDO",
+                    payload_before: entry.payload_after.as_deref(),
+                    payload_after: entry.payload_before.as_deref(),
+                    reason,
+                    undoes_history_id: Some(entry.id),
+                },
             )
             .await
         }
@@ -503,16 +513,18 @@ async fn undo_participant(
 
             HistoryService::log_event(
                 pool,
-                correlation_id,
-                Some(member.user_id),
-                Some(member.project_id),
-                "participant",
-                Some(entity_id),
-                "UNDO",
-                None,
-                entry.payload_before.as_deref(),
-                reason,
-                Some(entry.id),
+                LogEventParams {
+                    correlation_id,
+                    actor_user_id: Some(member.user_id),
+                    project_id: Some(member.project_id),
+                    entity_type: "participant",
+                    entity_id: Some(entity_id),
+                    action: "UNDO",
+                    payload_before: None,
+                    payload_after: entry.payload_before.as_deref(),
+                    reason,
+                    undoes_history_id: Some(entry.id),
+                },
             )
             .await
         }
@@ -570,16 +582,18 @@ async fn undo_project_member(
 
             HistoryService::log_event(
                 pool,
-                correlation_id,
-                Some(member.user_id),
-                Some(member.project_id),
-                "project_member",
-                Some(entity_id),
-                "UNDO",
-                entry.payload_after.as_deref(),
-                entry.payload_before.as_deref(),
-                reason,
-                Some(entry.id),
+                LogEventParams {
+                    correlation_id,
+                    actor_user_id: Some(member.user_id),
+                    project_id: Some(member.project_id),
+                    entity_type: "project_member",
+                    entity_id: Some(entity_id),
+                    action: "UNDO",
+                    payload_before: entry.payload_after.as_deref(),
+                    payload_after: entry.payload_before.as_deref(),
+                    reason,
+                    undoes_history_id: Some(entry.id),
+                },
             )
             .await
         }
@@ -616,16 +630,18 @@ async fn undo_project_member(
 
             HistoryService::log_event(
                 pool,
-                correlation_id,
-                Some(member.user_id),
-                Some(member.project_id),
-                "project_member",
-                Some(entity_id),
-                "UNDO",
-                None,
-                entry.payload_before.as_deref(),
-                reason,
-                Some(entry.id),
+                LogEventParams {
+                    correlation_id,
+                    actor_user_id: Some(member.user_id),
+                    project_id: Some(member.project_id),
+                    entity_type: "project_member",
+                    entity_id: Some(entity_id),
+                    action: "UNDO",
+                    payload_before: None,
+                    payload_after: entry.payload_before.as_deref(),
+                    reason,
+                    undoes_history_id: Some(entry.id),
+                },
             )
             .await
         }
@@ -683,16 +699,18 @@ async fn undo_project(
 
             HistoryService::log_event(
                 pool,
-                correlation_id,
-                Some(member.user_id),
-                Some(member.project_id),
-                "project",
-                Some(entity_id),
-                "UNDO",
-                entry.payload_after.as_deref(),
-                entry.payload_before.as_deref(),
-                reason,
-                Some(entry.id),
+                LogEventParams {
+                    correlation_id,
+                    actor_user_id: Some(member.user_id),
+                    project_id: Some(member.project_id),
+                    entity_type: "project",
+                    entity_id: Some(entity_id),
+                    action: "UNDO",
+                    payload_before: entry.payload_after.as_deref(),
+                    payload_after: entry.payload_before.as_deref(),
+                    reason,
+                    undoes_history_id: Some(entry.id),
+                },
             )
             .await
         }

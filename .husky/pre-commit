@@ -1,9 +1,35 @@
-#!/usr/bin/env sh
-. "$(dirname -- "$0")/_/husky.sh"
+#!/bin/bash
 
 echo "Running pre-commit checks..."
 
-# Run frontend linting (fail fast)
+# Run backend formatting check (fail fast)
+echo "Running backend formatting check..."
+cd backend && cargo fmt --check
+if [ $? -ne 0 ]; then
+  echo "Backend formatting failed! Run 'cargo fmt' to fix. Commit aborted."
+  exit 1
+fi
+cd ..
+
+# Run backend clippy
+echo "Running backend clippy..."
+cd backend && cargo clippy -- -D warnings
+if [ $? -ne 0 ]; then
+  echo "Backend clippy failed! Fix the warnings. Commit aborted."
+  exit 1
+fi
+cd ..
+
+# Run frontend type checking
+echo "Running frontend type check..."
+cd frontend && npm run check
+if [ $? -ne 0 ]; then
+  echo "Frontend type checking failed! Commit aborted."
+  exit 1
+fi
+cd ..
+
+# Run frontend linting
 echo "Running frontend lint..."
 cd frontend && npm run lint
 if [ $? -ne 0 ]; then

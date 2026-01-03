@@ -57,11 +57,15 @@
 	let showOccurrences = $state(false);
 
 	// Track which balance rows are expanded to show pairwise details
+	// svelte-ignore non_reactive_update (SvelteSet is already reactive)
 	let expandedBalanceRows = new SvelteSet<number>();
 
 	// Track which pool ownership entries are expanded
+	// svelte-ignore non_reactive_update (SvelteSet is already reactive)
 	let expandedPoolEntries = new SvelteSet<number>();
+	// svelte-ignore non_reactive_update (SvelteMap is already reactive)
 	let expandedPoolYears = new SvelteMap<number, SvelteSet<string>>();
+	// svelte-ignore non_reactive_update (SvelteMap is already reactive)
 	let expandedPoolMonths = new SvelteMap<number, SvelteMap<string, SvelteSet<string>>>();
 
 	// Focus mode: filter to show only one participant's perspective

@@ -27,7 +27,7 @@ pub fn validate_image_base64(base64_data: &str) -> AppResult<()> {
         )));
     }
 
-    if image_data.len() == 0 {
+    if image_data.is_empty() {
         return Err(AppError::BadRequest("Image data is empty".to_string()));
     }
 
@@ -99,17 +99,13 @@ fn is_valid_image_format(data: &[u8]) -> bool {
     }
 
     // Check GIF (starts with "GIF87a" or "GIF89a")
-    if data.len() >= 6 {
-        if &data[0..6] == GIF87_START || &data[0..6] == GIF89_START {
-            return true;
-        }
+    if data.len() >= 6 && (&data[0..6] == GIF87_START || &data[0..6] == GIF89_START) {
+        return true;
     }
 
     // Check WebP (starts with "RIFF" and contains "WEBP")
-    if data.len() >= 12 {
-        if &data[0..4] == WEBP_START && &data[8..12] == WEBP_CHUNK {
-            return true;
-        }
+    if data.len() >= 12 && &data[0..4] == WEBP_START && &data[8..12] == WEBP_CHUNK {
+        return true;
     }
 
     false

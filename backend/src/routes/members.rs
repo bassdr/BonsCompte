@@ -111,8 +111,10 @@ async fn update_member_role(
     }
 
     // Validate role
-    let new_role = Role::from_str(&input.role)
-        .ok_or_else(|| AppError::BadRequest("Invalid role".to_string()))?;
+    let new_role = input
+        .role
+        .parse::<Role>()
+        .map_err(|_| AppError::BadRequest("Invalid role".to_string()))?;
 
     // Capture before state
     let before: Option<ProjectMemberResponse> = sqlx::query_as(
@@ -152,13 +154,15 @@ async fn update_member_role(
     let correlation_id = HistoryService::new_correlation_id();
     let _ = HistoryService::log_update(
         &pool,
-        &correlation_id,
-        member.user_id,
-        member.project_id,
-        EntityType::ProjectMember,
-        path.user_id,
-        &before,
-        &updated,
+        crate::services::history::LogUpdateParams {
+            correlation_id: &correlation_id,
+            actor_user_id: member.user_id,
+            project_id: member.project_id,
+            entity_type: EntityType::ProjectMember,
+            entity_id: path.user_id,
+            before: &before,
+            after: &updated,
+        },
     )
     .await;
 

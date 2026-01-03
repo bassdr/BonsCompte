@@ -213,13 +213,15 @@ async fn update_participant(
     let correlation_id = HistoryService::new_correlation_id();
     let _ = HistoryService::log_update(
         &pool,
-        &correlation_id,
-        member.user_id,
-        member.project_id,
-        EntityType::Participant,
-        path.participant_id,
-        &existing,
-        &participant,
+        crate::services::history::LogUpdateParams {
+            correlation_id: &correlation_id,
+            actor_user_id: member.user_id,
+            project_id: member.project_id,
+            entity_type: EntityType::Participant,
+            entity_id: path.participant_id,
+            before: &existing,
+            after: &participant,
+        },
     )
     .await;
 

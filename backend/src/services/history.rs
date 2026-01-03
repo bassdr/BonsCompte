@@ -7,6 +7,31 @@ use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
+/// Parameters for logging a history event
+pub struct LogEventParams<'a> {
+    pub correlation_id: &'a str,
+    pub actor_user_id: Option<i64>,
+    pub project_id: Option<i64>,
+    pub entity_type: &'a str,
+    pub entity_id: Option<i64>,
+    pub action: &'a str,
+    pub payload_before: Option<&'a str>,
+    pub payload_after: Option<&'a str>,
+    pub reason: Option<&'a str>,
+    pub undoes_history_id: Option<i64>,
+}
+
+/// Parameters for logging an update event
+pub struct LogUpdateParams<'a, T: Serialize> {
+    pub correlation_id: &'a str,
+    pub actor_user_id: i64,
+    pub project_id: i64,
+    pub entity_type: EntityType,
+    pub entity_id: i64,
+    pub before: &'a T,
+    pub after: &'a T,
+}
+
 /// Service for managing the immutable history log
 pub struct HistoryService;
 
@@ -61,20 +86,7 @@ impl HistoryService {
     }
 
     /// Log a single event to the history log
-    #[allow(clippy::too_many_arguments)]
-    pub async fn log_event(
-        pool: &SqlitePool,
-        correlation_id: &str,
-        actor_user_id: Option<i64>,
-        project_id: Option<i64>,
-        entity_type: &str,
-        entity_id: Option<i64>,
-        action: &str,
-        payload_before: Option<&str>,
-        payload_after: Option<&str>,
-        reason: Option<&str>,
-        undoes_history_id: Option<i64>,
-    ) -> AppResult<i64> {
+    pub async fn log_event(pool: &SqlitePool, params: LogEventParams<'_>) -> AppResult<i64> {
         // Get previous hash for chaining
         let previous_hash = Self::get_previous_hash(pool).await?;
 
@@ -87,10 +99,10 @@ impl HistoryService {
         let entry_hash = Self::compute_entry_hash(
             previous_hash.as_deref(),
             &created_at,
-            actor_user_id,
-            action,
-            entity_type,
-            payload_after,
+            params.actor_user_id,
+            params.action,
+            params.entity_type,
+            params.payload_after,
         );
 
         // Insert the entry
@@ -104,16 +116,16 @@ impl HistoryService {
             "#,
         )
         .bind(&created_at)
-        .bind(correlation_id)
-        .bind(actor_user_id)
-        .bind(project_id)
-        .bind(entity_type)
-        .bind(entity_id)
-        .bind(action)
-        .bind(payload_before)
-        .bind(payload_after)
-        .bind(reason)
-        .bind(undoes_history_id)
+        .bind(params.correlation_id)
+        .bind(params.actor_user_id)
+        .bind(params.project_id)
+        .bind(params.entity_type)
+        .bind(params.entity_id)
+        .bind(params.action)
+        .bind(params.payload_before)
+        .bind(params.payload_after)
+        .bind(params.reason)
+        .bind(params.undoes_history_id)
         .bind(previous_hash)
         .bind(&entry_hash)
         .execute(pool)
@@ -137,49 +149,46 @@ impl HistoryService {
 
         Self::log_event(
             pool,
-            correlation_id,
-            Some(actor_user_id),
-            Some(project_id),
-            entity_type.as_str(),
-            Some(entity_id),
-            ActionType::Create.as_str(),
-            None,
-            Some(&payload_after),
-            None,
-            None,
+            LogEventParams {
+                correlation_id,
+                actor_user_id: Some(actor_user_id),
+                project_id: Some(project_id),
+                entity_type: entity_type.as_str(),
+                entity_id: Some(entity_id),
+                action: ActionType::Create.as_str(),
+                payload_before: None,
+                payload_after: Some(&payload_after),
+                reason: None,
+                undoes_history_id: None,
+            },
         )
         .await
     }
 
     /// Log an UPDATE action
-    #[allow(clippy::too_many_arguments)]
     pub async fn log_update<T: Serialize>(
         pool: &SqlitePool,
-        correlation_id: &str,
-        actor_user_id: i64,
-        project_id: i64,
-        entity_type: EntityType,
-        entity_id: i64,
-        before: &T,
-        after: &T,
+        params: LogUpdateParams<'_, T>,
     ) -> AppResult<i64> {
-        let payload_before = serde_json::to_string(before)
+        let payload_before = serde_json::to_string(params.before)
             .map_err(|e| AppError::Internal(format!("Failed to serialize before state: {}", e)))?;
-        let payload_after = serde_json::to_string(after)
+        let payload_after = serde_json::to_string(params.after)
             .map_err(|e| AppError::Internal(format!("Failed to serialize after state: {}", e)))?;
 
         Self::log_event(
             pool,
-            correlation_id,
-            Some(actor_user_id),
-            Some(project_id),
-            entity_type.as_str(),
-            Some(entity_id),
-            ActionType::Update.as_str(),
-            Some(&payload_before),
-            Some(&payload_after),
-            None,
-            None,
+            LogEventParams {
+                correlation_id: params.correlation_id,
+                actor_user_id: Some(params.actor_user_id),
+                project_id: Some(params.project_id),
+                entity_type: params.entity_type.as_str(),
+                entity_id: Some(params.entity_id),
+                action: ActionType::Update.as_str(),
+                payload_before: Some(&payload_before),
+                payload_after: Some(&payload_after),
+                reason: None,
+                undoes_history_id: None,
+            },
         )
         .await
     }
@@ -199,16 +208,18 @@ impl HistoryService {
 
         Self::log_event(
             pool,
-            correlation_id,
-            Some(actor_user_id),
-            Some(project_id),
-            entity_type.as_str(),
-            Some(entity_id),
-            ActionType::Delete.as_str(),
-            Some(&payload_before),
-            None,
-            None,
-            None,
+            LogEventParams {
+                correlation_id,
+                actor_user_id: Some(actor_user_id),
+                project_id: Some(project_id),
+                entity_type: entity_type.as_str(),
+                entity_id: Some(entity_id),
+                action: ActionType::Delete.as_str(),
+                payload_before: Some(&payload_before),
+                payload_after: None,
+                reason: None,
+                undoes_history_id: None,
+            },
         )
         .await
     }
@@ -467,6 +478,28 @@ mod tests {
     use super::*;
     use sqlx::sqlite::SqlitePoolOptions;
 
+    /// Helper to create LogEventParams for tests
+    fn test_params<'a>(
+        correlation_id: &'a str,
+        action: &'a str,
+        entity_id: Option<i64>,
+        payload_before: Option<&'a str>,
+        payload_after: Option<&'a str>,
+    ) -> LogEventParams<'a> {
+        LogEventParams {
+            correlation_id,
+            actor_user_id: Some(1),
+            project_id: Some(1),
+            entity_type: "payment",
+            entity_id,
+            action,
+            payload_before,
+            payload_after,
+            reason: None,
+            undoes_history_id: None,
+        }
+    }
+
     async fn setup_test_db() -> SqlitePool {
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
@@ -536,16 +569,7 @@ mod tests {
         // Insert a valid entry
         HistoryService::log_event(
             &pool,
-            "test-correlation",
-            Some(1),
-            Some(1),
-            "payment",
-            Some(1),
-            "CREATE",
-            None,
-            Some(r#"{"amount":100}"#),
-            None,
-            None,
+            test_params("test-correlation", "CREATE", Some(1), None, Some(r#"{"amount":100}"#)),
         )
         .await
         .expect("Failed to insert entry");
@@ -571,16 +595,7 @@ mod tests {
         // Insert a valid entry
         HistoryService::log_event(
             &pool,
-            "test-correlation",
-            Some(1),
-            Some(1),
-            "payment",
-            Some(1),
-            "CREATE",
-            None,
-            Some(r#"{"amount":100}"#),
-            None,
-            None,
+            test_params("test-correlation", "CREATE", Some(1), None, Some(r#"{"amount":100}"#)),
         )
         .await
         .expect("Failed to insert entry");
@@ -606,48 +621,21 @@ mod tests {
         // Insert multiple entries with proper hash chaining
         HistoryService::log_event(
             &pool,
-            "corr-1",
-            Some(1),
-            Some(1),
-            "payment",
-            Some(1),
-            "CREATE",
-            None,
-            Some(r#"{"amount":100}"#),
-            None,
-            None,
+            test_params("corr-1", "CREATE", Some(1), None, Some(r#"{"amount":100}"#)),
         )
         .await
         .expect("Failed to insert entry 1");
 
         HistoryService::log_event(
             &pool,
-            "corr-2",
-            Some(1),
-            Some(1),
-            "payment",
-            Some(1),
-            "UPDATE",
-            Some(r#"{"amount":100}"#),
-            Some(r#"{"amount":200}"#),
-            None,
-            None,
+            test_params("corr-2", "UPDATE", Some(1), Some(r#"{"amount":100}"#), Some(r#"{"amount":200}"#)),
         )
         .await
         .expect("Failed to insert entry 2");
 
         HistoryService::log_event(
             &pool,
-            "corr-3",
-            Some(1),
-            Some(1),
-            "payment",
-            Some(1),
-            "DELETE",
-            Some(r#"{"amount":200}"#),
-            None,
-            None,
-            None,
+            test_params("corr-3", "DELETE", Some(1), Some(r#"{"amount":200}"#), None),
         )
         .await
         .expect("Failed to insert entry 3");
@@ -672,32 +660,14 @@ mod tests {
         // Insert entries normally
         HistoryService::log_event(
             &pool,
-            "corr-1",
-            Some(1),
-            Some(1),
-            "payment",
-            Some(1),
-            "CREATE",
-            None,
-            Some(r#"{"amount":100}"#),
-            None,
-            None,
+            test_params("corr-1", "CREATE", Some(1), None, Some(r#"{"amount":100}"#)),
         )
         .await
         .expect("Failed to insert entry 1");
 
         HistoryService::log_event(
             &pool,
-            "corr-2",
-            Some(1),
-            Some(1),
-            "payment",
-            Some(1),
-            "UPDATE",
-            None,
-            Some(r#"{"amount":200}"#),
-            None,
-            None,
+            test_params("corr-2", "UPDATE", Some(1), None, Some(r#"{"amount":200}"#)),
         )
         .await
         .expect("Failed to insert entry 2");
@@ -742,16 +712,7 @@ mod tests {
         // Insert entries normally
         HistoryService::log_event(
             &pool,
-            "corr-1",
-            Some(1),
-            Some(1),
-            "payment",
-            Some(1),
-            "CREATE",
-            None,
-            Some(r#"{"amount":100}"#),
-            None,
-            None,
+            test_params("corr-1", "CREATE", Some(1), None, Some(r#"{"amount":100}"#)),
         )
         .await
         .expect("Failed to insert entry");
@@ -787,32 +748,14 @@ mod tests {
         // Insert entries normally
         HistoryService::log_event(
             &pool,
-            "corr-1",
-            Some(1),
-            Some(1),
-            "payment",
-            Some(1),
-            "CREATE",
-            None,
-            Some(r#"{"amount":100}"#),
-            None,
-            None,
+            test_params("corr-1", "CREATE", Some(1), None, Some(r#"{"amount":100}"#)),
         )
         .await
         .expect("Failed to insert entry 1");
 
         HistoryService::log_event(
             &pool,
-            "corr-2",
-            Some(1),
-            Some(1),
-            "payment",
-            Some(1),
-            "UPDATE",
-            None,
-            Some(r#"{"amount":200}"#),
-            None,
-            None,
+            test_params("corr-2", "UPDATE", Some(1), None, Some(r#"{"amount":200}"#)),
         )
         .await
         .expect("Failed to insert entry 2");
@@ -850,18 +793,11 @@ mod tests {
 
         // Insert 3 entries
         for i in 1..=3 {
+            let corr_id = format!("corr-{}", i);
+            let payload = format!(r#"{{"id":{}}}"#, i);
             HistoryService::log_event(
                 &pool,
-                &format!("corr-{}", i),
-                Some(1),
-                Some(1),
-                "payment",
-                Some(i),
-                "CREATE",
-                None,
-                Some(&format!(r#"{{"id":{}}}"#, i)),
-                None,
-                None,
+                test_params(&corr_id, "CREATE", Some(i), None, Some(&payload)),
             )
             .await
             .expect("Failed to insert entry");
@@ -920,16 +856,7 @@ mod tests {
 
         HistoryService::log_event(
             &pool,
-            "corr-1",
-            Some(1),
-            Some(1),
-            "payment",
-            Some(1),
-            "CREATE",
-            None,
-            Some(r#"{"amount":100}"#),
-            None,
-            None,
+            test_params("corr-1", "CREATE", Some(1), None, Some(r#"{"amount":100}"#)),
         )
         .await
         .expect("Failed to insert entry");

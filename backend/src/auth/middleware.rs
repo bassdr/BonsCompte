@@ -162,7 +162,8 @@ where
 
         match member {
             Some((role_str, participant_id)) => {
-                let role = role_str.parse::<Role>()
+                let role = role_str
+                    .parse::<Role>()
                     .map_err(|_| AppError::Internal("Invalid role in database".to_string()))?;
 
                 Ok(ProjectMember {

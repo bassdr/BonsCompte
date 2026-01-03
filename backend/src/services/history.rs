@@ -569,7 +569,13 @@ mod tests {
         // Insert a valid entry
         HistoryService::log_event(
             &pool,
-            test_params("test-correlation", "CREATE", Some(1), None, Some(r#"{"amount":100}"#)),
+            test_params(
+                "test-correlation",
+                "CREATE",
+                Some(1),
+                None,
+                Some(r#"{"amount":100}"#),
+            ),
         )
         .await
         .expect("Failed to insert entry");
@@ -595,7 +601,13 @@ mod tests {
         // Insert a valid entry
         HistoryService::log_event(
             &pool,
-            test_params("test-correlation", "CREATE", Some(1), None, Some(r#"{"amount":100}"#)),
+            test_params(
+                "test-correlation",
+                "CREATE",
+                Some(1),
+                None,
+                Some(r#"{"amount":100}"#),
+            ),
         )
         .await
         .expect("Failed to insert entry");
@@ -628,7 +640,13 @@ mod tests {
 
         HistoryService::log_event(
             &pool,
-            test_params("corr-2", "UPDATE", Some(1), Some(r#"{"amount":100}"#), Some(r#"{"amount":200}"#)),
+            test_params(
+                "corr-2",
+                "UPDATE",
+                Some(1),
+                Some(r#"{"amount":100}"#),
+                Some(r#"{"amount":200}"#),
+            ),
         )
         .await
         .expect("Failed to insert entry 2");

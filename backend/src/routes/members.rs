@@ -111,7 +111,9 @@ async fn update_member_role(
     }
 
     // Validate role
-    let new_role = input.role.parse::<Role>()
+    let new_role = input
+        .role
+        .parse::<Role>()
         .map_err(|_| AppError::BadRequest("Invalid role".to_string()))?;
 
     // Capture before state

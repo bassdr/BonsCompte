@@ -99,17 +99,12 @@ fn is_valid_image_format(data: &[u8]) -> bool {
     }
 
     // Check GIF (starts with "GIF87a" or "GIF89a")
-    if data.len() >= 6
-        && (&data[0..6] == GIF87_START || &data[0..6] == GIF89_START)
-    {
+    if data.len() >= 6 && (&data[0..6] == GIF87_START || &data[0..6] == GIF89_START) {
         return true;
     }
 
     // Check WebP (starts with "RIFF" and contains "WEBP")
-    if data.len() >= 12
-        && &data[0..4] == WEBP_START
-        && &data[8..12] == WEBP_CHUNK
-    {
+    if data.len() >= 12 && &data[0..4] == WEBP_START && &data[8..12] == WEBP_CHUNK {
         return true;
     }
 

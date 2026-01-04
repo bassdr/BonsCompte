@@ -694,7 +694,7 @@
 		const interval = payment.recurrence_interval || 1;
 		const timesPer = payment.recurrence_times_per;
 
-		// Get translated recurrence type
+		// Get translated recurrence type (adjective form for single interval)
 		const typeKey = `payments.recurrence.${type}`;
 		const translatedType = $_(typeKey);
 
@@ -703,7 +703,16 @@
 		} else if (interval === 1) {
 			return translatedType;
 		} else {
-			return `${$_('payments.recurrence.every')} ${interval} ${translatedType}`;
+			// Use proper noun form with correct gender agreement
+			const everyKey =
+				type === 'daily'
+					? 'payments.recurrence.everyNDays'
+					: type === 'weekly'
+						? 'payments.recurrence.everyNWeeks'
+						: type === 'monthly'
+							? 'payments.recurrence.everyNMonths'
+							: 'payments.recurrence.everyNYears';
+			return $_(everyKey, { values: { n: interval } });
 		}
 	}
 

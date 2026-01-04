@@ -93,21 +93,21 @@ pub struct DebtSummary {
 
 #[derive(Debug, Serialize)]
 pub struct MonthlyBalance {
-    pub month: String,              // "2026-01" format
+    pub month: String, // "2026-01" format
     pub participant_id: i64,
     pub participant_name: String,
-    pub net_balance: f64,           // Cumulative balance at end of month
+    pub net_balance: f64, // Cumulative balance at end of month
 }
 
 #[derive(Debug, Serialize)]
 pub struct RecurringContributionRecommendation {
     pub participant_id: i64,
     pub participant_name: String,
-    pub recommended_amount: f64,        // Amount per payment at chosen frequency
-    pub frequency_type: String,         // 'weekly', 'monthly', 'yearly'
-    pub frequency_interval: i32,        // Every X periods (e.g., 2 for bi-weekly)
-    pub current_trend: f64,             // Monthly rate of change
-    pub calculation_method: String,     // "simple_average" or "linear_regression"
+    pub recommended_amount: f64, // Amount per payment at chosen frequency
+    pub frequency_type: String,  // 'weekly', 'monthly', 'yearly'
+    pub frequency_interval: i32, // Every X periods (e.g., 2 for bi-weekly)
+    pub current_trend: f64,      // Monthly rate of change
+    pub calculation_method: String, // "simple_average" or "linear_regression"
 }
 
 #[derive(Debug, Serialize)]
@@ -146,12 +146,12 @@ pub struct RecurringPaymentToConsolidate {
 pub struct CashflowProjection {
     pub start_date: String,
     pub end_date: String,
-    pub months: Vec<String>,                    // ["2026-01", "2026-02", ...]
+    pub months: Vec<String>, // ["2026-01", "2026-02", ...]
     pub monthly_balances: Vec<MonthlyBalance>,
     pub recommendations: Vec<RecurringContributionRecommendation>,
     pub pool_evolutions: Vec<PoolEvolution>,
     pub consolidate_mode: bool,
-    pub payments_to_consolidate: Vec<RecurringPaymentToConsolidate>,  // Empty if consolidate_mode=false
+    pub payments_to_consolidate: Vec<RecurringPaymentToConsolidate>, // Empty if consolidate_mode=false
 }
 
 /// Calculate debts as of today
@@ -1117,29 +1117,28 @@ pub async fn calculate_cashflow_projection(
     let end_date = today + Months::new(horizon_months);
 
     // Get all participants
-    let participants: Vec<(i64, String, String)> = sqlx::query_as(
-        "SELECT id, name, account_type FROM participants WHERE project_id = ?"
-    )
-    .bind(project_id)
-    .fetch_all(pool)
-    .await?;
+    let participants: Vec<(i64, String, String)> =
+        sqlx::query_as("SELECT id, name, account_type FROM participants WHERE project_id = ?")
+            .bind(project_id)
+            .fetch_all(pool)
+            .await?;
 
-    let participant_map: HashMap<i64, String> = participants.iter()
+    let participant_map: HashMap<i64, String> = participants
+        .iter()
         .map(|(id, name, _)| (*id, name.clone()))
         .collect();
 
-    let pool_participants: std::collections::HashSet<i64> = participants.iter()
+    let pool_participants: std::collections::HashSet<i64> = participants
+        .iter()
         .filter(|(_, _, account_type)| account_type == "pool")
         .map(|(id, _, _)| *id)
         .collect();
 
     // Get all payments
-    let payments: Vec<Payment> = sqlx::query_as(
-        "SELECT * FROM payments WHERE project_id = ?"
-    )
-    .bind(project_id)
-    .fetch_all(pool)
-    .await?;
+    let payments: Vec<Payment> = sqlx::query_as("SELECT * FROM payments WHERE project_id = ?")
+        .bind(project_id)
+        .fetch_all(pool)
+        .await?;
 
     // Identify recurring payments to pool accounts (for consolidation)
     let mut payments_to_consolidate: Vec<RecurringPaymentToConsolidate> = Vec::new();
@@ -1175,7 +1174,7 @@ pub async fn calculate_cashflow_projection(
         "SELECT c.payment_id, c.participant_id, c.amount
          FROM contributions c
          JOIN payments p ON c.payment_id = p.id
-         WHERE p.project_id = ?"
+         WHERE p.project_id = ?",
     )
     .bind(project_id)
     .fetch_all(pool)
@@ -1184,7 +1183,10 @@ pub async fn calculate_cashflow_projection(
     // Build contribution map
     let mut contribution_map: HashMap<i64, Vec<(i64, f64)>> = HashMap::new();
     for (payment_id, participant_id, amount) in contributions {
-        contribution_map.entry(payment_id).or_insert_with(Vec::new).push((participant_id, amount));
+        contribution_map
+            .entry(payment_id)
+            .or_default()
+            .push((participant_id, amount));
     }
 
     // Generate all payment occurrences up to end_date
@@ -1236,8 +1238,14 @@ pub async fn calculate_cashflow_projection(
                 }
 
                 // Check if this is a pool transfer (should be excluded from settlements)
-                let payer_is_pool = occurrence.payer_id.map(|id| pool_participants.contains(&id)).unwrap_or(false);
-                let receiver_is_pool = occurrence.receiver_account_id.map(|id| pool_participants.contains(&id)).unwrap_or(false);
+                let payer_is_pool = occurrence
+                    .payer_id
+                    .map(|id| pool_participants.contains(&id))
+                    .unwrap_or(false);
+                let receiver_is_pool = occurrence
+                    .receiver_account_id
+                    .map(|id| pool_participants.contains(&id))
+                    .unwrap_or(false);
 
                 if payer_is_pool || receiver_is_pool {
                     // Pool transfer - skip for settlement calculations
@@ -1290,7 +1298,8 @@ pub async fn calculate_cashflow_projection(
         }
 
         // Get this participant's monthly balances
-        let participant_balances: Vec<f64> = monthly_balances.iter()
+        let participant_balances: Vec<f64> = monthly_balances
+            .iter()
             .filter(|mb| mb.participant_id == *participant_id)
             .map(|mb| mb.net_balance)
             .collect();
@@ -1315,7 +1324,8 @@ pub async fn calculate_cashflow_projection(
         };
 
         // Convert monthly trend to desired frequency
-        let recommended_amount = convert_monthly_to_frequency(-monthly_trend, frequency_type, frequency_interval);
+        let recommended_amount =
+            convert_monthly_to_frequency(-monthly_trend, frequency_type, frequency_interval);
 
         recommendations.push(RecurringContributionRecommendation {
             participant_id: *participant_id,
@@ -1388,10 +1398,12 @@ pub async fn calculate_cashflow_projection(
             }
 
             // Build ownership snapshots
-            let mut participant_ownerships: Vec<PoolOwnershipSnapshot> = participants.iter()
+            let mut participant_ownerships: Vec<PoolOwnershipSnapshot> = participants
+                .iter()
                 .filter(|(id, _, acct_type)| *id != *pool_id && acct_type != "pool")
                 .filter_map(|(id, name, _)| {
-                    let (contributed, consumed) = ownership_map.get(id).copied().unwrap_or((0.0, 0.0));
+                    let (contributed, consumed) =
+                        ownership_map.get(id).copied().unwrap_or((0.0, 0.0));
                     let ownership = contributed - consumed;
                     if ownership.abs() > 0.01 {
                         Some(PoolOwnershipSnapshot {
@@ -1405,7 +1417,11 @@ pub async fn calculate_cashflow_projection(
                 })
                 .collect();
 
-            participant_ownerships.sort_by(|a, b| b.ownership.partial_cmp(&a.ownership).unwrap_or(std::cmp::Ordering::Equal));
+            participant_ownerships.sort_by(|a, b| {
+                b.ownership
+                    .partial_cmp(&a.ownership)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
 
             let total_balance: f64 = participant_ownerships.iter().map(|p| p.ownership).sum();
 

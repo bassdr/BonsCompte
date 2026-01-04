@@ -24,23 +24,53 @@
 	let frequencyInterval = $state(1);
 	let consolidateMode = $state(false);
 
-	// Chart
-	let chartCanvas: HTMLCanvasElement | undefined = $state(undefined);
-	let chart: Chart | null = null;
+	// Charts
+	let balanceChartCanvas: HTMLCanvasElement | undefined = $state(undefined);
+	let balanceChart: Chart | null = null;
+	let poolChartCanvases: SvelteMap<number, HTMLCanvasElement> = new SvelteMap();
+	let poolCharts: SvelteMap<number, Chart> = new SvelteMap();
 
 	onMount(() => {
 		Chart.register(...registerables);
 		return () => {
-			if (chart) {
+			if (balanceChart) {
+				balanceChart.destroy();
+			}
+			for (const chart of poolCharts.values()) {
 				chart.destroy();
 			}
 		};
 	});
 
+	// Reload when project or settings change
 	$effect(() => {
 		const projectId = parseInt($page.params.id ?? '');
+		// Track all control dependencies to trigger reload
+		const _deps = [
+			horizonMonths,
+			recommendationMode,
+			frequencyType,
+			frequencyInterval,
+			consolidateMode
+		];
+		void _deps; // Ensure dependencies are tracked
 		if (projectId && !isNaN(projectId)) {
 			loadCashflow(projectId);
+		}
+	});
+
+	// Update charts when canvas becomes available or projection changes
+	$effect(() => {
+		if (balanceChartCanvas && projection) {
+			updateBalanceChart();
+		}
+	});
+
+	// Update pool charts when they become available
+	$effect(() => {
+		if (projection && projection.pool_evolutions.length > 0) {
+			// Small delay to ensure canvases are bound
+			setTimeout(() => updatePoolCharts(), 0);
 		}
 	});
 
@@ -56,7 +86,7 @@
 				frequencyInterval,
 				consolidateMode
 			);
-			updateChart();
+			// Chart update handled by $effect that watches projection
 		} catch (err) {
 			error = $_('cashflow.failedToLoad');
 			console.error('Failed to load cashflow projection:', err);
@@ -65,8 +95,28 @@
 		}
 	}
 
-	function updateChart() {
-		if (!projection || !chartCanvas) return;
+	const COLORS = ['#7b61ff', '#2a9d8f', '#e76f51', '#f4a261', '#e9c46a', '#264653'];
+
+	// Action to bind pool chart canvases
+	function bindPoolCanvas(node: HTMLCanvasElement, params: { poolId: number }) {
+		poolChartCanvases.set(params.poolId, node);
+		// Trigger chart update after binding
+		setTimeout(() => updatePoolCharts(), 0);
+
+		return {
+			destroy() {
+				const chart = poolCharts.get(params.poolId);
+				if (chart) {
+					chart.destroy();
+					poolCharts.delete(params.poolId);
+				}
+				poolChartCanvases.delete(params.poolId);
+			}
+		};
+	}
+
+	function updateBalanceChart() {
+		if (!projection || !balanceChartCanvas) return;
 
 		// Group monthly balances by participant
 		const participantMap = new SvelteMap<number, { name: string; balances: number[] }>();
@@ -81,8 +131,6 @@
 			participantMap.get(balance.participant_id)!.balances.push(balance.net_balance);
 		}
 
-		const COLORS = ['#7b61ff', '#2a9d8f', '#e76f51', '#f4a261', '#e9c46a', '#264653'];
-
 		const datasets = Array.from(participantMap.values()).map((data, idx) => ({
 			label: data.name,
 			data: data.balances,
@@ -93,9 +141,9 @@
 			fill: false
 		}));
 
-		if (chart) chart.destroy();
+		if (balanceChart) balanceChart.destroy();
 
-		chart = new Chart(chartCanvas, {
+		balanceChart = new Chart(balanceChartCanvas, {
 			type: 'line',
 			data: {
 				labels: projection.months,
@@ -147,6 +195,96 @@
 				}
 			}
 		});
+	}
+
+	function updatePoolCharts() {
+		if (!projection) return;
+
+		for (const pool of projection.pool_evolutions) {
+			const canvas = poolChartCanvases.get(pool.pool_id);
+			if (!canvas) continue;
+
+			// Build participant ownership over time
+			const participantMap = new SvelteMap<number, { name: string; ownerships: number[] }>();
+
+			// Initialize with zeros for all months
+			for (const monthData of pool.monthly_balances) {
+				for (const ownership of monthData.participant_ownerships) {
+					if (!participantMap.has(ownership.participant_id)) {
+						participantMap.set(ownership.participant_id, {
+							name: ownership.participant_name,
+							ownerships: []
+						});
+					}
+				}
+			}
+
+			// Fill in ownership values for each month
+			for (const monthData of pool.monthly_balances) {
+				const monthOwnershipMap = new SvelteMap(
+					monthData.participant_ownerships.map((o) => [o.participant_id, o.ownership])
+				);
+
+				for (const [pid, pdata] of participantMap) {
+					pdata.ownerships.push(monthOwnershipMap.get(pid) ?? 0);
+				}
+			}
+
+			const datasets = Array.from(participantMap.values()).map((data, idx) => ({
+				label: data.name,
+				data: data.ownerships,
+				borderColor: COLORS[idx % COLORS.length],
+				backgroundColor: COLORS[idx % COLORS.length] + '33',
+				borderWidth: 2,
+				tension: 0.1,
+				fill: false
+			}));
+
+			// Destroy existing chart if any
+			const existingChart = poolCharts.get(pool.pool_id);
+			if (existingChart) existingChart.destroy();
+
+			const newChart = new Chart(canvas, {
+				type: 'line',
+				data: {
+					labels: pool.monthly_balances.map((m) => m.month),
+					datasets
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: {
+							position: 'bottom',
+							labels: { font: { size: 12 } }
+						},
+						tooltip: {
+							mode: 'index',
+							intersect: false,
+							callbacks: {
+								label: (context: TooltipItem<'line'>) => {
+									const label = context.dataset.label || '';
+									const value = formatCurrency(context.parsed.y ?? 0);
+									return `${label}: ${value}`;
+								}
+							}
+						}
+					},
+					scales: {
+						y: {
+							title: { display: true, text: $_('debts.ownership') },
+							ticks: { callback: (value: number | string) => formatCurrency(Number(value)) }
+						},
+						x: {
+							title: { display: true, text: $_('cashflow.month') }
+						}
+					},
+					interaction: { mode: 'nearest', axis: 'x', intersect: false }
+				}
+			});
+
+			poolCharts.set(pool.pool_id, newChart);
+		}
 	}
 
 	function getFrequencyLabel(type: string, interval: number): string {
@@ -326,13 +464,25 @@
 			</div>
 		{/if}
 
-		<!-- Chart -->
+		<!-- Balance Chart -->
 		<div class="card chart-card">
 			<h3>{$_('cashflow.balanceOverTime')}</h3>
 			<div class="chart-container">
-				<canvas bind:this={chartCanvas}></canvas>
+				<canvas bind:this={balanceChartCanvas}></canvas>
 			</div>
 		</div>
+
+		<!-- Pool Ownership Charts -->
+		{#if projection.pool_evolutions.length > 0}
+			{#each projection.pool_evolutions as pool (pool.pool_id)}
+				<div class="card chart-card">
+					<h3>{pool.pool_name} - {$_('cashflow.poolEvolution')}</h3>
+					<div class="chart-container">
+						<canvas use:bindPoolCanvas={{ poolId: pool.pool_id }}></canvas>
+					</div>
+				</div>
+			{/each}
+		{/if}
 
 		<!-- Recommendations -->
 		<div class="card">
@@ -378,38 +528,6 @@
 				<p class="empty">{$_('cashflow.noRecommendations')}</p>
 			{/if}
 		</div>
-
-		<!-- Pool Evolution -->
-		{#if projection.pool_evolutions.length > 0}
-			{#each projection.pool_evolutions as pool (pool.pool_id)}
-				<div class="card pool-card">
-					<h3>{pool.pool_name} {$_('cashflow.evolution')}</h3>
-					<div class="pool-evolution">
-						{#each pool.monthly_balances as monthData (monthData.month)}
-							<details>
-								<summary>
-									<span class="month">{monthData.month}</span>
-									<span class="balance">{formatCurrency(monthData.total_balance)}</span>
-								</summary>
-								<div class="ownerships">
-									{#each monthData.participant_ownerships as ownership (ownership.participant_id)}
-										<div class="ownership-row">
-											<span>{ownership.participant_name}</span>
-											<span
-												class:positive={ownership.ownership > 0}
-												class:negative={ownership.ownership < 0}
-											>
-												{formatCurrency(ownership.ownership)}
-											</span>
-										</div>
-									{/each}
-								</div>
-							</details>
-						{/each}
-					</div>
-				</div>
-			{/each}
-		{/if}
 	</div>
 {/if}
 
@@ -637,51 +755,6 @@
 
 	.create-payment-btn:hover {
 		background: #6a4feb;
-	}
-
-	.pool-evolution details {
-		border: 1px solid #e9ecef;
-		border-radius: 6px;
-		margin-bottom: 0.5rem;
-	}
-
-	.pool-evolution summary {
-		padding: 0.75rem 1rem;
-		cursor: pointer;
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		background: #f8f9fa;
-		border-radius: 6px;
-		transition: background 0.2s;
-	}
-
-	.pool-evolution summary:hover {
-		background: #e9ecef;
-	}
-
-	.pool-evolution summary .month {
-		font-weight: 500;
-	}
-
-	.pool-evolution summary .balance {
-		font-family: monospace;
-		color: #666;
-	}
-
-	.ownerships {
-		padding: 1rem;
-	}
-
-	.ownership-row {
-		display: flex;
-		justify-content: space-between;
-		padding: 0.5rem 0;
-		border-bottom: 1px solid #f0f0f0;
-	}
-
-	.ownership-row:last-child {
-		border-bottom: none;
 	}
 
 	.positive {

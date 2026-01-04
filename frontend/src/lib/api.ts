@@ -53,16 +53,27 @@ export class ApiRequestError extends Error {
 	}
 }
 
-async function authFetch(path: string, opts: RequestInit = {}) {
+interface AuthFetchOptions extends RequestInit {
+	// If true, 404 responses return null instead of throwing
+	nullOn404?: boolean;
+}
+
+async function authFetch(path: string, opts: AuthFetchOptions = {}) {
+	const { nullOn404, ...fetchOpts } = opts;
 	const token = auth.getToken();
 
 	const headers: HeadersInit = {
 		'Content-Type': 'application/json',
 		...(token && { Authorization: `Bearer ${token}` }),
-		...(opts.headers as Record<string, string>)
+		...(fetchOpts.headers as Record<string, string>)
 	};
 
-	const res = await fetch(`${BASE}${path}`, { ...opts, headers });
+	const res = await fetch(`${BASE}${path}`, { ...fetchOpts, headers });
+
+	// Handle 404 silently if nullOn404 is set
+	if (res.status === 404 && nullOn404) {
+		return null;
+	}
 
 	if (res.status === 401) {
 		// Try to get the error code to distinguish expired vs invalid
@@ -520,8 +531,8 @@ export const createParticipantInvite = (
 export const getParticipantInvite = (
 	projectId: number,
 	participantId: number
-): Promise<ParticipantInvite> =>
-	authFetch(`/projects/${projectId}/participants/${participantId}/invite`);
+): Promise<ParticipantInvite | null> =>
+	authFetch(`/projects/${projectId}/participants/${participantId}/invite`, { nullOn404: true });
 
 export const revokeParticipantInvite = (
 	projectId: number,

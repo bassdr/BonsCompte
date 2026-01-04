@@ -1113,7 +1113,6 @@ pub async fn calculate_cashflow_projection(
     consolidate_mode: bool,
 ) -> AppResult<CashflowProjection> {
     let today = chrono::Utc::now().date_naive();
-    let start_date = today;
     let end_date = today + Months::new(horizon_months);
 
     // Get all participants
@@ -1139,6 +1138,14 @@ pub async fn calculate_cashflow_projection(
         .bind(project_id)
         .fetch_all(pool)
         .await?;
+
+    // Find the earliest payment date to use as start of timeline
+    // If no payments, use today
+    let start_date = payments
+        .iter()
+        .filter_map(|p| parse_date(&p.payment_date))
+        .min()
+        .unwrap_or(today);
 
     // Identify recurring payments to pool accounts (for consolidation)
     let mut payments_to_consolidate: Vec<RecurringPaymentToConsolidate> = Vec::new();

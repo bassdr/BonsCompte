@@ -69,18 +69,6 @@
 					{$_('payments.title')}
 				</a>
 				<a
-					href={resolveRoute(`/projects/${$page.params.id}/participants`)}
-					class:active={$page.url.pathname.includes('/participants')}
-				>
-					{$_('participants.title')}
-				</a>
-				<a
-					href={resolveRoute(`/projects/${$page.params.id}/members`)}
-					class:active={$page.url.pathname.includes('/members')}
-				>
-					{$_('members.title')}
-				</a>
-				<a
 					href={resolveRoute(`/projects/${$page.params.id}/history`)}
 					class:active={$page.url.pathname.includes('/history')}
 				>

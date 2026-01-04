@@ -10,8 +10,6 @@ describe('Navigation - Project Routes', () => {
 		'settlement-snapshot',
 		'cashflow-planning',
 		'payments',
-		'participants',
-		'members',
 		'history',
 		'settings'
 	];
@@ -111,7 +109,7 @@ describe('Navigation - Project Routes', () => {
 		const layoutContent = readFileSync(layoutFile, 'utf-8');
 		const redirectContent = readFileSync(redirectFile, 'utf-8');
 
-		const deprecatedRoutes = ['debts']; // Add more deprecated routes here if needed
+		const deprecatedRoutes = ['debts', 'participants', 'members']; // Add more deprecated routes here if needed
 
 		for (const route of deprecatedRoutes) {
 			expect(

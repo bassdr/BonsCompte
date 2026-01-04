@@ -1238,7 +1238,7 @@
 				if (interval === 1) {
 					return `${dayNames.join(', ')} ${$_('payments.recurrence.weekly')}`;
 				} else {
-					return `${dayNames.join(', ')} ${$_('payments.recurrence.every')} ${interval} ${$_('payments.weeks').toLowerCase()}`;
+					return `${dayNames.join(', ')} ${$_('payments.recurrence.everyNWeeks', { values: { n: interval } })}`;
 				}
 			} catch {
 				/* fall through */
@@ -1269,15 +1269,16 @@
 		if (interval === 1) {
 			return $_(`payments.recurrence.${type}`);
 		}
-		const periodKey =
+		// Use proper noun form with correct gender agreement
+		const everyKey =
 			type === 'daily'
-				? 'days'
+				? 'payments.recurrence.everyNDays'
 				: type === 'weekly'
-					? 'weeks'
+					? 'payments.recurrence.everyNWeeks'
 					: type === 'monthly'
-						? 'months'
-						: 'years';
-		return `${$_('payments.recurrence.every')} ${interval} ${$_(`payments.${periodKey}`).toLowerCase()}`;
+						? 'payments.recurrence.everyNMonths'
+						: 'payments.recurrence.everyNYears';
+		return $_(everyKey, { values: { n: interval } });
 	}
 
 	function openImageModal(image: string) {

@@ -6,6 +6,7 @@ pub struct Config {
     pub jwt_secret: String,
     pub host: String,
     pub port: u16,
+    pub rate_limit_enabled: bool,
 }
 
 impl Config {
@@ -22,6 +23,10 @@ impl Config {
                 .unwrap_or_else(|_| "8000".to_string())
                 .parse()
                 .expect("PORT must be a number"),
+            rate_limit_enabled: env::var("RATE_LIMIT_ENABLED")
+                .unwrap_or_else(|_| "true".to_string())
+                .parse()
+                .unwrap_or(true),
         }
     }
 }

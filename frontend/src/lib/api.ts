@@ -377,59 +377,59 @@ export interface DebtSummary {
 
 // Cashflow Planning
 export interface MonthlyBalance {
-    month: string;
-    participant_id: number;
-    participant_name: string;
-    net_balance: number;
+	month: string;
+	participant_id: number;
+	participant_name: string;
+	net_balance: number;
 }
 
 export interface RecurringContributionRecommendation {
-    participant_id: number;
-    participant_name: string;
-    recommended_amount: number;
-    frequency_type: string;
-    frequency_interval: number;
-    current_trend: number;
-    calculation_method: string;
+	participant_id: number;
+	participant_name: string;
+	recommended_amount: number;
+	frequency_type: string;
+	frequency_interval: number;
+	current_trend: number;
+	calculation_method: string;
 }
 
 export interface PoolOwnershipSnapshot {
-    participant_id: number;
-    participant_name: string;
-    ownership: number;
+	participant_id: number;
+	participant_name: string;
+	ownership: number;
 }
 
 export interface PoolMonthlyBalance {
-    month: string;
-    total_balance: number;
-    participant_ownerships: PoolOwnershipSnapshot[];
+	month: string;
+	total_balance: number;
+	participant_ownerships: PoolOwnershipSnapshot[];
 }
 
 export interface PoolEvolution {
-    pool_id: number;
-    pool_name: string;
-    monthly_balances: PoolMonthlyBalance[];
+	pool_id: number;
+	pool_name: string;
+	monthly_balances: PoolMonthlyBalance[];
 }
 
 export interface RecurringPaymentToConsolidate {
-    payment_id: number;
-    description: string;
-    amount: number;
-    payer_id: number;
-    payer_name: string;
-    recurrence_type: string;
-    recurrence_interval: number;
+	payment_id: number;
+	description: string;
+	amount: number;
+	payer_id: number;
+	payer_name: string;
+	recurrence_type: string;
+	recurrence_interval: number;
 }
 
 export interface CashflowProjection {
-    start_date: string;
-    end_date: string;
-    months: string[];
-    monthly_balances: MonthlyBalance[];
-    recommendations: RecurringContributionRecommendation[];
-    pool_evolutions: PoolEvolution[];
-    consolidate_mode: boolean;
-    payments_to_consolidate: RecurringPaymentToConsolidate[];
+	start_date: string;
+	end_date: string;
+	months: string[];
+	monthly_balances: MonthlyBalance[];
+	recommendations: RecurringContributionRecommendation[];
+	pool_evolutions: PoolEvolution[];
+	consolidate_mode: boolean;
+	payments_to_consolidate: RecurringPaymentToConsolidate[];
 }
 
 // Users
@@ -629,44 +629,47 @@ export const getDebts = (projectId: number, targetDate?: string): Promise<DebtSu
 };
 
 export const getCashflowProjection = (
-    projectId: number,
-    horizonMonths?: number,
-    recommendationMode?: string,
-    frequencyType?: string,
-    frequencyInterval?: number,
-    consolidateMode?: boolean
+	projectId: number,
+	horizonMonths?: number,
+	recommendationMode?: string,
+	frequencyType?: string,
+	frequencyInterval?: number,
+	consolidateMode?: boolean
 ): Promise<CashflowProjection> => {
-    const params = new URLSearchParams();
-    if (horizonMonths) params.set('horizon_months', horizonMonths.toString());
-    if (recommendationMode) params.set('recommendation_mode', recommendationMode);
-    if (frequencyType) params.set('frequency_type', frequencyType);
-    if (frequencyInterval) params.set('frequency_interval', frequencyInterval.toString());
-    if (consolidateMode) params.set('consolidate_mode', 'true');
-    const queryString = params.toString();
-    return authFetch(`/projects/${projectId}/cashflow${queryString ? '?' + queryString : ''}`);
+	const params = new URLSearchParams();
+	if (horizonMonths) params.set('horizon_months', horizonMonths.toString());
+	if (recommendationMode) params.set('recommendation_mode', recommendationMode);
+	if (frequencyType) params.set('frequency_type', frequencyType);
+	if (frequencyInterval) params.set('frequency_interval', frequencyInterval.toString());
+	if (consolidateMode) params.set('consolidate_mode', 'true');
+	const queryString = params.toString();
+	return authFetch(`/projects/${projectId}/cashflow${queryString ? '?' + queryString : ''}`);
 };
 
 export interface ConsolidatePaymentsRequest {
-    payer_id: number;
-    pool_id: number;
-    amount: number;
-    description: string;
-    payment_date: string;
-    recurrence_type: string;
-    recurrence_interval: number;
-    payment_ids_to_delete: number[];
+	payer_id: number;
+	pool_id: number;
+	amount: number;
+	description: string;
+	payment_date: string;
+	recurrence_type: string;
+	recurrence_interval: number;
+	payment_ids_to_delete: number[];
 }
 
 export interface ConsolidatePaymentsResponse {
-    deleted_count: number;
-    new_payment_id: number;
+	deleted_count: number;
+	new_payment_id: number;
 }
 
-export const consolidatePayments = (projectId: number, request: ConsolidatePaymentsRequest): Promise<ConsolidatePaymentsResponse> =>
-    authFetch(`/projects/${projectId}/cashflow/consolidate`, {
-        method: 'POST',
-        body: JSON.stringify(request)
-    });
+export const consolidatePayments = (
+	projectId: number,
+	request: ConsolidatePaymentsRequest
+): Promise<ConsolidatePaymentsResponse> =>
+	authFetch(`/projects/${projectId}/cashflow/consolidate`, {
+		method: 'POST',
+		body: JSON.stringify(request)
+	});
 
 // History
 export interface HistoryEntry {

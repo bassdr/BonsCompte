@@ -1,4 +1,8 @@
-use axum::{extract::{Query, State}, routing::{get, post}, Json, Router};
+use axum::{
+    extract::{Query, State},
+    routing::{get, post},
+    Json, Router,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
@@ -9,11 +13,11 @@ use crate::AppState;
 
 #[derive(Deserialize)]
 struct CashflowQuery {
-    horizon_months: Option<u32>,          // Default: 6
-    recommendation_mode: Option<String>,  // Default: "simple_average"
-    frequency_type: Option<String>,       // Default: "monthly"
-    frequency_interval: Option<i32>,      // Default: 1
-    consolidate_mode: Option<bool>,       // Default: false
+    horizon_months: Option<u32>,         // Default: 6
+    recommendation_mode: Option<String>, // Default: "simple_average"
+    frequency_type: Option<String>,      // Default: "monthly"
+    frequency_interval: Option<i32>,     // Default: 1
+    consolidate_mode: Option<bool>,      // Default: false
 }
 
 async fn get_cashflow(
@@ -22,7 +26,10 @@ async fn get_cashflow(
     Query(query): Query<CashflowQuery>,
 ) -> AppResult<Json<CashflowProjection>> {
     let horizon_months = query.horizon_months.unwrap_or(6).min(60); // Cap at 5 years
-    let recommendation_mode = query.recommendation_mode.as_deref().unwrap_or("simple_average");
+    let recommendation_mode = query
+        .recommendation_mode
+        .as_deref()
+        .unwrap_or("simple_average");
     let frequency_type = query.frequency_type.as_deref().unwrap_or("monthly");
     let frequency_interval = query.frequency_interval.unwrap_or(1).max(1);
     let consolidate_mode = query.consolidate_mode.unwrap_or(false);
@@ -35,7 +42,8 @@ async fn get_cashflow(
         frequency_type,
         frequency_interval,
         consolidate_mode,
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(projection))
 }
@@ -68,23 +76,31 @@ async fn consolidate_payments(
 
     // Verify all payments belong to this project and payer
     for payment_id in &req.payment_ids_to_delete {
-        let payment: Option<(i64, i64)> = sqlx::query_as(
-            "SELECT project_id, payer_id FROM payments WHERE id = ?"
-        )
-        .bind(payment_id)
-        .fetch_optional(&mut *tx)
-        .await?;
+        let payment: Option<(i64, i64)> =
+            sqlx::query_as("SELECT project_id, payer_id FROM payments WHERE id = ?")
+                .bind(payment_id)
+                .fetch_optional(&mut *tx)
+                .await?;
 
         match payment {
             Some((project_id, payer_id)) => {
                 if project_id != member.project_id {
-                    return Err(crate::error::AppError::Forbidden("Payment belongs to different project".to_string()));
+                    return Err(crate::error::AppError::Forbidden(
+                        "Payment belongs to different project".to_string(),
+                    ));
                 }
                 if Some(payer_id) != Some(req.payer_id) {
-                    return Err(crate::error::AppError::Forbidden("Payment belongs to different payer".to_string()));
+                    return Err(crate::error::AppError::Forbidden(
+                        "Payment belongs to different payer".to_string(),
+                    ));
                 }
             }
-            None => return Err(crate::error::AppError::NotFound(format!("Payment {} not found", payment_id))),
+            None => {
+                return Err(crate::error::AppError::NotFound(format!(
+                    "Payment {} not found",
+                    payment_id
+                )))
+            }
         }
     }
 
@@ -107,7 +123,7 @@ async fn consolidate_payments(
     let result = sqlx::query(
         "INSERT INTO payments (project_id, payer_id, amount, description, payment_date,
          is_recurring, recurrence_type, recurrence_interval, receiver_account_id)
-         VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)"
+         VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)",
     )
     .bind(member.project_id)
     .bind(req.payer_id)

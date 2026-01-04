@@ -1,6 +1,6 @@
 pub mod auth;
-pub mod debts;
 pub mod cashflow;
+pub mod debts;
 pub mod history;
 pub mod members;
 pub mod participants;

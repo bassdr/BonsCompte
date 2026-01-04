@@ -102,6 +102,14 @@ async fn main() {
     // Load configuration
     let config = Config::from_env();
     tracing::info!("Starting BonsCompte backend...");
+    tracing::info!(
+        "Rate limiting: {}",
+        if config.rate_limit_enabled {
+            "enabled"
+        } else {
+            "disabled (development mode)"
+        }
+    );
 
     // Initialize database
     let pool = db::init_pool(&config.database_url)
@@ -155,16 +163,20 @@ async fn main() {
         .nest("/cashflow", routes::cashflow::router())
         .nest("/history", routes::history::router());
 
-    // Auth routes with strict rate limiting (5 requests per 60s to prevent brute-force)
-    let auth_routes = routes::auth::router().layer(GovernorLayer {
-        config: auth_rate_limit,
-    });
+    // Auth routes with optional rate limiting (5 requests per 60s to prevent brute-force)
+    let auth_routes = if config.rate_limit_enabled {
+        routes::auth::router().layer(GovernorLayer {
+            config: auth_rate_limit,
+        })
+    } else {
+        routes::auth::router()
+    };
 
     // Build router - all routes at root level (use reverse proxy for /api prefix if needed)
-    let app = Router::new()
+    let mut app = Router::new()
         // Health check (no rate limiting)
         .route("/health", get(|| async { "OK" }))
-        // Public routes (auth) with strict rate limiting
+        // Public routes (auth) with optional rate limiting
         .nest("/auth", auth_routes)
         // Protected routes (with extensions middleware)
         .nest("/users", routes::users::router())
@@ -174,11 +186,16 @@ async fn main() {
         .layer(middleware::from_fn_with_state(
             state.clone(),
             inject_extensions,
-        ))
-        // General rate limiting (100 requests per second)
-        .layer(GovernorLayer {
+        ));
+
+    // Conditionally apply general rate limiting (100 requests per second)
+    if config.rate_limit_enabled {
+        app = app.layer(GovernorLayer {
             config: api_rate_limit,
-        })
+        });
+    }
+
+    let app = app
         // Global middleware
         .layer(TraceLayer::new_for_http())
         // Block scanner probes before logging to reduce noise

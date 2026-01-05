@@ -1,7 +1,7 @@
 <script lang="ts">
   import { getProjects, createProject, joinProject, type ProjectWithRole } from '$lib/api';
   import { goto } from '$app/navigation';
-  import { resolveRoute } from '$app/paths';
+  import { resolve } from '$app/paths';
   import { _ } from '$lib/i18n';
   import { formatCurrency } from '$lib/format/currency';
 
@@ -230,7 +230,7 @@
   <div class="projects-grid">
     {#each projects as project (project.id)}
       {@const debtLines = getDebtSummaryLines(project)}
-      <a href={resolveRoute(`/projects/${project.id}`)} class="project-card">
+      <a href={resolve(`/projects/${project.id}`)} class="project-card">
         <div class="project-header">
           <h3>{project.name}</h3>
           <span class="role-badge role-{project.role}">{$_(`roles.${project.role}`)}</span>

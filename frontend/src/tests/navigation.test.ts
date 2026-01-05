@@ -46,9 +46,7 @@ describe('Navigation - Project Routes', () => {
     const content = readFileSync(layoutFile, 'utf-8');
 
     // Extract all href patterns from the navigation
-    const hrefMatches = content.matchAll(
-      /href=\{resolveRoute\(`\/projects\/\$\{[^}]+\}\/([^`]+)`\)\}/g
-    );
+    const hrefMatches = content.matchAll(/href=\{resolve\(`\/projects\/\$\{[^}]+\}\/([^`]+)`\)\}/g);
 
     const routesInLayout: string[] = [];
     for (const match of hrefMatches) {
@@ -72,9 +70,7 @@ describe('Navigation - Project Routes', () => {
     const layoutFile = join(projectRoutesDir, '+layout.svelte');
     const content = readFileSync(layoutFile, 'utf-8');
 
-    const hrefMatches = content.matchAll(
-      /href=\{resolveRoute\(`\/projects\/\$\{[^}]+\}\/([^`]+)`\)\}/g
-    );
+    const hrefMatches = content.matchAll(/href=\{resolve\(`\/projects\/\$\{[^}]+\}\/([^`]+)`\)\}/g);
 
     const routesInLayout = Array.from(hrefMatches).map((match) => match[1]);
 

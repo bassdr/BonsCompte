@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { resolveRoute } from '$app/paths';
+  import { resolve } from '$app/paths';
   import type { Snippet } from 'svelte';
   import { _ } from '$lib/i18n';
 
@@ -10,19 +10,19 @@
 <div class="transactions-layout">
   <nav class="transactions-nav">
     <a
-      href={resolveRoute(`/projects/${$page.params.id}/transactions/outgoing`)}
+      href={resolve(`/projects/${$page.params.id}/transactions/outgoing`)}
       class:active={$page.url.pathname.includes('/outgoing')}
     >
       {$_('transactions.outgoing')}
     </a>
     <a
-      href={resolveRoute(`/projects/${$page.params.id}/transactions/internal`)}
+      href={resolve(`/projects/${$page.params.id}/transactions/internal`)}
       class:active={$page.url.pathname.includes('/internal')}
     >
       {$_('transactions.internal')}
     </a>
     <a
-      href={resolveRoute(`/projects/${$page.params.id}/transactions/incoming`)}
+      href={resolve(`/projects/${$page.params.id}/transactions/incoming`)}
       class:active={$page.url.pathname.includes('/incoming')}
     >
       {$_('transactions.incoming')}

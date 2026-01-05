@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { resolveRoute } from '$app/paths';
+  import { resolve } from '$app/paths';
   import { loadProject, clearProject, currentProject, isAdmin } from '$lib/stores/project';
   import type { Snippet } from 'svelte';
   import { _ } from '$lib/i18n';
@@ -40,44 +40,45 @@
   <div class="error">
     <h2>{$_('common.error')}</h2>
     <p>{error}</p>
-    <a href={resolveRoute('/')}>{$_('nav.projects')}</a>
+    <a href={resolve('/')}>{$_('nav.projects')}</a>
   </div>
 {:else if $currentProject}
   <div class="project-layout">
     <header class="project-header">
       <div class="project-title">
-        <a href={resolveRoute('/')} class="back-link">&larr;</a>
+        <a href={resolve('/')} class="back-link">&larr;</a>
         <h1>{$currentProject.name}</h1>
       </div>
       <nav class="project-nav">
         <a
-          href={resolveRoute(`/projects/${$page.params.id}/overview`)}
+          href={resolve(`/projects/${$page.params.id}/overview`)}
           class:active={$page.url.pathname.includes('/overview')}
         >
           {$_('overview.title')}
         </a>
-        <!-- Disabled as not yet functionnal
-                                <a
-					href={resolveRoute(`/projects/${$page.params.id}/cashflow`)}
-					class:active={$page.url.pathname.includes('/cashflow')}
-				>
-					{$_('cashflow.title')}
-				</a>-->
+        <!-- Not yet functionnal
         <a
-          href={resolveRoute(`/projects/${$page.params.id}/transactions`)}
+          href={resolve(`/projects/${$page.params.id}/cashflow`)}
+          class:active={$page.url.pathname.includes('/cashflow')}
+        >
+          {$_('cashflow.title')}
+        </a>
+        -->
+        <a
+          href={resolve(`/projects/${$page.params.id}/transactions`)}
           class:active={$page.url.pathname.includes('/transactions')}
         >
           {$_('nav.transactions')}
         </a>
         <a
-          href={resolveRoute(`/projects/${$page.params.id}/history`)}
+          href={resolve(`/projects/${$page.params.id}/history`)}
           class:active={$page.url.pathname.includes('/history')}
         >
           {$_('history.title')}
         </a>
         {#if $isAdmin}
           <a
-            href={resolveRoute(`/projects/${$page.params.id}/settings`)}
+            href={resolve(`/projects/${$page.params.id}/settings`)}
             class:active={$page.url.pathname.includes('/settings')}
           >
             {$_('nav.settings')}

@@ -75,23 +75,19 @@
 	let useDirectSettlements = $state(false);
 
 	function toggleBalanceRow(participantId: number) {
-		const newSet = new SvelteSet(expandedBalanceRows);
-		if (newSet.has(participantId)) {
-			newSet.delete(participantId);
+		if (expandedBalanceRows.has(participantId)) {
+			expandedBalanceRows.delete(participantId);
 		} else {
-			newSet.add(participantId);
+			expandedBalanceRows.add(participantId);
 		}
-		expandedBalanceRows = newSet;
 	}
 
 	function togglePoolEntry(participantId: number) {
-		const newSet = new SvelteSet(expandedPoolEntries);
-		if (newSet.has(participantId)) {
-			newSet.delete(participantId);
+		if (expandedPoolEntries.has(participantId)) {
+			expandedPoolEntries.delete(participantId);
 		} else {
-			newSet.add(participantId);
+			expandedPoolEntries.add(participantId);
 		}
-		expandedPoolEntries = newSet;
 	}
 
 	function isPoolEntryExpanded(participantId: number): boolean {
@@ -99,25 +95,22 @@
 	}
 
 	function togglePoolYear(participantId: number, year: string) {
-		const newMap = new SvelteMap(expandedPoolYears);
-		if (!newMap.has(participantId)) {
-			newMap.set(participantId, new SvelteSet());
+		if (!expandedPoolYears.has(participantId)) {
+			expandedPoolYears.set(participantId, new SvelteSet());
 		}
-		const yearSet = newMap.get(participantId)!;
+		const yearSet = expandedPoolYears.get(participantId)!;
 		if (yearSet.has(year)) {
 			yearSet.delete(year);
 		} else {
 			yearSet.add(year);
 		}
-		expandedPoolYears = newMap;
 	}
 
 	function togglePoolMonth(participantId: number, year: string, monthKey: string) {
-		const newMap = new SvelteMap(expandedPoolMonths);
-		if (!newMap.has(participantId)) {
-			newMap.set(participantId, new SvelteMap());
+		if (!expandedPoolMonths.has(participantId)) {
+			expandedPoolMonths.set(participantId, new SvelteMap());
 		}
-		const yearMap = newMap.get(participantId)!;
+		const yearMap = expandedPoolMonths.get(participantId)!;
 		if (!yearMap.has(year)) {
 			yearMap.set(year, new SvelteSet());
 		}
@@ -127,23 +120,23 @@
 		} else {
 			monthSet.add(monthKey);
 		}
-		expandedPoolMonths = newMap;
 	}
 
 	// Track which pairwise rows are expanded
-	let expandedPairwise = $state(new Set<string>());
-	let expandedPairwiseYears = $state(new Map<string, Set<string>>());
-	let expandedPairwiseMonths = $state(new Map<string, Map<string, Set<string>>>());
+	// svelte-ignore non_reactive_update (SvelteSet/SvelteMap are already reactive)
+	let expandedPairwise = new SvelteSet<string>();
+	// svelte-ignore non_reactive_update (SvelteMap is already reactive)
+	let expandedPairwiseYears = new SvelteMap<string, SvelteSet<string>>();
+	// svelte-ignore non_reactive_update (SvelteMap is already reactive)
+	let expandedPairwiseMonths = new SvelteMap<string, SvelteMap<string, SvelteSet<string>>>();
 
 	function togglePairwiseRow(participantId: number, otherId: number) {
 		const key = `${participantId}-${otherId}`;
-		const newSet = new SvelteSet(expandedPairwise);
-		if (newSet.has(key)) {
-			newSet.delete(key);
+		if (expandedPairwise.has(key)) {
+			expandedPairwise.delete(key);
 		} else {
-			newSet.add(key);
+			expandedPairwise.add(key);
 		}
-		expandedPairwise = newSet;
 	}
 
 	function isPairwiseExpanded(participantId: number, otherId: number): boolean {
@@ -151,25 +144,22 @@
 	}
 
 	function togglePairwiseYear(pairwiseKey: string, year: string) {
-		const newMap = new SvelteMap(expandedPairwiseYears);
-		if (!newMap.has(pairwiseKey)) {
-			newMap.set(pairwiseKey, new SvelteSet());
+		if (!expandedPairwiseYears.has(pairwiseKey)) {
+			expandedPairwiseYears.set(pairwiseKey, new SvelteSet());
 		}
-		const yearSet = newMap.get(pairwiseKey)!;
+		const yearSet = expandedPairwiseYears.get(pairwiseKey)!;
 		if (yearSet.has(year)) {
 			yearSet.delete(year);
 		} else {
 			yearSet.add(year);
 		}
-		expandedPairwiseYears = newMap;
 	}
 
 	function togglePairwiseMonth(pairwiseKey: string, year: string, monthKey: string) {
-		const newMap = new SvelteMap(expandedPairwiseMonths);
-		if (!newMap.has(pairwiseKey)) {
-			newMap.set(pairwiseKey, new SvelteMap());
+		if (!expandedPairwiseMonths.has(pairwiseKey)) {
+			expandedPairwiseMonths.set(pairwiseKey, new SvelteMap());
 		}
-		const yearMap = newMap.get(pairwiseKey)!;
+		const yearMap = expandedPairwiseMonths.get(pairwiseKey)!;
 		if (!yearMap.has(year)) {
 			yearMap.set(year, new SvelteSet());
 		}
@@ -179,7 +169,6 @@
 		} else {
 			monthSet.add(monthKey);
 		}
-		expandedPairwiseMonths = newMap;
 	}
 
 	// Group breakdown by year/month, newest first
@@ -674,11 +663,11 @@
 	// Get relative date label
 	function getRelativeDateLabel(dateStr: string): string {
 		const days = getDaysDiff(dateStr);
-		if (days === 0) return $_('debts.today');
-		if (days === 1) return $_('debts.tomorrow');
-		if (days === -1) return $_('debts.yesterday');
-		if (days > 0 && days <= 7) return $_('debts.inDays', { values: { days } });
-		if (days < 0 && days >= -7) return $_('debts.daysAgo', { values: { days: Math.abs(days) } });
+		if (days === 0) return $_('overview.today');
+		if (days === 1) return $_('overview.tomorrow');
+		if (days === -1) return $_('overview.yesterday');
+		if (days > 0 && days <= 7) return $_('overview.inDays', { values: { days } });
+		if (days < 0 && days >= -7) return $_('overview.daysAgo', { values: { days: Math.abs(days) } });
 		return '';
 	}
 
@@ -824,28 +813,24 @@
 
 	// Toggle year expanded state
 	function toggleYear(year: string) {
-		const newSet = new SvelteSet(expandedYears);
-		if (newSet.has(year)) {
-			newSet.delete(year);
+		if (expandedYears.has(year)) {
+			expandedYears.delete(year);
 		} else {
-			newSet.add(year);
+			expandedYears.add(year);
 		}
-		expandedYears = newSet;
 	}
 
 	// Toggle month expanded state
 	function toggleMonth(year: string, monthKey: string) {
-		const newMap = new SvelteMap(expandedMonths);
-		if (!newMap.has(year)) {
-			newMap.set(year, new SvelteSet());
+		if (!expandedMonths.has(year)) {
+			expandedMonths.set(year, new SvelteSet());
 		}
-		const monthSet = newMap.get(year)!;
+		const monthSet = expandedMonths.get(year)!;
 		if (monthSet.has(monthKey)) {
 			monthSet.delete(monthKey);
 		} else {
 			monthSet.add(monthKey);
 		}
-		expandedMonths = newMap;
 	}
 
 	// Get total for a year
@@ -888,7 +873,7 @@
 	}
 </script>
 
-<h2>{$_('debts.summary')}</h2>
+<h2>{$_('overview.title')}</h2>
 
 <!-- Date selector -->
 <div class="date-selector card">
@@ -910,9 +895,9 @@
 					<span class="relative-label">({relativeDateLabel})</span>
 				{/if}
 				{#if isFuture}
-					<span class="badge future-badge">{$_('debts.future')}</span>
+					<span class="badge future-badge">{$_('overview.future')}</span>
 				{:else if isPast}
-					<span class="badge past-badge">{$_('debts.past')}</span>
+					<span class="badge past-badge">{$_('overview.past')}</span>
 				{/if}
 			</span>
 		</div>
@@ -927,16 +912,16 @@
 	</div>
 
 	<button class="today-btn" onclick={goToToday} disabled={isToday}>
-		{$_('debts.today')}
+		{$_('overview.today')}
 	</button>
 </div>
 
 <!-- Focus mode selector -->
 {#if debts}
 	<div class="focus-selector">
-		<label for="focus-participant">{$_('debts.focusOn')}</label>
+		<label for="focus-participant">{$_('overview.focusOn')}</label>
 		<select id="focus-participant" bind:value={focusParticipantId}>
-			<option value={null}>{$_('debts.allParticipants')}</option>
+			<option value={null}>{$_('overview.allParticipants')}</option>
 			{#each nonPoolBalances as b (b.participant_id)}
 				<option value={b.participant_id}>{b.participant_name}</option>
 			{/each}
@@ -961,14 +946,14 @@
 		<section class="card">
 			<h3>{poolOwnership.pool_name}</h3>
 			{#if poolOwnership.entries.length === 0}
-				<p class="no-ownership">{$_('debts.noPoolActivity')}</p>
+				<p class="no-ownership">{$_('overview.noPoolActivity')}</p>
 			{:else}
 				<table class="balance-table">
 					<thead>
 						<tr>
 							<th></th>
-							<th>{$_('debts.participant')}</th>
-							<th>{$_('debts.ownership')}</th>
+							<th>{$_('overview.participant')}</th>
+							<th>{$_('overview.ownership')}</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -1166,13 +1151,13 @@
 	{/each}
 
 	<section class="card">
-		<h3>{$_('debts.balances')}</h3>
+		<h3>{$_('overview.balances')}</h3>
 		<table class="balance-table">
 			<thead>
 				<tr>
 					<th></th>
-					<th>{$_('debts.participant')}</th>
-					<th>{$_('debts.balance')}</th>
+					<th>{$_('overview.participant')}</th>
+					<th>{$_('overview.balance')}</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -1198,7 +1183,7 @@
 							<td colspan="3">
 								<div class="pairwise-details">
 									{#if pairwise.length === 0}
-										<p class="no-relationships">{$_('debts.noRelationships')}</p>
+										<p class="no-relationships">{$_('overview.noRelationships')}</p>
 									{:else}
 										<div class="pairwise-list">
 											{#each pairwise as pw (pw.other_participant_id)}
@@ -1394,17 +1379,17 @@
 
 	<section class="card">
 		<div class="settlements-header">
-			<h3>{$_('debts.settlements')}</h3>
+			<h3>{$_('overview.settlements')}</h3>
 			<label class="settlement-mode-toggle">
 				<input type="checkbox" bind:checked={useDirectSettlements} />
-				{$_('debts.directOnlyMode')}
+				{$_('overview.directOnlyMode')}
 			</label>
 		</div>
 		{#if filteredSettlements.length === 0}
 			<p class="all-settled">
 				{focusParticipantId !== null
-					? $_('debts.noSettlementsForParticipant')
-					: $_('debts.allSettled')}
+					? $_('overview.noSettlementsForParticipant')
+					: $_('overview.allSettled')}
 			</p>
 		{:else}
 			<ul class="settlements-list">
@@ -1434,7 +1419,7 @@
 		<section class="card occurrences-card">
 			<button class="expand-header" onclick={() => (showOccurrences = !showOccurrences)}>
 				<span class="expand-icon">{showOccurrences ? '▼' : '▶'}</span>
-				<h3>{$_('debts.paymentsIncluded')} ({totalCount})</h3>
+				<h3>{$_('overview.paymentsIncluded')} ({totalCount})</h3>
 			</button>
 
 			{#if showOccurrences}
@@ -1456,8 +1441,8 @@
 										<div class="year-summary-meta">
 											{getYearTransactionCount(yearData)}
 											{getYearTransactionCount(yearData) === 1
-												? $_('debts.transaction')
-												: $_('debts.transactions')}
+												? $_('overview.transaction')
+												: $_('overview.transactions')}
 										</div>
 										<div class="year-summary-participants">
 											{#each [...getYearParticipantTotals(yearData).entries()].sort((a, b) => b[1] - a[1]) as [participantName, amount] (participantName)}
@@ -1488,8 +1473,8 @@
 													<div class="month-summary-meta">
 														{getTransactionCount(monthData)}
 														{getTransactionCount(monthData) === 1
-															? $_('debts.transaction')
-															: $_('debts.transactions')}
+															? $_('overview.transaction')
+															: $_('overview.transactions')}
 													</div>
 													<div class="month-summary-participants">
 														{#each [...monthData.participantTotals.entries()].sort((a, b) => b[1] - a[1]) as [participantName, amount] (participantName)}
@@ -1522,7 +1507,7 @@
 																		{occ.description}
 																		{#if occ.is_recurring}
 																			<span class="occ-tag recurring-tag"
-																				>{$_('debts.recurring')}</span
+																				>{$_('overview.recurring')}</span
 																			>
 																		{/if}
 																	</span>
@@ -1530,17 +1515,17 @@
 																</div>
 																<div class="trans-meta">
 																	{#if payment}
-																		{$_('debts.paidBy')}
+																		{$_('overview.paidBy')}
 																		{payment.payer_name ?? $_('common.unknown')}
 																		{#if payment.is_recurring && payment.recurrence_end_date}
-																			{$_('debts.from')}
+																			{$_('overview.from')}
 																			{formatDate(payment.payment_date)}
-																			{$_('debts.to')}
+																			{$_('overview.to')}
 																			{formatDate(payment.recurrence_end_date)}
 																		{:else}
 																			{isFutureDate(occ.occurrence_date)
-																				? $_('debts.from')
-																				: $_('debts.on')}
+																				? $_('overview.from')
+																				: $_('overview.on')}
 																			{formatDate(occ.occurrence_date)}
 																		{/if}
 																		{#if payment.is_recurring}
@@ -1549,7 +1534,7 @@
 																			>
 																		{/if}
 																	{:else}
-																		{$_('debts.on')} {formatDate(occ.occurrence_date)}
+																		{$_('overview.on')} {formatDate(occ.occurrence_date)}
 																	{/if}
 																	{#if occRelative}
 																		<span class="trans-relative">({occRelative})</span>

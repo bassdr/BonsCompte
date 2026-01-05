@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import { onMount } from 'svelte';
 	import {
 		getDebts,
 		getPayments,
@@ -13,6 +14,37 @@
 	import { formatCurrency } from '$lib/format/currency';
 	import { SvelteSet, SvelteMap, SvelteDate } from 'svelte/reactivity';
 	import type { PairwisePaymentBreakdown } from '$lib/api';
+	import { Chart, registerables } from 'chart.js';
+	import 'chartjs-adapter-date-fns';
+
+	// Chart.js annotation plugin - loaded dynamically for SSR safety
+	let annotationPlugin: typeof import('chartjs-plugin-annotation').default | null = null;
+	let chartReady = $state(false);
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	type LineChart = Chart<'line', any, unknown>;
+
+	// Chart instances for cleanup (not reactive - just for cleanup/destroy)
+	let balanceChart: LineChart | null = null;
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	let poolCharts = new Map<number, LineChart>();
+
+	// Chart canvas references (not reactive - just for DOM binding)
+	let balanceChartCanvas: HTMLCanvasElement | null = $state(null);
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	let poolChartCanvases = new Map<number, HTMLCanvasElement>();
+
+	// Colors for chart lines
+	const CHART_COLORS = [
+		'#7b61ff', // accent purple
+		'#2a9d8f', // teal
+		'#e76f51', // coral
+		'#f4a261', // orange
+		'#264653', // dark blue
+		'#e9c46a', // yellow
+		'#6c757d', // gray
+		'#dc3545' // red
+	];
 
 	// Type definitions for breakdown grouping
 	interface BreakdownMonthData {
@@ -321,8 +353,555 @@
 	}
 
 	let targetDate = $state(getLocalDateString());
+	let endDate = $state<string | null>(null);
+
+	// Range mode is active when endDate is set and > targetDate
+	let isRangeMode = $derived(endDate !== null && endDate > targetDate);
 
 	let projectId = $derived(parseInt($page.params.id ?? ''));
+
+	// Initialize Chart.js (SSR-safe)
+	onMount(() => {
+		Chart.register(...registerables);
+
+		// Load annotation plugin dynamically
+		import('chartjs-plugin-annotation').then((mod) => {
+			annotationPlugin = mod.default;
+			Chart.register(annotationPlugin);
+			chartReady = true;
+		});
+
+		// Cleanup on destroy
+		return () => {
+			if (balanceChart) {
+				balanceChart.destroy();
+				balanceChart = null;
+			}
+			poolCharts.forEach((chart) => chart.destroy());
+			poolCharts.clear();
+		};
+	});
+
+	// Get payment dates in range for x-axis
+	let rangeDates = $derived.by(() => {
+		if (!isRangeMode || !debts || !endDate) return [];
+		const end = endDate; // Local variable for type narrowing
+		// Filter payment dates to those within range
+		return paymentDates.filter((d) => d >= targetDate && d <= end);
+	});
+
+	// Compute running balances at each date in range
+	// Returns SvelteMap<date, SvelteMap<participantId, netBalance>>
+
+	let balanceTimeSeries = $derived.by(() => {
+		if (!isRangeMode || !debts || rangeDates.length === 0)
+			return new SvelteMap<string, Map<number, number>>();
+
+		const result = new SvelteMap<string, Map<number, number>>();
+		const runningBalance = new SvelteMap<number, number>(); // participantId -> balance
+
+		// Sort occurrences by date
+		const sortedOccurrences = [...debts.occurrences].sort((a, b) =>
+			a.occurrence_date.localeCompare(b.occurrence_date)
+		);
+
+		// Initialize all participants with 0 balance
+		for (const balance of debts.balances) {
+			if (!poolIds.has(balance.participant_id)) {
+				runningBalance.set(balance.participant_id, 0);
+			}
+		}
+
+		let occIdx = 0;
+
+		// Process each date in the range
+		for (const date of rangeDates) {
+			// Process all occurrences up to and including this date
+			while (
+				occIdx < sortedOccurrences.length &&
+				sortedOccurrences[occIdx].occurrence_date <= date
+			) {
+				const occ = sortedOccurrences[occIdx];
+				const payment = paymentMap.get(occ.payment_id);
+
+				if (payment) {
+					// Check if this is a pool-related transaction (should be excluded from user balances)
+					const isPoolReceiver =
+						occ.receiver_account_id !== null && poolIds.has(occ.receiver_account_id);
+					const isPoolPayer = occ.payer_id !== null && poolIds.has(occ.payer_id);
+
+					// Skip pool transfers for user balance computation
+					if (!isPoolReceiver && !isPoolPayer) {
+						// Credit the payer
+						if (occ.payer_id !== null && !poolIds.has(occ.payer_id)) {
+							const current = runningBalance.get(occ.payer_id) ?? 0;
+							runningBalance.set(occ.payer_id, current + occ.amount);
+						}
+
+						// Debit contributors based on their weights
+						if (payment.contributions) {
+							for (const contrib of payment.contributions) {
+								if (!poolIds.has(contrib.participant_id)) {
+									const current = runningBalance.get(contrib.participant_id) ?? 0;
+									runningBalance.set(contrib.participant_id, current - contrib.amount);
+								}
+							}
+						}
+					}
+				}
+
+				occIdx++;
+			}
+
+			// Snapshot current balances at this date
+			result.set(date, new Map(runningBalance));
+		}
+
+		return result;
+	});
+
+	// Compute running pairwise balances for focus mode
+	// Returns SvelteMap<date, SvelteMap<otherParticipantId, balance>>
+
+	let pairwiseTimeSeries = $derived.by(() => {
+		if (!isRangeMode || !debts || !focusParticipantId || rangeDates.length === 0) {
+			return new SvelteMap<string, Map<number, number>>();
+		}
+
+		const result = new SvelteMap<string, Map<number, number>>();
+		const runningPairwise = new SvelteMap<number, number>(); // otherParticipantId -> balance
+
+		// Sort occurrences by date
+		const sortedOccurrences = [...debts.occurrences].sort((a, b) =>
+			a.occurrence_date.localeCompare(b.occurrence_date)
+		);
+
+		// Initialize all other participants with 0 balance
+		for (const balance of debts.balances) {
+			if (balance.participant_id !== focusParticipantId && !poolIds.has(balance.participant_id)) {
+				runningPairwise.set(balance.participant_id, 0);
+			}
+		}
+
+		let occIdx = 0;
+
+		for (const date of rangeDates) {
+			while (
+				occIdx < sortedOccurrences.length &&
+				sortedOccurrences[occIdx].occurrence_date <= date
+			) {
+				const occ = sortedOccurrences[occIdx];
+				const payment = paymentMap.get(occ.payment_id);
+
+				if (payment) {
+					const isPoolReceiver =
+						occ.receiver_account_id !== null && poolIds.has(occ.receiver_account_id);
+					const isPoolPayer = occ.payer_id !== null && poolIds.has(occ.payer_id);
+
+					if (!isPoolReceiver && !isPoolPayer) {
+						// If focused participant is the payer
+						if (occ.payer_id === focusParticipantId && payment.contributions) {
+							for (const contrib of payment.contributions) {
+								if (
+									contrib.participant_id !== focusParticipantId &&
+									!poolIds.has(contrib.participant_id)
+								) {
+									// Focused participant paid for this other person
+									const current = runningPairwise.get(contrib.participant_id) ?? 0;
+									runningPairwise.set(contrib.participant_id, current + contrib.amount);
+								}
+							}
+						}
+
+						// If focused participant is a contributor and someone else paid
+						if (
+							occ.payer_id !== focusParticipantId &&
+							occ.payer_id !== null &&
+							!poolIds.has(occ.payer_id)
+						) {
+							if (payment.contributions) {
+								const focusedContrib = payment.contributions.find(
+									(c) => c.participant_id === focusParticipantId
+								);
+								if (focusedContrib) {
+									// Someone else paid for the focused participant
+									const current = runningPairwise.get(occ.payer_id) ?? 0;
+									runningPairwise.set(occ.payer_id, current - focusedContrib.amount);
+								}
+							}
+						}
+					}
+				}
+
+				occIdx++;
+			}
+
+			result.set(date, new Map(runningPairwise));
+		}
+
+		return result;
+	});
+
+	// Compute running pool ownership at each date
+	// Returns SvelteMap<poolId, SvelteMap<date, Map<participantId, ownership>>>
+
+	let poolOwnershipTimeSeries = $derived.by(() => {
+		if (!isRangeMode || !debts || rangeDates.length === 0 || !debts.pool_ownerships) {
+			return new SvelteMap<number, Map<string, Map<number, number>>>();
+		}
+
+		const result = new SvelteMap<number, Map<string, Map<number, number>>>();
+
+		// Initialize for each pool
+		for (const pool of debts.pool_ownerships) {
+			const poolTimeSeries = new SvelteMap<string, Map<number, number>>();
+			const runningOwnership = new SvelteMap<number, number>();
+
+			// Initialize all participants with 0 ownership
+			for (const entry of pool.entries) {
+				runningOwnership.set(entry.participant_id, 0);
+			}
+
+			// Sort occurrences by date
+			const sortedOccurrences = [...debts.occurrences].sort((a, b) =>
+				a.occurrence_date.localeCompare(b.occurrence_date)
+			);
+
+			let occIdx = 0;
+
+			for (const date of rangeDates) {
+				while (
+					occIdx < sortedOccurrences.length &&
+					sortedOccurrences[occIdx].occurrence_date <= date
+				) {
+					const occ = sortedOccurrences[occIdx];
+					const payment = paymentMap.get(occ.payment_id);
+
+					if (payment) {
+						// User -> Pool transfer (deposit)
+						if (occ.receiver_account_id === pool.pool_id && occ.payer_id !== null) {
+							const current = runningOwnership.get(occ.payer_id) ?? 0;
+							runningOwnership.set(occ.payer_id, current + occ.amount);
+						}
+
+						// Pool -> User transfer (withdrawal) - pool is the payer
+						if (occ.payer_id === pool.pool_id && occ.receiver_account_id !== null) {
+							const current = runningOwnership.get(occ.receiver_account_id) ?? 0;
+							runningOwnership.set(occ.receiver_account_id, current - occ.amount);
+						}
+
+						// Pool pays external expense - distribute consumption among contributors
+						if (
+							occ.payer_id === pool.pool_id &&
+							occ.receiver_account_id === null &&
+							payment.contributions
+						) {
+							for (const contrib of payment.contributions) {
+								if (!poolIds.has(contrib.participant_id)) {
+									const current = runningOwnership.get(contrib.participant_id) ?? 0;
+									runningOwnership.set(contrib.participant_id, current - contrib.amount);
+								}
+							}
+						}
+					}
+
+					occIdx++;
+				}
+
+				poolTimeSeries.set(date, new Map(runningOwnership));
+			}
+
+			result.set(pool.pool_id, poolTimeSeries);
+		}
+
+		return result;
+	});
+
+	// Get today annotation for charts
+	function getTodayAnnotation() {
+		if (!annotationPlugin) return {};
+		return {
+			todayLine: {
+				type: 'line' as const,
+				xMin: todayStr,
+				xMax: todayStr,
+				borderColor: '#333',
+				borderWidth: 2,
+				borderDash: [5, 5],
+				label: {
+					display: true,
+					content: $_('overview.today'),
+					position: 'start' as const,
+					backgroundColor: '#333',
+					color: 'white',
+					font: { size: 10 }
+				}
+			}
+		};
+	}
+
+	// Render balance chart
+	function renderBalanceChart(canvas: HTMLCanvasElement) {
+		if (!chartReady || !isRangeMode || rangeDates.length === 0) return;
+
+		// Destroy existing chart
+		if (balanceChart) {
+			balanceChart.destroy();
+			balanceChart = null;
+		}
+
+		const datasets: {
+			label: string;
+			data: { x: string; y: number }[];
+			borderColor: string;
+			backgroundColor: string;
+			tension: number;
+			fill: boolean;
+			pointRadius: number;
+			pointHoverRadius: number;
+		}[] = [];
+
+		if (focusParticipantId !== null && pairwiseTimeSeries.size > 0) {
+			// Focus mode: show pairwise balances
+			const participantIds = [
+				...new Set([...pairwiseTimeSeries.values()].flatMap((m) => [...m.keys()]))
+			];
+
+			participantIds.forEach((pid, idx) => {
+				const otherBalance = debts?.balances.find((b) => b.participant_id === pid);
+				if (!otherBalance) return;
+
+				datasets.push({
+					label: `vs ${otherBalance.participant_name}`,
+					data: rangeDates.map((date) => ({
+						x: date,
+						y: pairwiseTimeSeries.get(date)?.get(pid) ?? 0
+					})),
+					borderColor: CHART_COLORS[idx % CHART_COLORS.length],
+					backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] + '20',
+					tension: 0.3,
+					fill: false,
+					pointRadius: 3,
+					pointHoverRadius: 5
+				});
+			});
+		} else {
+			// Normal mode: show all participant balances
+			const participantIds = [
+				...new Set([...balanceTimeSeries.values()].flatMap((m) => [...m.keys()]))
+			];
+
+			participantIds.forEach((pid, idx) => {
+				const balance = debts?.balances.find((b) => b.participant_id === pid);
+				if (!balance) return;
+
+				datasets.push({
+					label: balance.participant_name,
+					data: rangeDates.map((date) => ({
+						x: date,
+						y: balanceTimeSeries.get(date)?.get(pid) ?? 0
+					})),
+					borderColor: CHART_COLORS[idx % CHART_COLORS.length],
+					backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] + '20',
+					tension: 0.3,
+					fill: false,
+					pointRadius: 3,
+					pointHoverRadius: 5
+				});
+			});
+		}
+
+		balanceChart = new Chart(canvas, {
+			type: 'line',
+			data: { datasets },
+			options: {
+				responsive: true,
+				maintainAspectRatio: false,
+				interaction: {
+					mode: 'index',
+					intersect: false
+				},
+				plugins: {
+					legend: {
+						position: 'bottom',
+						labels: { usePointStyle: true }
+					},
+					annotation: {
+						annotations: getTodayAnnotation()
+					},
+					tooltip: {
+						callbacks: {
+							label: (context) => {
+								const value = context.parsed.y ?? 0;
+								return `${context.dataset.label}: ${formatCurrency(value)}`;
+							}
+						}
+					}
+				},
+				scales: {
+					x: {
+						type: 'time',
+						time: {
+							unit: 'day',
+							displayFormats: { day: 'MMM d' }
+						},
+						title: { display: false }
+					},
+					y: {
+						title: { display: true, text: $_('overview.balance') },
+						ticks: {
+							callback: (value) => formatCurrency(value as number)
+						}
+					}
+				}
+			}
+		});
+	}
+
+	// Render pool ownership chart
+	function renderPoolChart(canvas: HTMLCanvasElement, poolId: number) {
+		if (!chartReady || !isRangeMode || rangeDates.length === 0) return;
+
+		// Destroy existing chart for this pool
+		const existingChart = poolCharts.get(poolId);
+		if (existingChart) {
+			existingChart.destroy();
+			poolCharts.delete(poolId);
+		}
+
+		const poolData = poolOwnershipTimeSeries.get(poolId);
+		if (!poolData) return;
+
+		const pool = debts?.pool_ownerships?.find((p) => p.pool_id === poolId);
+		if (!pool) return;
+
+		const datasets: {
+			label: string;
+			data: { x: string; y: number }[];
+			borderColor: string;
+			backgroundColor: string;
+			tension: number;
+			fill: boolean;
+			pointRadius: number;
+			pointHoverRadius: number;
+		}[] = [];
+
+		// Get participant IDs to show (filter by focus if applicable)
+		const entriesToShow =
+			focusParticipantId !== null
+				? pool.entries.filter((e) => e.participant_id === focusParticipantId)
+				: pool.entries;
+
+		entriesToShow.forEach((entry, idx) => {
+			datasets.push({
+				label: entry.participant_name,
+				data: rangeDates.map((date) => ({
+					x: date,
+					y: poolData.get(date)?.get(entry.participant_id) ?? 0
+				})),
+				borderColor: CHART_COLORS[idx % CHART_COLORS.length],
+				backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] + '20',
+				tension: 0.3,
+				fill: false,
+				pointRadius: 3,
+				pointHoverRadius: 5
+			});
+		});
+
+		const chart = new Chart(canvas, {
+			type: 'line',
+			data: { datasets },
+			options: {
+				responsive: true,
+				maintainAspectRatio: false,
+				interaction: {
+					mode: 'index',
+					intersect: false
+				},
+				plugins: {
+					legend: {
+						position: 'bottom',
+						labels: { usePointStyle: true }
+					},
+					annotation: {
+						annotations: getTodayAnnotation()
+					},
+					tooltip: {
+						callbacks: {
+							label: (context) => {
+								const value = context.parsed.y ?? 0;
+								return `${context.dataset.label}: ${formatCurrency(value)}`;
+							}
+						}
+					}
+				},
+				scales: {
+					x: {
+						type: 'time',
+						time: {
+							unit: 'day',
+							displayFormats: { day: 'MMM d' }
+						},
+						title: { display: false }
+					},
+					y: {
+						title: { display: true, text: $_('overview.ownership') },
+						ticks: {
+							callback: (value) => formatCurrency(value as number)
+						}
+					}
+				}
+			}
+		});
+
+		poolCharts.set(poolId, chart);
+	}
+
+	// Effect to render balance chart when data or canvas changes
+	$effect(() => {
+		if (balanceChartCanvas && chartReady && isRangeMode && rangeDates.length > 0) {
+			// Track dependencies
+			const _ts = focusParticipantId !== null ? pairwiseTimeSeries : balanceTimeSeries;
+			void _ts;
+			renderBalanceChart(balanceChartCanvas);
+		}
+	});
+
+	// Effect to render pool charts when data changes
+	$effect(() => {
+		if (chartReady && isRangeMode && rangeDates.length > 0 && debts?.pool_ownerships) {
+			// Track dependencies
+			const _pts = poolOwnershipTimeSeries;
+			void _pts;
+
+			for (const pool of debts.pool_ownerships) {
+				const canvas = poolChartCanvases.get(pool.pool_id);
+				if (canvas) {
+					renderPoolChart(canvas, pool.pool_id);
+				}
+			}
+		}
+	});
+
+	// Action to bind pool canvas to the map
+	function bindPoolCanvas(node: HTMLCanvasElement, params: { poolId: number }) {
+		poolChartCanvases.set(params.poolId, node);
+		// Trigger render once the canvas is bound
+		if (chartReady && isRangeMode && rangeDates.length > 0) {
+			renderPoolChart(node, params.poolId);
+		}
+		return {
+			destroy() {
+				// Clean up chart when canvas is removed
+				const chart = poolCharts.get(params.poolId);
+				if (chart) {
+					chart.destroy();
+					poolCharts.delete(params.poolId);
+				}
+				poolChartCanvases.delete(params.poolId);
+			}
+		};
+	}
 
 	// Get unique payment dates (from all payments, considering recurrence)
 	// Always include today as a navigation point
@@ -582,8 +1161,9 @@
 		loading = true;
 		error = '';
 		try {
-			// Load debts up to target date
-			debts = await getDebts(projectId, targetDate);
+			// In range mode, load debts up to endDate; otherwise use targetDate
+			const dateToLoad = isRangeMode && endDate ? endDate : targetDate;
+			debts = await getDebts(projectId, dateToLoad);
 			// Also load all payments to know future dates
 			allPayments = await getPayments(projectId);
 		} catch (e) {
@@ -595,6 +1175,9 @@
 
 	$effect(() => {
 		if (projectId && targetDate) {
+			// Track endDate to reload when range changes
+			const _endDate = endDate;
+			void _endDate;
 			loadDebts();
 		}
 	});
@@ -633,6 +1216,7 @@
 
 	function goToToday() {
 		targetDate = getLocalDateString();
+		endDate = null; // Clear range mode when going to today
 	}
 
 	function goToPreviousPayment() {
@@ -708,8 +1292,8 @@
 	let todayStr = $derived(getLocalDateString());
 	let isToday = $derived(targetDate === todayStr);
 	let daysDiff = $derived(getDaysDiff(targetDate));
-	let isFuture = $derived(daysDiff > 0);
-	let isPast = $derived(daysDiff < 0);
+	let _isFuture = $derived(daysDiff > 0);
+	let _isPast = $derived(daysDiff < 0);
 	let relativeDateLabel = $derived(getRelativeDateLabel(targetDate));
 
 	// Map payment_id to full payment details for showing contributions
@@ -876,44 +1460,71 @@
 <h2>{$_('overview.title')}</h2>
 
 <!-- Date selector -->
-<div class="date-selector card">
-	<div class="date-nav-row">
-		<button
-			class="nav-btn"
-			onclick={goToPreviousPayment}
-			disabled={!previousPaymentDate}
-			title={previousPaymentDate
-				? `Go to ${formatDate(previousPaymentDate)}`
-				: 'No earlier payments'}>⟨</button
-		>
+<div class="date-selector card" class:range-mode={isRangeMode}>
+	<div class="date-range-row">
+		<!-- Start Date -->
+		<div class="date-nav-row">
+			<button
+				class="nav-btn"
+				onclick={goToPreviousPayment}
+				disabled={!previousPaymentDate || isRangeMode}
+				title={previousPaymentDate
+					? `Go to ${formatDate(previousPaymentDate)}`
+					: 'No earlier payments'}>⟨</button
+			>
 
-		<div class="date-display">
-			<input type="date" bind:value={targetDate} class="date-input" />
-			<span class="date-label">
-				{formatDate(targetDate)}
-				{#if relativeDateLabel && !isToday}
-					<span class="relative-label">({relativeDateLabel})</span>
-				{/if}
-				{#if isFuture}
-					<span class="badge future-badge">{$_('overview.future')}</span>
-				{:else if isPast}
-					<span class="badge past-badge">{$_('overview.past')}</span>
-				{/if}
-			</span>
+			<div class="date-display">
+				<span class="date-label-small">{$_('overview.from')}</span>
+				<input type="date" bind:value={targetDate} class="date-input" />
+				<span class="date-label">
+					{formatDate(targetDate)}
+					{#if !isRangeMode && relativeDateLabel && !isToday}
+						<span class="relative-label">({relativeDateLabel})</span>
+					{/if}
+				</span>
+			</div>
+
+			<button
+				class="nav-btn"
+				onclick={goToNextPayment}
+				disabled={!nextPaymentDate || isRangeMode}
+				title={nextPaymentDate ? `Go to ${formatDate(nextPaymentDate)}` : 'No future payments'}
+				>⟩</button
+			>
 		</div>
 
-		<button
-			class="nav-btn"
-			onclick={goToNextPayment}
-			disabled={!nextPaymentDate}
-			title={nextPaymentDate ? `Go to ${formatDate(nextPaymentDate)}` : 'No future payments'}
-			>⟩</button
-		>
+		<!-- End Date (optional) -->
+		<div class="date-range-to">
+			<span class="range-arrow">{isRangeMode ? '→' : ''}</span>
+			<div class="date-display end-date-display">
+				<span class="date-label-small">{$_('overview.to')}</span>
+				<input
+					type="date"
+					bind:value={endDate}
+					min={targetDate}
+					class="date-input"
+					placeholder={$_('overview.selectEndDate')}
+				/>
+				{#if endDate}
+					<span class="date-label">{formatDate(endDate)}</span>
+				{:else}
+					<span class="date-label hint">{$_('overview.optional')}</span>
+				{/if}
+			</div>
+		</div>
 	</div>
 
-	<button class="today-btn" onclick={goToToday} disabled={isToday}>
-		{$_('overview.today')}
-	</button>
+	<div class="date-actions">
+		<button class="today-btn" onclick={goToToday} disabled={isToday && !endDate}>
+			{$_('overview.today')}
+		</button>
+		{#if isRangeMode}
+			<button class="clear-range-btn" onclick={() => (endDate = null)}>
+				{$_('overview.clearRange')}
+			</button>
+			<span class="range-badge">{$_('overview.rangeMode')}</span>
+		{/if}
+	</div>
 </div>
 
 <!-- Focus mode selector -->
@@ -947,6 +1558,11 @@
 			<h3>{poolOwnership.pool_name}</h3>
 			{#if poolOwnership.entries.length === 0}
 				<p class="no-ownership">{$_('overview.noPoolActivity')}</p>
+			{:else if isRangeMode && chartReady}
+				<!-- Graph view in range mode -->
+				<div class="chart-container">
+					<canvas use:bindPoolCanvas={{ poolId: poolOwnership.pool_id }}></canvas>
+				</div>
 			{:else}
 				<table class="balance-table">
 					<thead>
@@ -980,8 +1596,12 @@
 											{#if entry.contributed > 0.01}
 												<div class="detail-section">
 													<div class="detail-header">
-														{entry.participant_name} contributed {formatCurrency(entry.contributed)} to
-														{poolOwnership.pool_name}
+														{$_('overview.amountContributed', {
+															values: {
+																payer: entry.participant_name,
+																amount: formatCurrency(entry.contributed)
+															}
+														})}
 													</div>
 													{#if entry.contributed_breakdown && entry.contributed_breakdown.length > 0}
 														{@const groupedYears = groupBreakdownByYearMonth(
@@ -1050,7 +1670,12 @@
 											{#if entry.consumed > 0.01}
 												<div class="detail-section">
 													<div class="detail-header">
-														{entry.participant_name} consumed {formatCurrency(entry.consumed)} from {poolOwnership.pool_name}
+														{$_('overview.amountConsumed', {
+															values: {
+																consumer: entry.participant_name,
+																amount: formatCurrency(entry.consumed)
+															}
+														})}
 													</div>
 													{#if entry.consumed_breakdown && entry.consumed_breakdown.length > 0}
 														{@const groupedYears = groupBreakdownByYearMonth(
@@ -1152,229 +1777,253 @@
 
 	<section class="card">
 		<h3>{$_('overview.balances')}</h3>
-		<table class="balance-table">
-			<thead>
-				<tr>
-					<th></th>
-					<th>{$_('overview.participant')}</th>
-					<th>{$_('overview.balance')}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each filteredBalances as b (b.participant_id)}
-					{@const isExpanded = expandedBalanceRows.has(b.participant_id)}
-					{@const pairwise = getPairwiseForParticipant(b.participant_id)}
-					<tr
-						class="balance-row"
-						class:expanded={isExpanded}
-						class:focused={focusParticipantId === b.participant_id}
-						onclick={() => toggleBalanceRow(b.participant_id)}
-					>
-						<td class="expand-cell">
-							<span class="expand-icon">{isExpanded ? '▼' : '▶'}</span>
-						</td>
-						<td>{b.participant_name}</td>
-						<td class:positive={b.net_balance > 0} class:negative={b.net_balance < 0}>
-							{b.net_balance >= 0 ? '+' : ''}{formatCurrency(b.net_balance)}
-						</td>
+		{#if isRangeMode && chartReady}
+			<!-- Graph view in range mode -->
+			<div class="chart-container">
+				<canvas bind:this={balanceChartCanvas}></canvas>
+			</div>
+		{:else}
+			<table class="balance-table">
+				<thead>
+					<tr>
+						<th></th>
+						<th>{$_('overview.participant')}</th>
+						<th>{$_('overview.balance')}</th>
 					</tr>
-					{#if isExpanded}
-						<tr class="pairwise-row">
-							<td colspan="3">
-								<div class="pairwise-details">
-									{#if pairwise.length === 0}
-										<p class="no-relationships">{$_('overview.noRelationships')}</p>
-									{:else}
-										<div class="pairwise-list">
-											{#each pairwise as pw (pw.other_participant_id)}
-												{@const isExpanded = isPairwiseExpanded(
-													b.participant_id,
-													pw.other_participant_id
-												)}
-												<button
-													class="pairwise-item"
-													class:expanded={isExpanded}
-													onclick={() =>
-														togglePairwiseRow(b.participant_id, pw.other_participant_id)}
-												>
-													<span class="pairwise-toggle">{isExpanded ? '▼' : '▶'}</span>
-													<span class="pairwise-name">{pw.other_participant_name}</span>
-													<span
-														class="pairwise-net"
-														class:positive={pw.net > 0}
-														class:negative={pw.net < 0}
-													>
-														{pw.net >= 0 ? '+' : ''}{formatCurrency(pw.net)}
-													</span>
-												</button>
-												{#if isExpanded}
-													{@const pairwiseKey = `${b.participant_id}-${pw.other_participant_id}`}
-													<div class="pairwise-details-expanded">
-														{#if pw.amount_paid_for > 0.01}
-															<div class="detail-section">
-																<div class="detail-header">
-																	{b.participant_name} paid {formatCurrency(pw.amount_paid_for)} for {pw.other_participant_name}
-																</div>
-																{#if pw.paid_for_breakdown && pw.paid_for_breakdown.length > 0}
-																	{@const groupedYears = groupBreakdownByYearMonth(
-																		pw.paid_for_breakdown
-																	)}
-																	<div class="breakdown-hierarchy">
-																		{#each [...groupedYears.entries()] as [year, yearData] (year)}
-																			{@const yearExpanded =
-																				expandedPairwiseYears.get(pairwiseKey)?.has(year) ?? false}
-																			<div class="breakdown-year">
-																				<button
-																					class="breakdown-year-btn"
-																					onclick={() => togglePairwiseYear(pairwiseKey, year)}
-																				>
-																					<span class="expand-icon">{yearExpanded ? '▼' : '▶'}</span
-																					>
-																					<span class="year-text">{year}</span>
-																					<span class="year-total"
-																						>{formatCurrency(yearData.total)}</span
-																					>
-																				</button>
-																				{#if yearExpanded}
-																					{#each [...yearData.months.entries()] as [monthKey, monthData] (monthKey)}
-																						{@const monthExpanded =
-																							expandedPairwiseMonths
-																								.get(pairwiseKey)
-																								?.get(year)
-																								?.has(monthKey) ?? false}
-																						<div class="breakdown-month">
-																							<button
-																								class="breakdown-month-btn"
-																								onclick={() =>
-																									togglePairwiseMonth(pairwiseKey, year, monthKey)}
-																							>
-																								<span class="expand-icon"
-																									>{monthExpanded ? '▼' : '▶'}</span
-																								>
-																								<span class="month-text">{monthData.month}</span>
-																								<span class="month-total"
-																									>{formatCurrency(monthData.total)}</span
-																								>
-																							</button>
-																							{#if monthExpanded}
-																								<ul class="breakdown-list">
-																									{#each monthData.items as item (item.payment_id)}
-																										<li class="breakdown-item">
-																											<span class="breakdown-desc"
-																												>{item.description}</span
-																											>
-																											<span class="breakdown-date"
-																												>{item.occurrence_date}</span
-																											>
-																											<span class="breakdown-amount"
-																												>{formatCurrency(item.amount)}</span
-																											>
-																										</li>
-																									{/each}
-																								</ul>
-																							{/if}
-																						</div>
-																					{/each}
-																				{/if}
-																			</div>
-																		{/each}
-																	</div>
-																{/if}
-															</div>
-														{/if}
-														{#if pw.amount_owed_by > 0.01}
-															<div class="detail-section">
-																<div class="detail-header">
-																	{pw.other_participant_name} paid {formatCurrency(
-																		pw.amount_owed_by
-																	)} for {b.participant_name}
-																</div>
-																{#if pw.owed_by_breakdown && pw.owed_by_breakdown.length > 0}
-																	{@const groupedYears = groupBreakdownByYearMonth(
-																		pw.owed_by_breakdown
-																	)}
-																	<div class="breakdown-hierarchy">
-																		{#each [...groupedYears.entries()] as [year, yearData] (year)}
-																			{@const yearExpanded =
-																				expandedPairwiseYears
-																					.get(`${pairwiseKey}-owed`)
-																					?.has(year) ?? false}
-																			<div class="breakdown-year">
-																				<button
-																					class="breakdown-year-btn"
-																					onclick={() =>
-																						togglePairwiseYear(`${pairwiseKey}-owed`, year)}
-																				>
-																					<span class="expand-icon">{yearExpanded ? '▼' : '▶'}</span
-																					>
-																					<span class="year-text">{year}</span>
-																					<span class="year-total"
-																						>{formatCurrency(yearData.total)}</span
-																					>
-																				</button>
-																				{#if yearExpanded}
-																					{#each [...yearData.months.entries()] as [monthKey, monthData] (monthKey)}
-																						{@const monthExpanded =
-																							expandedPairwiseMonths
-																								.get(`${pairwiseKey}-owed`)
-																								?.get(year)
-																								?.has(monthKey) ?? false}
-																						<div class="breakdown-month">
-																							<button
-																								class="breakdown-month-btn"
-																								onclick={() =>
-																									togglePairwiseMonth(
-																										`${pairwiseKey}-owed`,
-																										year,
-																										monthKey
-																									)}
-																							>
-																								<span class="expand-icon"
-																									>{monthExpanded ? '▼' : '▶'}</span
-																								>
-																								<span class="month-text">{monthData.month}</span>
-																								<span class="month-total"
-																									>{formatCurrency(monthData.total)}</span
-																								>
-																							</button>
-																							{#if monthExpanded}
-																								<ul class="breakdown-list">
-																									{#each monthData.items as item (item.payment_id)}
-																										<li class="breakdown-item">
-																											<span class="breakdown-desc"
-																												>{item.description}</span
-																											>
-																											<span class="breakdown-date"
-																												>{item.occurrence_date}</span
-																											>
-																											<span class="breakdown-amount"
-																												>{formatCurrency(item.amount)}</span
-																											>
-																										</li>
-																									{/each}
-																								</ul>
-																							{/if}
-																						</div>
-																					{/each}
-																				{/if}
-																			</div>
-																		{/each}
-																	</div>
-																{/if}
-															</div>
-														{/if}
-													</div>
-												{/if}
-											{/each}
-										</div>
-									{/if}
-								</div>
+				</thead>
+				<tbody>
+					{#each filteredBalances as b (b.participant_id)}
+						{@const isExpanded = expandedBalanceRows.has(b.participant_id)}
+						{@const pairwise = getPairwiseForParticipant(b.participant_id)}
+						<tr
+							class="balance-row"
+							class:expanded={isExpanded}
+							class:focused={focusParticipantId === b.participant_id}
+							onclick={() => toggleBalanceRow(b.participant_id)}
+						>
+							<td class="expand-cell">
+								<span class="expand-icon">{isExpanded ? '▼' : '▶'}</span>
+							</td>
+							<td>{b.participant_name}</td>
+							<td class:positive={b.net_balance > 0} class:negative={b.net_balance < 0}>
+								{b.net_balance >= 0 ? '+' : ''}{formatCurrency(b.net_balance)}
 							</td>
 						</tr>
-					{/if}
-				{/each}
-			</tbody>
-		</table>
+						{#if isExpanded}
+							<tr class="pairwise-row">
+								<td colspan="3">
+									<div class="pairwise-details">
+										{#if pairwise.length === 0}
+											<p class="no-relationships">{$_('overview.noRelationships')}</p>
+										{:else}
+											<div class="pairwise-list">
+												{#each pairwise as pw (pw.other_participant_id)}
+													{@const isExpanded = isPairwiseExpanded(
+														b.participant_id,
+														pw.other_participant_id
+													)}
+													<button
+														class="pairwise-item"
+														class:expanded={isExpanded}
+														onclick={() =>
+															togglePairwiseRow(b.participant_id, pw.other_participant_id)}
+													>
+														<span class="pairwise-toggle">{isExpanded ? '▼' : '▶'}</span>
+														<span class="pairwise-name">{pw.other_participant_name}</span>
+														<span
+															class="pairwise-net"
+															class:positive={pw.net > 0}
+															class:negative={pw.net < 0}
+														>
+															{pw.net >= 0 ? '+' : ''}{formatCurrency(pw.net)}
+														</span>
+													</button>
+													{#if isExpanded}
+														{@const pairwiseKey = `${b.participant_id}-${pw.other_participant_id}`}
+														<div class="pairwise-details-expanded">
+															{#if pw.amount_paid_for > 0.01}
+																<div class="detail-section">
+																	<div class="detail-header">
+																		{$_('overview.amountPaidFor', {
+																			values: {
+																				payer: b.participant_name,
+																				amount: formatCurrency(pw.amount_paid_for),
+																				paidFor: pw.other_participant_name
+																			}
+																		})}
+																	</div>
+																	{#if pw.paid_for_breakdown && pw.paid_for_breakdown.length > 0}
+																		{@const groupedYears = groupBreakdownByYearMonth(
+																			pw.paid_for_breakdown
+																		)}
+																		<div class="breakdown-hierarchy">
+																			{#each [...groupedYears.entries()] as [year, yearData] (year)}
+																				{@const yearExpanded =
+																					expandedPairwiseYears.get(pairwiseKey)?.has(year) ??
+																					false}
+																				<div class="breakdown-year">
+																					<button
+																						class="breakdown-year-btn"
+																						onclick={() => togglePairwiseYear(pairwiseKey, year)}
+																					>
+																						<span class="expand-icon"
+																							>{yearExpanded ? '▼' : '▶'}</span
+																						>
+																						<span class="year-text">{year}</span>
+																						<span class="year-total"
+																							>{formatCurrency(yearData.total)}</span
+																						>
+																					</button>
+																					{#if yearExpanded}
+																						{#each [...yearData.months.entries()] as [monthKey, monthData] (monthKey)}
+																							{@const monthExpanded =
+																								expandedPairwiseMonths
+																									.get(pairwiseKey)
+																									?.get(year)
+																									?.has(monthKey) ?? false}
+																							<div class="breakdown-month">
+																								<button
+																									class="breakdown-month-btn"
+																									onclick={() =>
+																										togglePairwiseMonth(
+																											pairwiseKey,
+																											year,
+																											monthKey
+																										)}
+																								>
+																									<span class="expand-icon"
+																										>{monthExpanded ? '▼' : '▶'}</span
+																									>
+																									<span class="month-text">{monthData.month}</span>
+																									<span class="month-total"
+																										>{formatCurrency(monthData.total)}</span
+																									>
+																								</button>
+																								{#if monthExpanded}
+																									<ul class="breakdown-list">
+																										{#each monthData.items as item (item.payment_id)}
+																											<li class="breakdown-item">
+																												<span class="breakdown-desc"
+																													>{item.description}</span
+																												>
+																												<span class="breakdown-date"
+																													>{item.occurrence_date}</span
+																												>
+																												<span class="breakdown-amount"
+																													>{formatCurrency(item.amount)}</span
+																												>
+																											</li>
+																										{/each}
+																									</ul>
+																								{/if}
+																							</div>
+																						{/each}
+																					{/if}
+																				</div>
+																			{/each}
+																		</div>
+																	{/if}
+																</div>
+															{/if}
+															{#if pw.amount_owed_by > 0.01}
+																<div class="detail-section">
+																	<div class="detail-header">
+																		{$_('overview.amountPaidFor', {
+																			values: {
+																				payer: pw.other_participant_name,
+																				amount: formatCurrency(pw.amount_owed_by),
+																				paidFor: b.participant_name
+																			}
+																		})}
+																	</div>
+																	{#if pw.owed_by_breakdown && pw.owed_by_breakdown.length > 0}
+																		{@const groupedYears = groupBreakdownByYearMonth(
+																			pw.owed_by_breakdown
+																		)}
+																		<div class="breakdown-hierarchy">
+																			{#each [...groupedYears.entries()] as [year, yearData] (year)}
+																				{@const yearExpanded =
+																					expandedPairwiseYears
+																						.get(`${pairwiseKey}-owed`)
+																						?.has(year) ?? false}
+																				<div class="breakdown-year">
+																					<button
+																						class="breakdown-year-btn"
+																						onclick={() =>
+																							togglePairwiseYear(`${pairwiseKey}-owed`, year)}
+																					>
+																						<span class="expand-icon"
+																							>{yearExpanded ? '▼' : '▶'}</span
+																						>
+																						<span class="year-text">{year}</span>
+																						<span class="year-total"
+																							>{formatCurrency(yearData.total)}</span
+																						>
+																					</button>
+																					{#if yearExpanded}
+																						{#each [...yearData.months.entries()] as [monthKey, monthData] (monthKey)}
+																							{@const monthExpanded =
+																								expandedPairwiseMonths
+																									.get(`${pairwiseKey}-owed`)
+																									?.get(year)
+																									?.has(monthKey) ?? false}
+																							<div class="breakdown-month">
+																								<button
+																									class="breakdown-month-btn"
+																									onclick={() =>
+																										togglePairwiseMonth(
+																											`${pairwiseKey}-owed`,
+																											year,
+																											monthKey
+																										)}
+																								>
+																									<span class="expand-icon"
+																										>{monthExpanded ? '▼' : '▶'}</span
+																									>
+																									<span class="month-text">{monthData.month}</span>
+																									<span class="month-total"
+																										>{formatCurrency(monthData.total)}</span
+																									>
+																								</button>
+																								{#if monthExpanded}
+																									<ul class="breakdown-list">
+																										{#each monthData.items as item (item.payment_id)}
+																											<li class="breakdown-item">
+																												<span class="breakdown-desc"
+																													>{item.description}</span
+																												>
+																												<span class="breakdown-date"
+																													>{item.occurrence_date}</span
+																												>
+																												<span class="breakdown-amount"
+																													>{formatCurrency(item.amount)}</span
+																												>
+																											</li>
+																										{/each}
+																									</ul>
+																								{/if}
+																							</div>
+																						{/each}
+																					{/if}
+																				</div>
+																			{/each}
+																		</div>
+																	{/if}
+																</div>
+															{/if}
+														</div>
+													{/if}
+												{/each}
+											</div>
+										{/if}
+									</div>
+								</td>
+							</tr>
+						{/if}
+					{/each}
+				</tbody>
+			</table>
+		{/if}
 	</section>
 
 	<section class="card">
@@ -1577,6 +2226,14 @@
 		border-radius: 16px;
 		padding: 1.5rem;
 		margin-bottom: 1.5rem;
+	}
+
+	/* Chart container */
+	.chart-container {
+		position: relative;
+		height: 350px;
+		width: 100%;
+		margin: 1rem 0;
 		box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
 	}
 
@@ -1663,24 +2320,6 @@
 		font-style: italic;
 	}
 
-	.badge {
-		padding: 0.15rem 0.5rem;
-		border-radius: 12px;
-		font-size: 0.7rem;
-		font-weight: 600;
-		text-transform: uppercase;
-	}
-
-	.future-badge {
-		background: #ff9f43;
-		color: white;
-	}
-
-	.past-badge {
-		background: #6c757d;
-		color: white;
-	}
-
 	.today-btn {
 		background: #2a9d8f;
 		color: white;
@@ -1699,6 +2338,86 @@
 	.today-btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	/* Date range mode styles */
+	.date-range-row {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 1rem;
+		flex-wrap: wrap;
+		width: 100%;
+	}
+
+	.date-range-to {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.range-arrow {
+		font-size: 1.25rem;
+		color: var(--accent, #7b61ff);
+		min-width: 1rem;
+	}
+
+	.end-date-display {
+		opacity: 0.7;
+		transition: opacity 0.2s;
+	}
+
+	.date-selector.range-mode .end-date-display {
+		opacity: 1;
+	}
+
+	.date-label-small {
+		font-size: 0.7rem;
+		color: #999;
+		text-transform: uppercase;
+		font-weight: 600;
+		letter-spacing: 0.5px;
+	}
+
+	.date-label.hint {
+		color: #999;
+		font-style: italic;
+	}
+
+	.date-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+		justify-content: center;
+	}
+
+	.clear-range-btn {
+		background: #e76f51;
+		color: white;
+		border: none;
+		border-radius: 8px;
+		padding: 0.5rem 1rem;
+		font-size: 0.9rem;
+		cursor: pointer;
+		transition: background 0.2s;
+	}
+
+	.clear-range-btn:hover {
+		background: #d45d41;
+	}
+
+	.range-badge {
+		background: var(--accent, #7b61ff);
+		color: white;
+		padding: 0.25rem 0.75rem;
+		border-radius: 12px;
+		font-size: 0.75rem;
+		font-weight: 600;
+	}
+
+	.date-selector.range-mode {
+		border-left: 3px solid var(--accent, #7b61ff);
 	}
 
 	.error {
@@ -1842,6 +2561,7 @@
 		flex-direction: column;
 		gap: 0.75rem;
 		margin-bottom: 1rem;
+		align-items: stretch;
 	}
 
 	.detail-section:last-child {
@@ -1849,12 +2569,12 @@
 	}
 
 	.detail-header {
-		font-size: 1.05rem;
 		color: #222;
-		font-weight: 700;
+		font-weight: 500;
 		padding: 0.75rem 0;
 		margin-bottom: 0.5rem;
 		border-bottom: 2px solid #d0d0d0;
+		text-align: left;
 	}
 
 	.breakdown-hierarchy {
@@ -1913,6 +2633,7 @@
 	.month-text {
 		flex: 1;
 		font-weight: 500;
+		font-size: 115%;
 		color: #333;
 	}
 

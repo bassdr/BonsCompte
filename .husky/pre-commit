@@ -1,59 +1,15 @@
 #!/bin/bash
+set -euo pipefail
 
 echo "Running pre-commit checks..."
 
-# Run backend formatting check (fail fast)
-echo "Running backend formatting check..."
-cd backend && cargo fmt --check
-if [ $? -ne 0 ]; then
-  echo "Backend formatting failed! Run 'cargo fmt' to fix. Commit aborted."
-  exit 1
-fi
-cd ..
+fail() { echo "$1"; exit 1; }
 
-# Run backend clippy
-echo "Running backend clippy..."
-cd backend && cargo clippy -- -D warnings
-if [ $? -ne 0 ]; then
-  echo "Backend clippy failed! Fix the warnings. Commit aborted."
-  exit 1
-fi
-cd ..
-
-# Run frontend type checking
-echo "Running frontend type check..."
-cd frontend && npm run check
-if [ $? -ne 0 ]; then
-  echo "Frontend type checking failed! Commit aborted."
-  exit 1
-fi
-cd ..
-
-# Run frontend linting
-echo "Running frontend lint..."
-cd frontend && npm run lint
-if [ $? -ne 0 ]; then
-  echo "Frontend linting failed! Run 'npm run format' to fix. Commit aborted."
-  exit 1
-fi
-cd ..
-
-# Run backend tests
-echo "Running backend tests..."
-cd backend && cargo test
-if [ $? -ne 0 ]; then
-  echo "Backend tests failed! Commit aborted."
-  exit 1
-fi
-cd ..
-
-# Run frontend tests
-echo "Running frontend tests..."
-cd frontend && npm test
-if [ $? -ne 0 ]; then
-  echo "Frontend tests failed! Commit aborted."
-  exit 1
-fi
-cd ..
+(cd backend && cargo fmt --check) || fail "Backend formatting failed!"
+(cd backend && cargo clippy -- -D warnings) || fail "Backend clippy failed!"
+(cd frontend && npm run check) || fail "Frontend type checking failed!"
+(cd frontend && npm run lint) || fail "Frontend lint failed!"
+(cd backend && cargo test) || fail "Backend tests failed!"
+(cd frontend && npm test) || fail "Frontend tests failed!"
 
 echo "All checks passed!"

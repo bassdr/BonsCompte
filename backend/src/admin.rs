@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (user_id, current_state, current_version) = match user {
                 Some(u) => u,
                 None => {
-                    eprintln!("Error: User '{}' not found", username);
+                    eprintln!("Error: User not found");
                     std::process::exit(1);
                 }
             };
@@ -96,18 +96,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .execute(&pool)
             .await?;
 
-            println!("Password reset for user '{}'", username);
-            println!("Temporary password: {}", temp_password);
+            println!("Password reset completed.");
+            println!("A temporary password has been generated.");
             println!("Previous state: {}", current_state);
             println!("New state: pending_approval");
             println!("Token version: {} -> {}", current_version, new_version);
             println!();
             println!("IMPORTANT: The user must:");
-            println!("  1. Log in with this temporary password");
-            println!(
-                "  2. Wait for admin approval (run: bonscompte-admin approve {})",
-                username
-            );
+            println!("  1. Log in with the temporary password provided out of band");
+            println!("  2. Wait for admin approval.");
         }
 
         Commands::Approve { username } => {
@@ -122,13 +119,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (user_id, current_state, current_version) = match user {
                 Some(u) => u,
                 None => {
-                    eprintln!("Error: User '{}' not found", username);
+                    eprintln!("Error: User not found");
                     std::process::exit(1);
                 }
             };
 
             if current_state == UserState::Active.as_str() {
-                println!("User '{}' is already active", username);
+                println!("User is already active");
                 return Ok(());
             }
 
@@ -139,7 +136,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .execute(&pool)
                 .await?;
 
-            println!("User '{}' approved", username);
+            println!("User approved");
             println!("Previous state: {}", current_state);
             println!("New state: active");
             println!("Token version: {} (unchanged)", current_version);
@@ -157,13 +154,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (user_id, current_state, current_version) = match user {
                 Some(u) => u,
                 None => {
-                    eprintln!("Error: User '{}' not found", username);
+                    eprintln!("Error: User not found");
                     std::process::exit(1);
                 }
             };
 
             if current_state == UserState::Revoked.as_str() {
-                println!("User '{}' is already revoked", username);
+                println!("User is already revoked");
                 return Ok(());
             }
 
@@ -176,7 +173,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .execute(&pool)
                 .await?;
 
-            println!("User '{}' revoked", username);
+            println!("User revoked");
             println!("Previous state: {}", current_state);
             println!("New state: revoked");
             println!(
@@ -200,11 +197,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "ID", "Username", "Display Name", "State", "TokVer"
                 );
                 println!("{}", "-".repeat(90));
-                for (id, username, display_name, state, token_version, created_at) in users {
+                for (id, _user_name, display_name, state, token_version, created_at) in users {
                     println!(
                         "{:<5} {:<20} {:<20} {:<18} {:<8} {}",
                         id,
-                        username,
+                        "<redacted>",
                         display_name.unwrap_or_else(|| "-".to_string()),
                         state,
                         token_version,

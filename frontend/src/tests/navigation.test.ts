@@ -6,13 +6,7 @@ describe('Navigation - Project Routes', () => {
 	const projectRoutesDir = join(__dirname, '../routes/projects/[id]');
 
 	// Define expected project sub-routes based on the navigation
-	const expectedRoutes = [
-		'settlement-snapshot',
-		'cashflow-planning',
-		'payments',
-		'history',
-		'settings'
-	];
+	const expectedRoutes = ['overview', 'cashflow', 'payments', 'history', 'settings'];
 
 	it('should have all navigation routes as actual page files', () => {
 		for (const route of expectedRoutes) {

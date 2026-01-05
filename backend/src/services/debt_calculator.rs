@@ -142,6 +142,32 @@ pub struct RecurringPaymentToConsolidate {
     pub recurrence_interval: i32,
 }
 
+/// Event-based balance point (one per transaction/event)
+#[derive(Debug, Serialize, Clone)]
+pub struct BalanceEvent {
+    pub date: String,
+    pub participant_id: i64,
+    pub participant_name: String,
+    pub net_balance: f64,
+    pub is_synthetic: bool, // True if from recommended contribution
+}
+
+/// The computed recommendation for a specific payer→receiver pair
+#[derive(Debug, Serialize)]
+pub struct ComputedRecommendation {
+    pub payer_id: i64,
+    pub payer_name: String,
+    pub receiver_id: i64,
+    pub receiver_name: String,
+    pub recommended_amount: f64,
+    pub frequency_type: String,
+    pub frequency_interval: i32,
+    pub current_trend: f64, // Monthly rate of change for payer
+    pub calculation_method: String,
+    pub start_date: String,
+    pub end_date: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct CashflowProjection {
     pub start_date: String,
@@ -152,6 +178,10 @@ pub struct CashflowProjection {
     pub pool_evolutions: Vec<PoolEvolution>,
     pub consolidate_mode: bool,
     pub payments_to_consolidate: Vec<RecurringPaymentToConsolidate>, // Empty if consolidate_mode=false
+    // New fields for recommendation-driven view
+    pub balance_events: Vec<BalanceEvent>,
+    pub computed_recommendation: Option<ComputedRecommendation>,
+    pub include_recommendation: bool,
 }
 
 /// Calculate debts as of today
@@ -1103,6 +1133,7 @@ fn calculate_direct_settlements(
 }
 
 /// Calculate cashflow projection over a future time horizon
+#[allow(clippy::too_many_arguments)]
 pub async fn calculate_cashflow_projection(
     pool: &SqlitePool,
     project_id: i64,
@@ -1111,9 +1142,19 @@ pub async fn calculate_cashflow_projection(
     frequency_type: &str,
     frequency_interval: i32,
     consolidate_mode: bool,
+    // New recommendation configuration
+    rec_payer_id: Option<i64>,
+    rec_receiver_id: Option<i64>,
+    rec_start_date: Option<&str>,
+    rec_end_date: Option<&str>,
+    include_recommendation: bool,
 ) -> AppResult<CashflowProjection> {
     let today = chrono::Utc::now().date_naive();
     let end_date = today + Months::new(horizon_months);
+
+    // Parse recommendation dates or use defaults
+    let rec_start = rec_start_date.and_then(parse_date).unwrap_or(today);
+    let rec_end = rec_end_date.and_then(parse_date).unwrap_or(end_date);
 
     // Get all participants
     let participants: Vec<(i64, String, String)> =
@@ -1446,6 +1487,86 @@ pub async fn calculate_cashflow_projection(
         });
     }
 
+    // Compute the specific recommendation if payer and receiver are specified
+    let computed_recommendation =
+        if let (Some(payer_id), Some(receiver_id)) = (rec_payer_id, rec_receiver_id) {
+            let payer_name = participant_map.get(&payer_id).cloned().unwrap_or_default();
+            let receiver_name = participant_map
+                .get(&receiver_id)
+                .cloned()
+                .unwrap_or_default();
+
+            // Get payer's monthly balances to calculate trend
+            let payer_balances: Vec<f64> = monthly_balances
+                .iter()
+                .filter(|mb| mb.participant_id == payer_id)
+                .map(|mb| mb.net_balance)
+                .collect();
+
+            let monthly_trend = if recommendation_mode == "linear_regression" {
+                calculate_linear_regression_slope(&payer_balances)
+            } else {
+                let first = payer_balances.first().copied().unwrap_or(0.0);
+                let last = payer_balances.last().copied().unwrap_or(0.0);
+                let num = payer_balances.len() as f64;
+                if num > 0.0 {
+                    (last - first) / num
+                } else {
+                    0.0
+                }
+            };
+
+            let recommended_amount =
+                convert_monthly_to_frequency(-monthly_trend, frequency_type, frequency_interval);
+
+            Some(ComputedRecommendation {
+                payer_id,
+                payer_name,
+                receiver_id,
+                receiver_name,
+                recommended_amount,
+                frequency_type: frequency_type.to_string(),
+                frequency_interval,
+                current_trend: monthly_trend,
+                calculation_method: recommendation_mode.to_string(),
+                start_date: rec_start.format("%Y-%m-%d").to_string(),
+                end_date: rec_end.format("%Y-%m-%d").to_string(),
+            })
+        } else {
+            None
+        };
+
+    // Generate synthetic events if recommendation is configured and include_recommendation is true
+    let mut synthetic_events: Vec<PaymentOccurrence> = Vec::new();
+    if include_recommendation {
+        if let Some(ref rec) = computed_recommendation {
+            if rec.recommended_amount > 0.0 {
+                synthetic_events = generate_synthetic_contribution_events(
+                    rec.payer_id,
+                    rec.receiver_id,
+                    rec.recommended_amount,
+                    &rec.frequency_type,
+                    rec.frequency_interval,
+                    rec_start,
+                    rec_end,
+                );
+            }
+        }
+    }
+
+    // Calculate event-based balance points
+    let mut combined_occurrences = all_occurrences.clone();
+    combined_occurrences.extend(synthetic_events.clone());
+    combined_occurrences.sort_by(|a, b| a.occurrence_date.cmp(&b.occurrence_date));
+
+    let balance_events = calculate_balance_events(
+        &combined_occurrences,
+        &participants,
+        &pool_participants,
+        &contribution_map,
+        &synthetic_events,
+    );
+
     Ok(CashflowProjection {
         start_date: start_date.format("%Y-%m-%d").to_string(),
         end_date: end_date.format("%Y-%m-%d").to_string(),
@@ -1455,6 +1576,9 @@ pub async fn calculate_cashflow_projection(
         pool_evolutions,
         consolidate_mode,
         payments_to_consolidate,
+        balance_events,
+        computed_recommendation,
+        include_recommendation,
     })
 }
 
@@ -1468,6 +1592,130 @@ fn convert_monthly_to_frequency(monthly_amount: f64, freq_type: &str, freq_inter
         _ => monthly_amount,
     };
     base_amount * (freq_interval as f64)
+}
+
+/// Generate synthetic contribution events based on recommendation config
+fn generate_synthetic_contribution_events(
+    payer_id: i64,
+    receiver_id: i64,
+    amount: f64,
+    frequency_type: &str,
+    frequency_interval: i32,
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+) -> Vec<PaymentOccurrence> {
+    let mut events = Vec::new();
+    let mut current = start_date;
+
+    while current <= end_date {
+        events.push(PaymentOccurrence {
+            payment_id: -1, // Synthetic marker
+            description: "Recommended contribution".to_string(),
+            amount,
+            occurrence_date: current.format("%Y-%m-%d").to_string(),
+            payer_id: Some(payer_id),
+            is_recurring: true,
+            receiver_account_id: Some(receiver_id),
+        });
+
+        // Advance date based on frequency
+        current = match frequency_type {
+            "weekly" => current + chrono::Days::new((frequency_interval * 7) as u64),
+            "monthly" => current + Months::new(frequency_interval as u32),
+            "yearly" => current + Months::new((frequency_interval * 12) as u32),
+            "daily" => current + chrono::Days::new(frequency_interval as u64),
+            _ => current + Months::new(frequency_interval as u32),
+        };
+    }
+
+    events
+}
+
+/// Calculate event-based balance points (one per transaction date)
+fn calculate_balance_events(
+    occurrences: &[PaymentOccurrence],
+    participants: &[(i64, String, String)],
+    pool_participants: &std::collections::HashSet<i64>,
+    contribution_map: &HashMap<i64, Vec<(i64, f64)>>,
+    synthetic_occurrences: &[PaymentOccurrence],
+) -> Vec<BalanceEvent> {
+    let mut balance_events = Vec::new();
+
+    // Build set of synthetic occurrence dates for marking
+    let synthetic_dates: std::collections::HashSet<String> = synthetic_occurrences
+        .iter()
+        .map(|o| o.occurrence_date.clone())
+        .collect();
+
+    // For each participant (excluding pools), track cumulative balance
+    for (participant_id, participant_name, account_type) in participants {
+        if account_type == "pool" {
+            continue;
+        }
+
+        let mut cumulative_paid = 0.0;
+        let mut cumulative_owed = 0.0;
+
+        for occurrence in occurrences {
+            let occ_date = match parse_date(&occurrence.occurrence_date) {
+                Some(d) => d,
+                None => continue,
+            };
+
+            // Check if pool transfer (skip for settlements)
+            let payer_is_pool = occurrence
+                .payer_id
+                .map(|id| pool_participants.contains(&id))
+                .unwrap_or(false);
+            let receiver_is_pool = occurrence
+                .receiver_account_id
+                .map(|id| pool_participants.contains(&id))
+                .unwrap_or(false);
+
+            if payer_is_pool || receiver_is_pool {
+                continue;
+            }
+
+            // Handle user-to-user transfers
+            if let Some(receiver_id) = occurrence.receiver_account_id {
+                if occurrence.payer_id == Some(*participant_id) {
+                    cumulative_paid += occurrence.amount;
+                }
+                if receiver_id == *participant_id {
+                    cumulative_owed += occurrence.amount;
+                }
+                continue;
+            }
+
+            // External expense
+            if occurrence.payer_id == Some(*participant_id) {
+                cumulative_paid += occurrence.amount;
+            }
+
+            // Contributions
+            if let Some(contribs) = contribution_map.get(&occurrence.payment_id) {
+                for (contrib_id, contrib_amount) in contribs {
+                    if contrib_id == participant_id {
+                        cumulative_owed += contrib_amount;
+                    }
+                }
+            }
+
+            let net_balance = cumulative_paid - cumulative_owed;
+            let is_synthetic = occurrence.payment_id == -1
+                || synthetic_dates.contains(&occurrence.occurrence_date);
+
+            balance_events.push(BalanceEvent {
+                date: occ_date.format("%Y-%m-%d").to_string(),
+                participant_id: *participant_id,
+                participant_name: participant_name.clone(),
+                net_balance,
+                is_synthetic,
+            });
+        }
+    }
+
+    balance_events
 }
 
 /// Calculate slope using linear regression

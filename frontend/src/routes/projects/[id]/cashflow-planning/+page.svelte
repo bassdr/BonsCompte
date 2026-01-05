@@ -2,20 +2,38 @@
 	import { page } from '$app/stores';
 	import {
 		getCashflowProjection,
+		getParticipants,
 		consolidatePayments,
 		type CashflowProjection,
-		type ConsolidatePaymentsRequest
+		type ConsolidatePaymentsRequest,
+		type Participant
 	} from '$lib/api';
 	import { _ } from '$lib/i18n';
 	import { formatCurrency } from '$lib/format/currency';
 	import { Chart, registerables, type TooltipItem } from 'chart.js';
+	import 'chartjs-adapter-date-fns';
 	import { onMount } from 'svelte';
-	import { SvelteMap } from 'svelte/reactivity';
+	import { SvelteMap, SvelteDate } from 'svelte/reactivity';
 	import type { RecurringContributionRecommendation } from '$lib/api';
+
+	// Will be set after dynamic import (SSR-safe)
+	let annotationPlugin: typeof import('chartjs-plugin-annotation').default | null = null;
 
 	let projection: CashflowProjection | null = $state(null);
 	let loading = $state(true);
 	let error = $state('');
+
+	// Participants for dropdowns
+	let participants: Participant[] = $state([]);
+	let userParticipants = $derived(participants.filter((p) => p.account_type === 'user'));
+	let poolParticipants = $derived(participants.filter((p) => p.account_type === 'pool'));
+
+	// Recommendation Configuration
+	let selectedPayerId: number | null = $state(null);
+	let selectedReceiverId: number | null = $state(null);
+	let recStartDate = $state('');
+	let recEndDate = $state('');
+	let includeRecommendation = $state(true);
 
 	// Controls
 	let horizonMonths = $state(6);
@@ -32,6 +50,20 @@
 
 	onMount(() => {
 		Chart.register(...registerables);
+
+		// Dynamically import annotation plugin (SSR-safe)
+		import('chartjs-plugin-annotation').then((annotationModule) => {
+			annotationPlugin = annotationModule.default;
+			Chart.register(annotationPlugin);
+		});
+
+		// Set default dates
+		const today = new SvelteDate();
+		recStartDate = today.toISOString().split('T')[0];
+		const endDate = new SvelteDate(today);
+		endDate.setMonth(endDate.getMonth() + 6);
+		recEndDate = endDate.toISOString().split('T')[0];
+
 		return () => {
 			if (balanceChart) {
 				balanceChart.destroy();
@@ -42,7 +74,15 @@
 		};
 	});
 
-	// Reload when project or settings change
+	// Load participants when project changes
+	$effect(() => {
+		const projectId = parseInt($page.params.id ?? '');
+		if (projectId && !isNaN(projectId)) {
+			loadParticipants(projectId);
+		}
+	});
+
+	// Reload cashflow when settings change
 	$effect(() => {
 		const projectId = parseInt($page.params.id ?? '');
 		// Track all control dependencies to trigger reload
@@ -51,13 +91,33 @@
 			recommendationMode,
 			frequencyType,
 			frequencyInterval,
-			consolidateMode
+			consolidateMode,
+			selectedPayerId,
+			selectedReceiverId,
+			recStartDate,
+			recEndDate,
+			includeRecommendation
 		];
 		void _deps; // Ensure dependencies are tracked
 		if (projectId && !isNaN(projectId)) {
 			loadCashflow(projectId);
 		}
 	});
+
+	async function loadParticipants(projectId: number) {
+		try {
+			participants = await getParticipants(projectId);
+			// Auto-select first user and first pool if available
+			if (!selectedPayerId && userParticipants.length > 0) {
+				selectedPayerId = userParticipants[0].id;
+			}
+			if (!selectedReceiverId && poolParticipants.length > 0) {
+				selectedReceiverId = poolParticipants[0].id;
+			}
+		} catch (err) {
+			console.error('Failed to load participants:', err);
+		}
+	}
 
 	// Update charts when canvas becomes available or projection changes
 	$effect(() => {
@@ -78,14 +138,18 @@
 		loading = true;
 		error = '';
 		try {
-			projection = await getCashflowProjection(
-				projectId,
+			projection = await getCashflowProjection(projectId, {
 				horizonMonths,
 				recommendationMode,
 				frequencyType,
 				frequencyInterval,
-				consolidateMode
-			);
+				consolidateMode,
+				recPayerId: selectedPayerId ?? undefined,
+				recReceiverId: selectedReceiverId ?? undefined,
+				recStartDate: recStartDate || undefined,
+				recEndDate: recEndDate || undefined,
+				includeRecommendation
+			});
 			// Chart update handled by $effect that watches projection
 		} catch (err) {
 			error = $_('cashflow.failedToLoad');
@@ -118,83 +182,203 @@
 	function updateBalanceChart() {
 		if (!projection || !balanceChartCanvas) return;
 
-		// Group monthly balances by participant
-		const participantMap = new SvelteMap<number, { name: string; balances: number[] }>();
+		// Use event-based data if available, fallback to monthly
+		const useEvents = projection.balance_events && projection.balance_events.length > 0;
 
-		for (const balance of projection.monthly_balances) {
-			if (!participantMap.has(balance.participant_id)) {
-				participantMap.set(balance.participant_id, {
-					name: balance.participant_name,
-					balances: []
+		if (useEvents) {
+			// Group balance events by participant
+			const participantMap = new SvelteMap<
+				number,
+				{ name: string; events: Array<{ x: string; y: number; isSynthetic: boolean }> }
+			>();
+
+			for (const event of projection.balance_events) {
+				if (!participantMap.has(event.participant_id)) {
+					participantMap.set(event.participant_id, {
+						name: event.participant_name,
+						events: []
+					});
+				}
+				participantMap.get(event.participant_id)!.events.push({
+					x: event.date,
+					y: event.net_balance,
+					isSynthetic: event.is_synthetic
 				});
 			}
-			participantMap.get(balance.participant_id)!.balances.push(balance.net_balance);
-		}
 
-		const datasets = Array.from(participantMap.values()).map((data, idx) => ({
-			label: data.name,
-			data: data.balances,
-			borderColor: COLORS[idx % COLORS.length],
-			backgroundColor: COLORS[idx % COLORS.length] + '33',
-			borderWidth: 2,
-			tension: 0.1,
-			fill: false
-		}));
+			const datasets = Array.from(participantMap.values()).map((data, idx) => ({
+				label: data.name,
+				data: data.events.map((e) => ({ x: e.x, y: e.y })),
+				borderColor: COLORS[idx % COLORS.length],
+				backgroundColor: COLORS[idx % COLORS.length] + '33',
+				borderWidth: 2,
+				tension: 0.1,
+				fill: false,
+				pointRadius: data.events.map((e) => (e.isSynthetic ? 4 : 3)),
+				pointStyle: data.events.map((e) => (e.isSynthetic ? 'triangle' : 'circle'))
+			}));
 
-		if (balanceChart) balanceChart.destroy();
+			// Build annotations
+			const annotations: Record<string, unknown> = {};
+			const today = new SvelteDate().toISOString().split('T')[0];
 
-		balanceChart = new Chart(balanceChartCanvas, {
-			type: 'line',
-			data: {
-				labels: projection.months,
-				datasets
-			},
-			options: {
-				responsive: true,
-				maintainAspectRatio: false,
-				plugins: {
-					legend: {
-						position: 'bottom',
-						labels: {
-							font: { size: 12 }
+			// Today line
+			annotations['todayLine'] = {
+				type: 'line',
+				xMin: today,
+				xMax: today,
+				borderColor: '#333',
+				borderWidth: 2,
+				borderDash: [5, 5],
+				label: {
+					display: true,
+					content: $_('cashflow.today'),
+					position: 'start',
+					backgroundColor: '#333',
+					color: 'white',
+					font: { size: 11 }
+				}
+			};
+
+			// Recommendation horizon box (if configured)
+			if (recStartDate && recEndDate && selectedPayerId && selectedReceiverId) {
+				annotations['recHorizon'] = {
+					type: 'box',
+					xMin: recStartDate,
+					xMax: recEndDate,
+					backgroundColor: 'rgba(123, 97, 255, 0.1)',
+					borderColor: 'rgba(123, 97, 255, 0.5)',
+					borderWidth: 1,
+					label: {
+						display: true,
+						content: $_('cashflow.recommendationHorizon'),
+						position: { x: 'center', y: 'start' },
+						backgroundColor: 'rgba(123, 97, 255, 0.8)',
+						color: 'white',
+						font: { size: 10 }
+					}
+				};
+			}
+
+			if (balanceChart) balanceChart.destroy();
+
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			balanceChart = new Chart(balanceChartCanvas, {
+				type: 'line',
+				data: { datasets: datasets as never[] },
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: {
+							position: 'bottom',
+							labels: { font: { size: 12 } }
+						},
+						tooltip: {
+							mode: 'index',
+							intersect: false,
+							callbacks: {
+								title: (items) => {
+									if (items.length > 0) {
+										const dateStr = items[0].label;
+										return new SvelteDate(dateStr).toLocaleDateString();
+									}
+									return '';
+								},
+								label: (context: TooltipItem<'line'>) => {
+									const label = context.dataset.label || '';
+									const value = formatCurrency(context.parsed.y ?? 0);
+									return `${label}: ${value}`;
+								}
+							}
+						},
+						annotation: {
+							// eslint-disable-next-line @typescript-eslint/no-explicit-any
+							annotations: annotations as any
 						}
 					},
-					tooltip: {
-						mode: 'index',
-						intersect: false,
-						callbacks: {
-							label: (context: TooltipItem<'line'>) => {
-								const label = context.dataset.label || '';
-								const value = formatCurrency(context.parsed.y ?? 0);
-								return `${label}: ${value}`;
+					scales: {
+						y: {
+							title: { display: true, text: $_('cashflow.balance') },
+							ticks: { callback: (value: number | string) => formatCurrency(Number(value)) }
+						},
+						x: {
+							type: 'time',
+							time: {
+								unit: 'month',
+								displayFormats: { month: 'MMM yyyy' }
+							},
+							title: { display: true, text: $_('cashflow.date') }
+						}
+					},
+					interaction: { mode: 'nearest', axis: 'x', intersect: false }
+				}
+			});
+		} else {
+			// Fallback: use monthly aggregated data
+			const participantMap = new SvelteMap<number, { name: string; balances: number[] }>();
+
+			for (const balance of projection.monthly_balances) {
+				if (!participantMap.has(balance.participant_id)) {
+					participantMap.set(balance.participant_id, {
+						name: balance.participant_name,
+						balances: []
+					});
+				}
+				participantMap.get(balance.participant_id)!.balances.push(balance.net_balance);
+			}
+
+			const datasets = Array.from(participantMap.values()).map((data, idx) => ({
+				label: data.name,
+				data: data.balances,
+				borderColor: COLORS[idx % COLORS.length],
+				backgroundColor: COLORS[idx % COLORS.length] + '33',
+				borderWidth: 2,
+				tension: 0.1,
+				fill: false
+			}));
+
+			if (balanceChart) balanceChart.destroy();
+
+			balanceChart = new Chart(balanceChartCanvas, {
+				type: 'line',
+				data: {
+					labels: projection.months,
+					datasets
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: {
+							position: 'bottom',
+							labels: { font: { size: 12 } }
+						},
+						tooltip: {
+							mode: 'index',
+							intersect: false,
+							callbacks: {
+								label: (context: TooltipItem<'line'>) => {
+									const label = context.dataset.label || '';
+									const value = formatCurrency(context.parsed.y ?? 0);
+									return `${label}: ${value}`;
+								}
 							}
 						}
-					}
-				},
-				scales: {
-					y: {
-						title: {
-							display: true,
-							text: $_('cashflow.balance')
+					},
+					scales: {
+						y: {
+							title: { display: true, text: $_('cashflow.balance') },
+							ticks: { callback: (value: number | string) => formatCurrency(Number(value)) }
 						},
-						ticks: {
-							callback: (value: number | string) => formatCurrency(Number(value))
+						x: {
+							title: { display: true, text: $_('cashflow.month') }
 						}
 					},
-					x: {
-						title: {
-							display: true,
-							text: $_('cashflow.month')
-						}
-					}
-				},
-				interaction: {
-					mode: 'nearest',
-					axis: 'x',
-					intersect: false
+					interaction: { mode: 'nearest', axis: 'x', intersect: false }
 				}
-			}
-		});
+			});
+		}
 	}
 
 	function updatePoolCharts() {
@@ -338,7 +522,7 @@
 					pool_id: poolId,
 					amount: rec.recommended_amount,
 					description: $_('cashflow.consolidatedPaymentDescription'),
-					payment_date: new Date().toISOString().split('T')[0],
+					payment_date: new SvelteDate().toISOString().split('T')[0],
 					recurrence_type: rec.frequency_type,
 					recurrence_interval: rec.frequency_interval,
 					payment_ids_to_delete: projection.payments_to_consolidate.map((p) => p.payment_id)
@@ -386,6 +570,65 @@
 	<div class="cashflow-page">
 		<div class="header">
 			<h2>{$_('cashflow.title')}</h2>
+		</div>
+
+		<!-- Recommendation Configuration -->
+		<div class="card recommendation-config">
+			<h3>{$_('cashflow.configureRecommendation')}</h3>
+			<div class="rec-controls">
+				<div class="control-group">
+					<label class="control-label" for="payer-select">{$_('cashflow.payer')}</label>
+					<select id="payer-select" bind:value={selectedPayerId}>
+						<option value={null}>{$_('cashflow.selectPayer')}</option>
+						{#each userParticipants as p (p.id)}
+							<option value={p.id}>{p.name}</option>
+						{/each}
+					</select>
+				</div>
+				<div class="control-group">
+					<label class="control-label" for="receiver-select">{$_('cashflow.receiver')}</label>
+					<select id="receiver-select" bind:value={selectedReceiverId}>
+						<option value={null}>{$_('cashflow.selectReceiver')}</option>
+						{#each poolParticipants as p (p.id)}
+							<option value={p.id}>{p.name}</option>
+						{/each}
+					</select>
+				</div>
+				<div class="control-group">
+					<label class="control-label" for="start-date">{$_('cashflow.startDate')}</label>
+					<input type="date" id="start-date" bind:value={recStartDate} />
+				</div>
+				<div class="control-group">
+					<label class="control-label" for="end-date">{$_('cashflow.endDate')}</label>
+					<input type="date" id="end-date" bind:value={recEndDate} />
+				</div>
+			</div>
+
+			<!-- Computed Recommendation Output -->
+			{#if projection.computed_recommendation}
+				{@const rec = projection.computed_recommendation}
+				<div class="recommendation-output">
+					<p class="recommendation-statement">
+						<strong>{rec.payer_name}</strong>
+						{$_('cashflow.shouldTransfer')}
+						<strong>{formatCurrency(rec.recommended_amount)}</strong>
+						{$_('cashflow.perFrequency')
+							.replace('{interval}', String(rec.frequency_interval))
+							.replace('{type}', rec.frequency_type)}
+						{$_('cashflow.to')} <strong>{rec.receiver_name}</strong>
+					</p>
+					<div class="recommendation-meta">
+						<span
+							>{$_('cashflow.currentTrendLabel')}: {formatCurrency(rec.current_trend)}/month</span
+						>
+						<span>{$_('cashflow.method')}: {rec.calculation_method}</span>
+					</div>
+				</div>
+			{:else if selectedPayerId && selectedReceiverId}
+				<p class="empty">{$_('cashflow.noRecommendationData')}</p>
+			{:else}
+				<p class="note">{$_('cashflow.selectPayerReceiver')}</p>
+			{/if}
 		</div>
 
 		<!-- Controls -->
@@ -466,7 +709,15 @@
 
 		<!-- Balance Chart -->
 		<div class="card chart-card">
-			<h3>{$_('cashflow.balanceOverTime')}</h3>
+			<div class="chart-header">
+				<h3>{$_('cashflow.balanceOverTime')}</h3>
+				{#if selectedPayerId && selectedReceiverId}
+					<label class="include-toggle">
+						<input type="checkbox" bind:checked={includeRecommendation} />
+						{$_('cashflow.includeInProjection')}
+					</label>
+				{/if}
+			</div>
 			<div class="chart-container">
 				<canvas bind:this={balanceChartCanvas}></canvas>
 			</div>
@@ -574,6 +825,51 @@
 		margin-bottom: 0.5rem;
 	}
 
+	.recommendation-config {
+		border-left: 4px solid #7b61ff;
+		margin-bottom: 1.5rem;
+	}
+
+	.rec-controls {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 1rem;
+		margin-bottom: 1rem;
+	}
+
+	.rec-controls select,
+	.rec-controls input[type='date'] {
+		padding: 0.5rem;
+		border: 1px solid #ddd;
+		border-radius: 6px;
+		font-size: 0.875rem;
+		min-width: 150px;
+	}
+
+	.recommendation-output {
+		background: #f8f7ff;
+		padding: 1rem;
+		border-radius: 6px;
+		border: 1px solid #e0dbff;
+	}
+
+	.recommendation-statement {
+		margin: 0 0 0.5rem 0;
+		font-size: 1.1rem;
+		line-height: 1.5;
+	}
+
+	.recommendation-statement strong {
+		color: #7b61ff;
+	}
+
+	.recommendation-meta {
+		display: flex;
+		gap: 1.5rem;
+		font-size: 0.875rem;
+		color: #666;
+	}
+
 	.horizon-selector,
 	.mode-toggle {
 		display: flex;
@@ -678,6 +974,30 @@
 
 	.chart-card {
 		min-height: 400px;
+	}
+
+	.chart-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 1rem;
+	}
+
+	.chart-header h3 {
+		margin: 0;
+	}
+
+	.include-toggle {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.875rem;
+		color: #666;
+		cursor: pointer;
+	}
+
+	.include-toggle input {
+		cursor: pointer;
 	}
 
 	.chart-container {

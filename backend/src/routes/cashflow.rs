@@ -18,6 +18,12 @@ struct CashflowQuery {
     frequency_type: Option<String>,      // Default: "monthly"
     frequency_interval: Option<i32>,     // Default: 1
     consolidate_mode: Option<bool>,      // Default: false
+    // Recommendation configuration
+    rec_payer_id: Option<i64>,            // Participant who pays
+    rec_receiver_id: Option<i64>,         // Pool account that receives
+    rec_start_date: Option<String>,       // Recommendation horizon start
+    rec_end_date: Option<String>,         // Recommendation horizon end
+    include_recommendation: Option<bool>, // Default: true when payer/receiver set
 }
 
 async fn get_cashflow(
@@ -34,6 +40,10 @@ async fn get_cashflow(
     let frequency_interval = query.frequency_interval.unwrap_or(1).max(1);
     let consolidate_mode = query.consolidate_mode.unwrap_or(false);
 
+    // Default include_recommendation to true when payer and receiver are set
+    let has_rec_config = query.rec_payer_id.is_some() && query.rec_receiver_id.is_some();
+    let include_recommendation = query.include_recommendation.unwrap_or(has_rec_config);
+
     let projection = crate::services::debt_calculator::calculate_cashflow_projection(
         &pool,
         member.project_id,
@@ -42,6 +52,11 @@ async fn get_cashflow(
         frequency_type,
         frequency_interval,
         consolidate_mode,
+        query.rec_payer_id,
+        query.rec_receiver_id,
+        query.rec_start_date.as_deref(),
+        query.rec_end_date.as_deref(),
+        include_recommendation,
     )
     .await?;
 

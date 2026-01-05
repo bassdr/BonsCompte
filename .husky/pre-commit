@@ -12,27 +12,24 @@ fail() { echo "$1"; exit 1; }
 (cd backend && cargo test) || fail "Backend tests failed!"
 (cd frontend && npm test) || fail "Frontend tests failed!"
 
-# Get staged files
-rust_staged_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.rs$' || true)
-ts_staged_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.ts$' || true)
+echo "Running local CodeQL security scan..."
+(
+    # Only do a local quick scan to catch obvious security issues before pushing
+    # Requires CodeQL CLI installed locally: https://github.com/github/codeql-cli-binaries
+    # Analyze Rust and TypeScript sources
 
-if [[ -n "$rust_staged_files" || -n "$ts_staged_files" ]]; then
-    echo "Running CodeQL security scan on staged files..."
+    # Temporary DB folder
     tmp_db=$(mktemp -d)
 
-    if [[ -n "$rust_staged_files" ]]; then
-        codeql database create "$tmp_db/rust-db" --language=rust --source-root=backend --files "$rust_staged_files"
-        codeql database analyze "$tmp_db/rust-db" --format=sarif-latest || fail "CodeQL Rust scan detected issues!"
-    fi
+    # Rust
+    codeql database create "$tmp_db/rust-db" --language=rust --source-root=backend
+    codeql database analyze "$tmp_db/rust-db" --format=sarif-latest || fail "CodeQL Rust scan detected issues!"
 
-    if [[ -n "$ts_staged_files" ]]; then
-        codeql database create "$tmp_db/ts-db" --language=typescript --source-root=frontend --files "$ts_staged_files"
-        codeql database analyze "$tmp_db/ts-db" --format=sarif-latest || fail "CodeQL TypeScript scan detected issues!"
-    fi
+    # TypeScript
+    codeql database create "$tmp_db/ts-db" --language=typescript --source-root=frontend
+    codeql database analyze "$tmp_db/ts-db" --format=sarif-latest || fail "CodeQL TypeScript scan detected issues!"
 
     rm -rf "$tmp_db"
-else
-    echo "No Rust or TypeScript files staged. Skipping CodeQL scan."
-fi
+)
 
 echo "All checks passed!"

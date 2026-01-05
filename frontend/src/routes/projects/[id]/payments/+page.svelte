@@ -1345,85 +1345,6 @@
 	<div class="error">{error}</div>
 {/if}
 
-<!-- Filters Section -->
-{#if !editingPaymentId}
-	<section class="card filters">
-		<div class="filters-header">
-			<h3>{$_('payments.filters')}</h3>
-			{#if activeFilterCount > 0}
-				<button type="button" class="clear-filters-btn" onclick={clearFilters}>
-					{$_('common.clear')} ({activeFilterCount})
-				</button>
-			{/if}
-		</div>
-
-		<div class="filters-grid">
-			<!-- Text Search -->
-			<div class="filter-field">
-				<label for="search-text">{$_('payments.searchDescription')}</label>
-				<input
-					id="search-text"
-					type="text"
-					bind:value={searchText}
-					placeholder={$_('payments.searchPlaceholder')}
-				/>
-			</div>
-
-			<!-- Payer Filter -->
-			<div class="filter-field">
-				<label for="filter-payer">{$_('payments.filterByPayer')}</label>
-				<select id="filter-payer" bind:value={filterPayerId}>
-					<option value={null}>{$_('payments.allPayers')}</option>
-					{#each $participants as p (p.id)}
-						<option value={p.id}>{p.name}</option>
-					{/each}
-				</select>
-			</div>
-
-			<!-- Contributor Filter -->
-			<div class="filter-field">
-				<label for="filter-contributor">{$_('payments.filterByContributor')}</label>
-				<select id="filter-contributor" bind:value={filterContributorId}>
-					<option value={null}>{$_('payments.allContributors')}</option>
-					{#each $participants as p (p.id)}
-						<option value={p.id}>{p.name}</option>
-					{/each}
-				</select>
-			</div>
-
-			<!-- Payment Type Filter -->
-			<div class="filter-field">
-				<label for="filter-type">{$_('payments.filterByType')}</label>
-				<select id="filter-type" bind:value={filterPaymentType}>
-					<option value="">{$_('payments.allTypes')}</option>
-					<option value="expense">{$_('payments.typeExpense')}</option>
-					<option value="transfer">{$_('payments.typeTransfer')}</option>
-					<option value="recurring">{$_('payments.typeRecurring')}</option>
-				</select>
-			</div>
-
-			<!-- Date From -->
-			<div class="filter-field">
-				<label for="filter-date-from">{$_('payments.dateFrom')}</label>
-				<input id="filter-date-from" type="date" bind:value={filterDateFrom} />
-			</div>
-
-			<!-- Date To -->
-			<div class="filter-field">
-				<label for="filter-date-to">{$_('payments.dateTo')}</label>
-				<input id="filter-date-to" type="date" bind:value={filterDateTo} />
-			</div>
-		</div>
-
-		{#if activeFilterCount > 0}
-			<div class="filter-summary">
-				{$_('payments.showingFiltered')}
-				{filteredPayments.length} / {payments.length}
-			</div>
-		{/if}
-	</section>
-{/if}
-
 {#if $canEdit}
 	<section class="card" class:editing-card={editingPaymentId !== null}>
 		<h3>{editingPaymentId !== null ? $_('payments.editPayment') : $_('payments.addPayment')}</h3>
@@ -1787,6 +1708,85 @@
 					</button>
 				</div>
 			</form>
+		{/if}
+	</section>
+{/if}
+
+<!-- Filters Section -->
+{#if !editingPaymentId}
+	<section class="card filters">
+		<div class="filters-header">
+			<h3>{$_('payments.filters')}</h3>
+			{#if activeFilterCount > 0}
+				<button type="button" class="clear-filters-btn" onclick={clearFilters}>
+					{$_('common.clear')} ({activeFilterCount})
+				</button>
+			{/if}
+		</div>
+
+		<div class="filters-grid">
+			<!-- Text Search -->
+			<div class="filter-field">
+				<label for="search-text">{$_('payments.searchDescription')}</label>
+				<input
+					id="search-text"
+					type="text"
+					bind:value={searchText}
+					placeholder={$_('payments.searchPlaceholder')}
+				/>
+			</div>
+
+			<!-- Payer Filter -->
+			<div class="filter-field">
+				<label for="filter-payer">{$_('payments.filterByPayer')}</label>
+				<select id="filter-payer" bind:value={filterPayerId}>
+					<option value={null}>{$_('payments.allPayers')}</option>
+					{#each $participants as p (p.id)}
+						<option value={p.id}>{p.name}</option>
+					{/each}
+				</select>
+			</div>
+
+			<!-- Contributor Filter -->
+			<div class="filter-field">
+				<label for="filter-contributor">{$_('payments.filterByContributor')}</label>
+				<select id="filter-contributor" bind:value={filterContributorId}>
+					<option value={null}>{$_('payments.allContributors')}</option>
+					{#each $participants as p (p.id)}
+						<option value={p.id}>{p.name}</option>
+					{/each}
+				</select>
+			</div>
+
+			<!-- Payment Type Filter -->
+			<div class="filter-field">
+				<label for="filter-type">{$_('payments.filterByType')}</label>
+				<select id="filter-type" bind:value={filterPaymentType}>
+					<option value="">{$_('payments.allTypes')}</option>
+					<option value="expense">{$_('payments.typeExpense')}</option>
+					<option value="transfer">{$_('payments.typeTransfer')}</option>
+					<option value="recurring">{$_('payments.typeRecurring')}</option>
+				</select>
+			</div>
+
+			<!-- Date From -->
+			<div class="filter-field">
+				<label for="filter-date-from">{$_('payments.dateFrom')}</label>
+				<input id="filter-date-from" type="date" bind:value={filterDateFrom} />
+			</div>
+
+			<!-- Date To -->
+			<div class="filter-field">
+				<label for="filter-date-to">{$_('payments.dateTo')}</label>
+				<input id="filter-date-to" type="date" bind:value={filterDateTo} />
+			</div>
+		</div>
+
+		{#if activeFilterCount > 0}
+			<div class="filter-summary">
+				{$_('payments.showingFiltered')}
+				{filteredPayments.length} / {payments.length}
+			</div>
 		{/if}
 	</section>
 {/if}

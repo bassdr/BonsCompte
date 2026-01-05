@@ -1,59 +1,35 @@
 #!/bin/bash
+set -euo pipefail
 
 echo "Running pre-commit checks..."
 
-# Run backend formatting check (fail fast)
-echo "Running backend formatting check..."
-cd backend && cargo fmt --check
-if [ $? -ne 0 ]; then
-  echo "Backend formatting failed! Run 'cargo fmt' to fix. Commit aborted."
-  exit 1
-fi
-cd ..
+fail() { echo "$1"; exit 1; }
 
-# Run backend clippy
-echo "Running backend clippy..."
-cd backend && cargo clippy -- -D warnings
-if [ $? -ne 0 ]; then
-  echo "Backend clippy failed! Fix the warnings. Commit aborted."
-  exit 1
-fi
-cd ..
+(cd backend && cargo fmt --check) || fail "Backend formatting failed!"
+(cd backend && cargo clippy -- -D warnings) || fail "Backend clippy failed!"
+(cd frontend && npm run check) || fail "Frontend type checking failed!"
+(cd frontend && npm run lint) || fail "Frontend lint failed!"
+(cd backend && cargo test) || fail "Backend tests failed!"
+(cd frontend && npm test) || fail "Frontend tests failed!"
 
-# Run frontend type checking
-echo "Running frontend type check..."
-cd frontend && npm run check
-if [ $? -ne 0 ]; then
-  echo "Frontend type checking failed! Commit aborted."
-  exit 1
-fi
-cd ..
+echo "Running local CodeQL security scan..."
+(
+    # Only do a local quick scan to catch obvious security issues before pushing
+    # Requires CodeQL CLI installed locally: https://github.com/github/codeql-cli-binaries
+    # Analyze Rust and TypeScript sources
 
-# Run frontend linting
-echo "Running frontend lint..."
-cd frontend && npm run lint
-if [ $? -ne 0 ]; then
-  echo "Frontend linting failed! Run 'npm run format' to fix. Commit aborted."
-  exit 1
-fi
-cd ..
+    # Temporary DB folder
+    tmp_db=$(mktemp -d)
 
-# Run backend tests
-echo "Running backend tests..."
-cd backend && cargo test
-if [ $? -ne 0 ]; then
-  echo "Backend tests failed! Commit aborted."
-  exit 1
-fi
-cd ..
+    # Rust
+    codeql database create "$tmp_db/rust-db" --language=rust --source-root=backend
+    codeql database analyze "$tmp_db/rust-db" --format=sarif-latest || fail "CodeQL Rust scan detected issues!"
 
-# Run frontend tests
-echo "Running frontend tests..."
-cd frontend && npm test
-if [ $? -ne 0 ]; then
-  echo "Frontend tests failed! Commit aborted."
-  exit 1
-fi
-cd ..
+    # TypeScript
+    codeql database create "$tmp_db/ts-db" --language=typescript --source-root=frontend
+    codeql database analyze "$tmp_db/ts-db" --format=sarif-latest || fail "CodeQL TypeScript scan detected issues!"
+
+    rm -rf "$tmp_db"
+)
 
 echo "All checks passed!"

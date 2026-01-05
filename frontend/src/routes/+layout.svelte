@@ -2,7 +2,7 @@
   import { auth, isAuthenticated, isLoading } from '$lib/auth';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { resolveRoute } from '$app/paths';
+  import { resolve } from '$app/paths';
   import { browser } from '$app/environment';
   import type { Snippet } from 'svelte';
   import {
@@ -82,9 +82,7 @@
     <nav class="navbar">
       <div class="nav-brand">BonsCompte</div>
       <div class="nav-links">
-        <a href={resolveRoute('/')} class:active={$page.url.pathname === '/'}
-          >{$_('nav.projects')}</a
-        >
+        <a href={resolve('/')} class:active={$page.url.pathname === '/'}>{$_('nav.projects')}</a>
       </div>
       <div class="nav-user">
         <select class="language-select" value={$locale} onchange={handleLanguageChange}>
@@ -94,7 +92,7 @@
         </select>
         <span>{$auth.user?.username}</span>
         <a
-          href={resolveRoute('/settings')}
+          href={resolve('/settings')}
           class="settings-link"
           class:active={$page.url.pathname === '/settings'}>{$_('nav.settings')}</a
         >

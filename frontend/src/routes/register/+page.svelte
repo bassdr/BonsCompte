@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { resolveRoute } from '$app/paths';
+  import { resolve } from '$app/paths';
   import { register, ApiRequestError } from '$lib/api';
   import { auth } from '$lib/auth';
   import { _ } from '$lib/i18n';
@@ -105,7 +105,7 @@
   </form>
 
   <p class="link">
-    {$_('auth.hasAccount')} <a href={resolveRoute('/login')}>{$_('auth.login')}</a>
+    {$_('auth.hasAccount')} <a href={resolve('/login')}>{$_('auth.login')}</a>
   </p>
 </div>
 

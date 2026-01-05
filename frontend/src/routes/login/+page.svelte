@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { resolveRoute } from '$app/paths';
+  import { resolve } from '$app/paths';
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
   import { login, ApiRequestError } from '$lib/api';
@@ -113,7 +113,7 @@
   {/if}
 
   <p class="link">
-    {$_('auth.noAccount')} <a href={resolveRoute('/register')}>{$_('auth.register')}</a>
+    {$_('auth.noAccount')} <a href={resolve('/register')}>{$_('auth.register')}</a>
   </p>
 </div>
 

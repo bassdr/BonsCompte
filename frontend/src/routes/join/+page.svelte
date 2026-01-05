@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { resolveRoute } from '$app/paths';
+  import { resolve } from '$app/paths';
   import { joinProject } from '$lib/api';
   import { t } from 'svelte-i18n';
 
@@ -48,7 +48,7 @@
   {#if success}
     <div class="success">
       <p>{success}</p>
-      <a href={resolveRoute('/')} class="btn-primary">{$t('join.goToProjects')}</a>
+      <a href={resolve('/')} class="btn-primary">{$t('join.goToProjects')}</a>
     </div>
   {:else}
     {#if error}
@@ -95,7 +95,7 @@
     {/if}
 
     <p class="link">
-      <a href={resolveRoute('/')}>{$t('join.backToProjects')}</a>
+      <a href={resolve('/')}>{$t('join.backToProjects')}</a>
     </p>
   {/if}
 </div>

@@ -432,6 +432,28 @@ export interface RecurringPaymentToConsolidate {
 	recurrence_interval: number;
 }
 
+export interface BalanceEvent {
+	date: string;
+	participant_id: number;
+	participant_name: string;
+	net_balance: number;
+	is_synthetic: boolean;
+}
+
+export interface ComputedRecommendation {
+	payer_id: number;
+	payer_name: string;
+	receiver_id: number;
+	receiver_name: string;
+	recommended_amount: number;
+	frequency_type: string;
+	frequency_interval: number;
+	current_trend: number;
+	calculation_method: string;
+	start_date: string;
+	end_date: string;
+}
+
 export interface CashflowProjection {
 	start_date: string;
 	end_date: string;
@@ -441,6 +463,10 @@ export interface CashflowProjection {
 	pool_evolutions: PoolEvolution[];
 	consolidate_mode: boolean;
 	payments_to_consolidate: RecurringPaymentToConsolidate[];
+	// New fields for recommendation-driven view
+	balance_events: BalanceEvent[];
+	computed_recommendation: ComputedRecommendation | null;
+	include_recommendation: boolean;
 }
 
 // Users
@@ -639,20 +665,36 @@ export const getDebts = (projectId: number, targetDate?: string): Promise<DebtSu
 	return authFetch(`/projects/${projectId}/debts${params}`);
 };
 
+export interface CashflowProjectionParams {
+	horizonMonths?: number;
+	recommendationMode?: string;
+	frequencyType?: string;
+	frequencyInterval?: number;
+	consolidateMode?: boolean;
+	// Recommendation configuration
+	recPayerId?: number;
+	recReceiverId?: number;
+	recStartDate?: string;
+	recEndDate?: string;
+	includeRecommendation?: boolean;
+}
+
 export const getCashflowProjection = (
 	projectId: number,
-	horizonMonths?: number,
-	recommendationMode?: string,
-	frequencyType?: string,
-	frequencyInterval?: number,
-	consolidateMode?: boolean
+	opts: CashflowProjectionParams = {}
 ): Promise<CashflowProjection> => {
 	const params = new URLSearchParams();
-	if (horizonMonths) params.set('horizon_months', horizonMonths.toString());
-	if (recommendationMode) params.set('recommendation_mode', recommendationMode);
-	if (frequencyType) params.set('frequency_type', frequencyType);
-	if (frequencyInterval) params.set('frequency_interval', frequencyInterval.toString());
-	if (consolidateMode) params.set('consolidate_mode', 'true');
+	if (opts.horizonMonths) params.set('horizon_months', opts.horizonMonths.toString());
+	if (opts.recommendationMode) params.set('recommendation_mode', opts.recommendationMode);
+	if (opts.frequencyType) params.set('frequency_type', opts.frequencyType);
+	if (opts.frequencyInterval) params.set('frequency_interval', opts.frequencyInterval.toString());
+	if (opts.consolidateMode) params.set('consolidate_mode', 'true');
+	if (opts.recPayerId) params.set('rec_payer_id', opts.recPayerId.toString());
+	if (opts.recReceiverId) params.set('rec_receiver_id', opts.recReceiverId.toString());
+	if (opts.recStartDate) params.set('rec_start_date', opts.recStartDate);
+	if (opts.recEndDate) params.set('rec_end_date', opts.recEndDate);
+	if (opts.includeRecommendation !== undefined)
+		params.set('include_recommendation', opts.includeRecommendation.toString());
 	const queryString = params.toString();
 	return authFetch(`/projects/${projectId}/cashflow${queryString ? '?' + queryString : ''}`);
 };

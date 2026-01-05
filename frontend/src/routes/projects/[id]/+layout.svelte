@@ -56,12 +56,13 @@
 				>
 					{$_('settlements.title')}
 				</a>
-				<a
+				<!-- Disabled as not yet functionnal
+                                <a
 					href={resolveRoute(`/projects/${$page.params.id}/cashflow-planning`)}
 					class:active={$page.url.pathname.includes('/cashflow-planning')}
 				>
 					{$_('cashflow.title')}
-				</a>
+				</a>-->
 				<a
 					href={resolveRoute(`/projects/${$page.params.id}/payments`)}
 					class:active={$page.url.pathname.includes('/payments')}

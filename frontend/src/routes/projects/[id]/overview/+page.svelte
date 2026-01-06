@@ -83,6 +83,7 @@
 	}
 
 	let debts: DebtSummary | null = $state(null);
+	let startDebts: DebtSummary | null = $state(null); // Debts at targetDate for range mode
 	let allPayments: PaymentWithContributions[] = $state([]);
 	let loading = $state(true);
 	let error = $state('');
@@ -288,17 +289,30 @@
 		return false;
 	}
 
-	// Get active settlements based on mode
+	// Get active settlements based on mode (for end date / current view)
 	let activeSettlements = $derived.by(() => {
 		if (!debts) return [];
 		return useDirectSettlements ? debts.direct_settlements : debts.settlements;
 	});
 
-	// Get filtered settlements based on focus
+	// Get active settlements at start date (for range mode comparison)
+	let startActiveSettlements = $derived.by(() => {
+		if (!startDebts) return [];
+		return useDirectSettlements ? startDebts.direct_settlements : startDebts.settlements;
+	});
+
+	// Get filtered settlements based on focus (end date)
 	let filteredSettlements = $derived.by(() => {
 		if (!debts) return [];
 		if (focusParticipantId === null) return activeSettlements;
 		return activeSettlements.filter((s) => settlementInvolvesFocus(s));
+	});
+
+	// Get filtered settlements at start date (for range mode)
+	let filteredStartSettlements = $derived.by(() => {
+		if (!startDebts) return [];
+		if (focusParticipantId === null) return startActiveSettlements;
+		return startActiveSettlements.filter((s) => settlementInvolvesFocus(s));
 	});
 
 	// Get filtered pool ownerships based on focus
@@ -354,6 +368,80 @@
 
 	let targetDate = $state(getLocalDateString());
 	let endDate = $state<string | null>(null);
+
+	// Horizon options for the range selector
+	type HorizonOption = 'none' | '3months' | '6months' | '12months' | 'custom';
+
+	// Compute end date for a given horizon from a start date
+	function getHorizonEndDate(startDate: string, months: number): string {
+		const date = parseLocalDate(startDate);
+		date.setMonth(date.getMonth() + months);
+		return getLocalDateString(date);
+	}
+
+	// Precomputed horizon dates (relative to targetDate)
+	let horizon3Months = $derived(getHorizonEndDate(targetDate, 3));
+	let horizon6Months = $derived(getHorizonEndDate(targetDate, 6));
+	let horizon12Months = $derived(getHorizonEndDate(targetDate, 12));
+
+	// Track the user's explicitly chosen horizon (not derived, but set by user action)
+	let chosenHorizon = $state<HorizonOption>('none');
+
+	// Detect which horizon the current endDate matches (for UI button highlighting)
+	let selectedHorizon = $derived.by((): HorizonOption => {
+		if (endDate === null) return 'none';
+		if (endDate === horizon3Months) return '3months';
+		if (endDate === horizon6Months) return '6months';
+		if (endDate === horizon12Months) return '12months';
+		return 'custom';
+	});
+
+	// Set horizon by option
+	function setHorizon(option: HorizonOption) {
+		chosenHorizon = option;
+		switch (option) {
+			case 'none':
+				endDate = null;
+				break;
+			case '3months':
+				endDate = horizon3Months;
+				break;
+			case '6months':
+				endDate = horizon6Months;
+				break;
+			case '12months':
+				endDate = horizon12Months;
+				break;
+			case 'custom':
+				// If switching to custom from none, set a default (e.g., 1 month ahead)
+				if (endDate === null) {
+					endDate = getHorizonEndDate(targetDate, 1);
+				}
+				// Otherwise keep the current endDate
+				break;
+		}
+	}
+
+	// Effect: Keep endDate in sync with preset horizons when targetDate changes
+	// This ensures 3/6/12 months stay selected when navigating start dates
+	$effect(() => {
+		// Only apply when user has explicitly chosen a preset horizon
+		if (chosenHorizon === '3months') {
+			endDate = horizon3Months;
+		} else if (chosenHorizon === '6months') {
+			endDate = horizon6Months;
+		} else if (chosenHorizon === '12months') {
+			endDate = horizon12Months;
+		}
+	});
+
+	// Effect: Reset horizon to None if startDate >= endDate (invalid range)
+	$effect(() => {
+		if (endDate !== null && targetDate >= endDate) {
+			endDate = null;
+			chosenHorizon = 'none';
+		}
+	});
 
 	// Range mode is active when endDate is set and > targetDate
 	let isRangeMode = $derived(endDate !== null && endDate > targetDate);
@@ -1164,6 +1252,14 @@
 			// In range mode, load debts up to endDate; otherwise use targetDate
 			const dateToLoad = isRangeMode && endDate ? endDate : targetDate;
 			debts = await getDebts(projectId, dateToLoad);
+
+			// In range mode, also load debts at the start date for settlement comparison
+			if (isRangeMode) {
+				startDebts = await getDebts(projectId, targetDate);
+			} else {
+				startDebts = null;
+			}
+
 			// Also load all payments to know future dates
 			allPayments = await getPayments(projectId);
 		} catch (e) {
@@ -1220,6 +1316,7 @@
 
 	function untilToday() {
 		endDate = getLocalDateString();
+		chosenHorizon = 'custom';
 	}
 
 	function goToPreviousPayment() {
@@ -1299,6 +1396,61 @@
 	let isFuture = $derived(daysDiff > 0);
 	let isPast = $derived(daysDiff < 0);
 	let relativeDateLabel = $derived(getRelativeDateLabel(targetDate));
+
+	// End date navigation - find previous/next payment dates relative to endDate
+	let previousEndPaymentDate = $derived.by(() => {
+		if (!endDate || !paymentDates.length) return null;
+		// Find the payment date just before endDate, but after targetDate
+		const currentEndDate = endDate; // Store for TypeScript narrowing
+		const validDates = paymentDates.filter((d) => d < currentEndDate && d > targetDate);
+		return validDates.length > 0 ? validDates[validDates.length - 1] : null;
+	});
+
+	// For nextEndPaymentDate, we need to project forward like nextPaymentDate does
+	let nextEndPaymentDate = $derived.by(() => {
+		if (!endDate || allPayments.length === 0) return null;
+
+		const endDateObj = parseLocalDate(endDate);
+		let nextDates: string[] = [];
+
+		for (const payment of allPayments) {
+			const paymentDateStr = payment.payment_date.split('T')[0];
+
+			if (!payment.is_recurring) {
+				// Non-recurring: include if after end date
+				if (paymentDateStr > endDate) {
+					nextDates.push(paymentDateStr);
+				}
+			} else {
+				// Recurring: find next occurrence after endDate
+				const nextOccurrence = getNextRecurringDate(payment, endDateObj);
+				if (nextOccurrence) {
+					nextDates.push(nextOccurrence);
+				}
+			}
+		}
+
+		if (nextDates.length === 0) return null;
+		nextDates.sort();
+		return nextDates[0];
+	});
+
+	function goToPreviousEndPayment() {
+		if (previousEndPaymentDate) {
+			endDate = previousEndPaymentDate;
+			chosenHorizon = 'custom';
+		}
+	}
+
+	function goToNextEndPayment() {
+		if (nextEndPaymentDate) {
+			endDate = nextEndPaymentDate;
+			chosenHorizon = 'custom';
+		}
+	}
+
+	// Corner case: disable Today/Until Today if both dates would be the same
+	let disableTodayButtons = $derived(isToday || isUntilToday);
 
 	// Map payment_id to full payment details for showing contributions
 	let paymentMap = $derived.by(() => {
@@ -1464,103 +1616,127 @@
 <h2>{$_('overview.title')}</h2>
 
 <!-- Date selector -->
-<div class="date-selector card">
-	<div class="date-nav-row">
-		<button
-			class="nav-btn"
-			onclick={goToPreviousPayment}
-			disabled={!previousPaymentDate}
-			title={previousPaymentDate
-				? `Go to ${formatDate(previousPaymentDate)}`
-				: 'No earlier payments'}>⟨</button
-		>
+<div class="date-selector card" class:range-mode={isRangeMode}>
+	<!-- Start Date Row -->
+	<div class="date-row">
+		<span class="date-row-label">{$_('overview.from')}</span>
+		<div class="date-row-center">
+			<div class="date-nav-row">
+				<button
+					class="nav-btn"
+					onclick={goToPreviousPayment}
+					disabled={!previousPaymentDate}
+					title={previousPaymentDate
+						? `Go to ${formatDate(previousPaymentDate)}`
+						: 'No earlier payments'}>⟨</button
+				>
 
-		<div class="date-display">
-			<input type="date" bind:value={targetDate} class="date-input" />
-			<span class="date-label">
-				{formatDate(targetDate)}
-				{#if relativeDateLabel && !isToday}
-					<span class="relative-label">({relativeDateLabel})</span>
-				{/if}
-				{#if isFuture}
-					<span class="badge future-badge">{$_('overview.future')}</span>
-				{:else if isPast}
-					<span class="badge past-badge">{$_('overview.past')}</span>
-				{/if}
-			</span>
+				<div class="date-display">
+					<input type="date" bind:value={targetDate} class="date-input" />
+					<span class="date-label">
+						{formatDate(targetDate)}
+						{#if relativeDateLabel && !isToday}
+							<span class="relative-label">({relativeDateLabel})</span>
+						{/if}
+						{#if isFuture}
+							<span class="badge future-badge">{$_('overview.future')}</span>
+						{:else if isPast}
+							<span class="badge past-badge">{$_('overview.past')}</span>
+						{/if}
+					</span>
+				</div>
+
+				<button
+					class="nav-btn"
+					onclick={goToNextPayment}
+					disabled={!nextPaymentDate}
+					title={nextPaymentDate ? `Go to ${formatDate(nextPaymentDate)}` : 'No future payments'}
+					>⟩</button
+				>
+			</div>
 		</div>
-
-		<button
-			class="nav-btn"
-			onclick={goToNextPayment}
-			disabled={!nextPaymentDate}
-			title={nextPaymentDate ? `Go to ${formatDate(nextPaymentDate)}` : 'No future payments'}
-			>⟩</button
-		>
-	</div>
-
-	<div class="date-actions">
-		{#if isRangeMode}
-			<!-- TODO: translate fromToday and untilToday -->
-			<button class="today-btn" onclick={goToToday} disabled={isToday || isUntilToday}>
-				{$_('overview.fromToday')}
-			</button>
-		{:else}
-			<button class="today-btn" onclick={goToToday} disabled={isToday}>
+		<div class="date-row-right">
+			<button class="today-btn" onclick={goToToday} disabled={disableTodayButtons}>
 				{$_('overview.today')}
 			</button>
-		{/if}
+		</div>
 	</div>
-	<div class="date-range-to">
-		<div class="date-actions">
+
+	<!-- Horizon Selector -->
+	<div class="horizon-selector">
+		<span class="horizon-label">{$_('overview.horizon')}</span>
+		<div class="horizon-buttons">
 			<button
-				class="clear-range-btn"
-				class:active={endDate === null}
-				onclick={() => (endDate = null)}
+				class="horizon-btn"
+				class:active={selectedHorizon === 'none'}
+				onclick={() => setHorizon('none')}
 			>
-				{$_('overview.clearRange')}
-			</button>
-			<!-- TODO: dummy logic, implement -->
-			<button class:active={endDate === targetDate + 3} onclick={() => (endDate = targetDate + 3)}>
-				{$_('cashflow.threeMonths')}
-			</button>
-			<button class:active={endDate === targetDate + 6} onclick={() => (endDate = targetDate + 6)}>
-				{$_('cashflow.sixMonths')}
+				{$_('overview.horizonNone')}
 			</button>
 			<button
-				class:active={endDate === targetDate + 12}
-				onclick={() => (endDate = targetDate + 12)}
+				class="horizon-btn"
+				class:active={selectedHorizon === '3months'}
+				onclick={() => setHorizon('3months')}
 			>
-				{$_('cashflow.twelveMonths')}
+				{$_('overview.threeMonths')}
 			</button>
-			<button class:active={endDate === targetDate} onclick={() => (endDate = targetDate)}>
-				{$_('cashflow.customEndDate')}
+			<button
+				class="horizon-btn"
+				class:active={selectedHorizon === '6months'}
+				onclick={() => setHorizon('6months')}
+			>
+				{$_('overview.sixMonths')}
+			</button>
+			<button
+				class="horizon-btn"
+				class:active={selectedHorizon === '12months'}
+				onclick={() => setHorizon('12months')}
+			>
+				{$_('overview.twelveMonths')}
+			</button>
+			<button
+				class="horizon-btn"
+				class:active={selectedHorizon === 'custom'}
+				onclick={() => setHorizon('custom')}
+			>
+				{$_('overview.customDate')}
 			</button>
 		</div>
 	</div>
 
+	<!-- End Date Row (only shown when horizon is set) -->
 	{#if isRangeMode}
-		<div class="date-display end-date-display">
-			<span class="date-label-small">{$_('overview.to')}</span>
-			<input
-				type="date"
-				bind:value={endDate}
-				min={targetDate}
-				class="date-input"
-				placeholder={$_('overview.selectEndDate')}
-			/>
-			{#if endDate}
-				<span class="date-label">{formatDate(endDate)}</span>
-			{:else}
-				<span class="date-label hint">{$_('overview.optional')}</span>
-			{/if}
-		</div>
-		<div class="date-actions">
-			<!-- TODO: translate fromToday and untilToday -->
-			<button class="today-btn" onclick={untilToday} disabled={isToday || isUntilToday}>
+		<div class="date-row end-date-row">
+			<span class="date-row-label">{$_('overview.to')}</span>
+			<div class="date-nav-row">
+				<button
+					class="nav-btn"
+					onclick={goToPreviousEndPayment}
+					disabled={!previousEndPaymentDate}
+					title={previousEndPaymentDate
+						? `Go to ${formatDate(previousEndPaymentDate)}`
+						: 'No earlier payments'}>⟨</button
+				>
+
+				<div class="date-display">
+					<input type="date" bind:value={endDate} min={targetDate} class="date-input" />
+					{#if endDate}
+						<span class="date-label">{formatDate(endDate)}</span>
+					{/if}
+				</div>
+
+				<button
+					class="nav-btn"
+					onclick={goToNextEndPayment}
+					disabled={!nextEndPaymentDate}
+					title={nextEndPaymentDate
+						? `Go to ${formatDate(nextEndPaymentDate)}`
+						: 'No future payments'}>⟩</button
+				>
+			</div>
+			<button class="today-btn" onclick={untilToday} disabled={disableTodayButtons}>
 				{$_('overview.untilToday')}
 			</button>
-			<span class="range-badge">{$_('overview.rangeMode')}</span>
 		</div>
 	{/if}
 
@@ -2071,27 +2247,87 @@
 				{$_('overview.directOnlyMode')}
 			</label>
 		</div>
-		{#if filteredSettlements.length === 0}
-			<p class="all-settled">
-				{focusParticipantId !== null
-					? $_('overview.noSettlementsForParticipant')
-					: $_('overview.allSettled')}
-			</p>
+
+		{#if isRangeMode}
+			<!-- Range mode: show start and end settlements side by side -->
+			<div class="settlements-range">
+				<div class="settlement-column">
+					<h4 class="settlement-date-label">{$_('overview.atStart')} ({formatDate(targetDate)})</h4>
+					{#if filteredStartSettlements.length === 0}
+						<p class="all-settled">
+							{focusParticipantId !== null
+								? $_('overview.noSettlementsForParticipant')
+								: $_('overview.allSettled')}
+						</p>
+					{:else}
+						<ul class="settlements-list">
+							{#each filteredStartSettlements as s (`start-${s.from_participant_id}-${s.to_participant_id}`)}
+								<li class:focused={focusParticipantId !== null}>
+									<span class="from" class:highlight={s.from_participant_id === focusParticipantId}
+										>{s.from_participant_name}</span
+									>
+									<span class="arrow">&rarr;</span>
+									<span class="to" class:highlight={s.to_participant_id === focusParticipantId}
+										>{s.to_participant_name}</span
+									>
+									<span class="amount">{formatCurrency(s.amount)}</span>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+				<div class="settlement-column">
+					<h4 class="settlement-date-label">
+						{$_('overview.atEnd')} ({formatDate(endDate ?? targetDate)})
+					</h4>
+					{#if filteredSettlements.length === 0}
+						<p class="all-settled">
+							{focusParticipantId !== null
+								? $_('overview.noSettlementsForParticipant')
+								: $_('overview.allSettled')}
+						</p>
+					{:else}
+						<ul class="settlements-list">
+							{#each filteredSettlements as s (`end-${s.from_participant_id}-${s.to_participant_id}`)}
+								<li class:focused={focusParticipantId !== null}>
+									<span class="from" class:highlight={s.from_participant_id === focusParticipantId}
+										>{s.from_participant_name}</span
+									>
+									<span class="arrow">&rarr;</span>
+									<span class="to" class:highlight={s.to_participant_id === focusParticipantId}
+										>{s.to_participant_name}</span
+									>
+									<span class="amount">{formatCurrency(s.amount)}</span>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+			</div>
 		{:else}
-			<ul class="settlements-list">
-				{#each filteredSettlements as s (`${s.from_participant_id}-${s.to_participant_id}`)}
-					<li class:focused={focusParticipantId !== null}>
-						<span class="from" class:highlight={s.from_participant_id === focusParticipantId}
-							>{s.from_participant_name}</span
-						>
-						<span class="arrow">&rarr;</span>
-						<span class="to" class:highlight={s.to_participant_id === focusParticipantId}
-							>{s.to_participant_name}</span
-						>
-						<span class="amount">{formatCurrency(s.amount)}</span>
-					</li>
-				{/each}
-			</ul>
+			<!-- Single date mode: show settlements as before -->
+			{#if filteredSettlements.length === 0}
+				<p class="all-settled">
+					{focusParticipantId !== null
+						? $_('overview.noSettlementsForParticipant')
+						: $_('overview.allSettled')}
+				</p>
+			{:else}
+				<ul class="settlements-list">
+					{#each filteredSettlements as s (`${s.from_participant_id}-${s.to_participant_id}`)}
+						<li class:focused={focusParticipantId !== null}>
+							<span class="from" class:highlight={s.from_participant_id === focusParticipantId}
+								>{s.from_participant_name}</span
+							>
+							<span class="arrow">&rarr;</span>
+							<span class="to" class:highlight={s.to_participant_id === focusParticipantId}
+								>{s.to_participant_name}</span
+							>
+							<span class="amount">{formatCurrency(s.amount)}</span>
+						</li>
+					{/each}
+				</ul>
+			{/if}
 		{/if}
 	</section>
 
@@ -2395,84 +2631,123 @@
 		cursor: not-allowed;
 	}
 
-	/* Date range mode styles */
-	.date-range-row {
-		display: flex;
+	/* Date row layout - table-like grid with 3 columns */
+	.date-row {
+		display: grid;
+		grid-template-columns: 5rem 1fr 6.5rem;
 		align-items: center;
-		justify-content: center;
-		gap: 1rem;
-		flex-wrap: wrap;
+		gap: 0.75rem;
 		width: 100%;
 	}
 
-	.date-range-to {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-	}
-
-	.range-arrow {
-		font-size: 1.25rem;
-		color: var(--accent, #7b61ff);
-		min-width: 1rem;
-	}
-
-	.end-date-display {
-		opacity: 0.7;
-		transition: opacity 0.2s;
-	}
-
-	.date-selector.range-mode .end-date-display {
-		opacity: 1;
-	}
-
-	.date-label-small {
-		font-size: 0.7rem;
-		color: #999;
-		text-transform: uppercase;
+	.date-row-label {
+		font-size: 0.85rem;
 		font-weight: 600;
-		letter-spacing: 0.5px;
+		color: #666;
+		text-align: left;
 	}
 
-	.date-label.hint {
-		color: #999;
-		font-style: italic;
-	}
-
-	.date-actions {
+	.date-row-center {
 		display: flex;
 		align-items: center;
-		gap: 0.75rem;
-		flex-wrap: wrap;
 		justify-content: center;
 	}
 
-	.clear-range-btn {
-		background: #e76f51;
-		color: white;
-		border: none;
-		border-radius: 8px;
-		padding: 0.5rem 1rem;
-		font-size: 0.9rem;
-		cursor: pointer;
-		transition: background 0.2s;
+	.date-row-right {
+		display: flex;
+		justify-content: flex-end;
 	}
 
-	.clear-range-btn:hover {
-		background: #d45d41;
+	.end-date-row {
+		padding-top: 0.5rem;
+		border-top: 1px solid #eee;
 	}
 
-	.range-badge {
-		background: var(--accent, #7b61ff);
-		color: white;
-		padding: 0.25rem 0.75rem;
-		border-radius: 12px;
-		font-size: 0.75rem;
+	/* Horizon selector - uses same grid layout */
+	.horizon-selector {
+		display: grid;
+		grid-template-columns: 5rem 1fr 6.5rem;
+		align-items: center;
+		gap: 0.75rem;
+		width: 100%;
+		padding: 0.5rem 0;
+		border-top: 1px solid #eee;
+	}
+
+	.horizon-label {
+		font-size: 0.85rem;
 		font-weight: 600;
+		color: #666;
+		text-align: left;
 	}
 
-	.date-selector.range-mode {
-		border-left: 3px solid var(--accent, #7b61ff);
+	.horizon-buttons {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		justify-content: center;
+	}
+
+	.horizon-btn {
+		padding: 0.35rem 0.75rem;
+		border: 1px solid #ddd;
+		border-radius: 16px;
+		background: white;
+		color: #666;
+		font-size: 0.8rem;
+		cursor: pointer;
+		transition: all 0.2s;
+	}
+
+	.horizon-btn:hover {
+		border-color: var(--accent, #7b61ff);
+		color: var(--accent, #7b61ff);
+	}
+
+	.horizon-btn.active {
+		background: var(--accent, #7b61ff);
+		border-color: var(--accent, #7b61ff);
+		color: white;
+	}
+
+	/* Settlements range mode */
+	.settlements-range {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1.5rem;
+	}
+
+	.settlement-column {
+		min-width: 0;
+	}
+
+	.settlement-date-label {
+		font-size: 0.9rem;
+		font-weight: 600;
+		color: #666;
+		margin-bottom: 0.75rem;
+		padding-bottom: 0.5rem;
+		border-bottom: 1px solid #eee;
+	}
+
+	@media (max-width: 600px) {
+		.settlements-range {
+			grid-template-columns: 1fr;
+			gap: 1rem;
+		}
+
+		.horizon-buttons {
+			flex-wrap: wrap;
+		}
+
+		.date-row {
+			flex-wrap: wrap;
+		}
+
+		.date-row-label {
+			width: 100%;
+			margin-bottom: -0.25rem;
+		}
 	}
 
 	.error {

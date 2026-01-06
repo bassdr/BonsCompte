@@ -262,7 +262,6 @@
 
 			if (balanceChart) balanceChart.destroy();
 
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			balanceChart = new Chart(balanceChartCanvas, {
 				type: 'line',
 				data: { datasets: datasets as never[] },

@@ -1853,13 +1853,16 @@
 							{$_('payments.paidBy')} {p.payer_name ?? $_('common.unknown')}
 						{/if}
 						{#if p.is_recurring && p.recurrence_end_date}
-							{$_('debts.from')}
-							{formatDate(p.payment_date)}
-							{$_('debts.to')}
-							{formatDate(p.recurrence_end_date)}
+							{$_('payments.dateRangeFromTo', {
+								values: {
+									startDate: formatDate(p.payment_date),
+									endDate: formatDate(p.recurrence_end_date)
+								}
+							})}
+						{:else if isFutureDate(p.payment_date)}
+							{$_('payments.startingFrom', { values: { date: formatDate(p.payment_date) } })}
 						{:else}
-							{isFutureDate(p.payment_date) ? $_('debts.from') : $_('debts.on')}
-							{formatDate(p.payment_date)}
+							{$_('payments.occurringOn', { values: { date: formatDate(p.payment_date) } })}
 						{/if}
 						{#if p.is_recurring}
 							<span class="recurrence-badge">{formatRecurrence(p)}</span>

@@ -313,6 +313,9 @@
 	"payments.showingFiltered": "Showing filtered payments:",
 	"payments.noMatchingPayments": "No payments match your filters",
 	"payments.loadMore": "Load more payments",
+	"payments.dateRangeFromTo": "from {startDate} to {endDate}",
+	"payments.startingFrom": "from {date}",
+	"payments.occurringOn": "on {date}",
 
 	"participants.title": "Participants",
 	"participants.addParticipant": "Add Participant",

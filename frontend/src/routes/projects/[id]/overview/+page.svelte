@@ -1216,7 +1216,10 @@
 
 	function goToToday() {
 		targetDate = getLocalDateString();
-		endDate = null; // Clear range mode when going to today
+	}
+
+	function untilToday() {
+		endDate = getLocalDateString();
 	}
 
 	function goToPreviousPayment() {
@@ -1291,9 +1294,10 @@
 
 	let todayStr = $derived(getLocalDateString());
 	let isToday = $derived(targetDate === todayStr);
+	let isUntilToday = $derived(endDate === todayStr);
 	let daysDiff = $derived(getDaysDiff(targetDate));
-	let _isFuture = $derived(daysDiff > 0);
-	let _isPast = $derived(daysDiff < 0);
+	let isFuture = $derived(daysDiff > 0);
+	let isPast = $derived(daysDiff < 0);
 	let relativeDateLabel = $derived(getRelativeDateLabel(targetDate));
 
 	// Map payment_id to full payment details for showing contributions
@@ -1460,91 +1464,124 @@
 <h2>{$_('overview.title')}</h2>
 
 <!-- Date selector -->
-<div class="date-selector card" class:range-mode={isRangeMode}>
-	<div class="date-range-row">
-		<!-- Start Date -->
-		<div class="date-nav-row">
-			<button
-				class="nav-btn"
-				onclick={goToPreviousPayment}
-				disabled={!previousPaymentDate || isRangeMode}
-				title={previousPaymentDate
-					? `Go to ${formatDate(previousPaymentDate)}`
-					: 'No earlier payments'}>⟨</button
-			>
+<div class="date-selector card">
+	<div class="date-nav-row">
+		<button
+			class="nav-btn"
+			onclick={goToPreviousPayment}
+			disabled={!previousPaymentDate}
+			title={previousPaymentDate
+				? `Go to ${formatDate(previousPaymentDate)}`
+				: 'No earlier payments'}>⟨</button
+		>
 
-			<div class="date-display">
-				<span class="date-label-small">{$_('overview.from')}</span>
-				<input type="date" bind:value={targetDate} class="date-input" />
-				<span class="date-label">
-					{formatDate(targetDate)}
-					{#if !isRangeMode && relativeDateLabel && !isToday}
-						<span class="relative-label">({relativeDateLabel})</span>
-					{/if}
-				</span>
-			</div>
-
-			<button
-				class="nav-btn"
-				onclick={goToNextPayment}
-				disabled={!nextPaymentDate || isRangeMode}
-				title={nextPaymentDate ? `Go to ${formatDate(nextPaymentDate)}` : 'No future payments'}
-				>⟩</button
-			>
-		</div>
-
-		<!-- End Date (optional) -->
-		<div class="date-range-to">
-			<span class="range-arrow">{isRangeMode ? '→' : ''}</span>
-			<div class="date-display end-date-display">
-				<span class="date-label-small">{$_('overview.to')}</span>
-				<input
-					type="date"
-					bind:value={endDate}
-					min={targetDate}
-					class="date-input"
-					placeholder={$_('overview.selectEndDate')}
-				/>
-				{#if endDate}
-					<span class="date-label">{formatDate(endDate)}</span>
-				{:else}
-					<span class="date-label hint">{$_('overview.optional')}</span>
+		<div class="date-display">
+			<input type="date" bind:value={targetDate} class="date-input" />
+			<span class="date-label">
+				{formatDate(targetDate)}
+				{#if relativeDateLabel && !isToday}
+					<span class="relative-label">({relativeDateLabel})</span>
 				{/if}
-			</div>
+				{#if isFuture}
+					<span class="badge future-badge">{$_('overview.future')}</span>
+				{:else if isPast}
+					<span class="badge past-badge">{$_('overview.past')}</span>
+				{/if}
+			</span>
 		</div>
+
+		<button
+			class="nav-btn"
+			onclick={goToNextPayment}
+			disabled={!nextPaymentDate}
+			title={nextPaymentDate ? `Go to ${formatDate(nextPaymentDate)}` : 'No future payments'}
+			>⟩</button
+		>
 	</div>
 
 	<div class="date-actions">
-		<button class="today-btn" onclick={goToToday} disabled={isToday && !endDate}>
-			{$_('overview.today')}
-		</button>
 		{#if isRangeMode}
-			<button class="clear-range-btn" onclick={() => (endDate = null)}>
+			<!-- TODO: translate fromToday and untilToday -->
+			<button class="today-btn" onclick={goToToday} disabled={isToday || isUntilToday}>
+				{$_('overview.fromToday')}
+			</button>
+		{:else}
+			<button class="today-btn" onclick={goToToday} disabled={isToday}>
+				{$_('overview.today')}
+			</button>
+		{/if}
+	</div>
+	<div class="date-range-to">
+		<div class="date-actions">
+			<button
+				class="clear-range-btn"
+				class:active={endDate === null}
+				onclick={() => (endDate = null)}
+			>
 				{$_('overview.clearRange')}
 			</button>
-			<span class="range-badge">{$_('overview.rangeMode')}</span>
-		{/if}
-	</div>
-</div>
-
-<!-- Focus mode selector -->
-{#if debts}
-	<div class="focus-selector">
-		<label for="focus-participant">{$_('overview.focusOn')}</label>
-		<select id="focus-participant" bind:value={focusParticipantId}>
-			<option value={null}>{$_('overview.allParticipants')}</option>
-			{#each nonPoolBalances as b (b.participant_id)}
-				<option value={b.participant_id}>{b.participant_name}</option>
-			{/each}
-		</select>
-		{#if focusParticipantId !== null}
-			<button class="clear-focus" onclick={() => (focusParticipantId = null)}
-				>{$_('common.clear')}</button
+			<!-- TODO: dummy logic, implement -->
+			<button class:active={endDate === targetDate + 3} onclick={() => (endDate = targetDate + 3)}>
+				{$_('cashflow.threeMonths')}
+			</button>
+			<button class:active={endDate === targetDate + 6} onclick={() => (endDate = targetDate + 6)}>
+				{$_('cashflow.sixMonths')}
+			</button>
+			<button
+				class:active={endDate === targetDate + 12}
+				onclick={() => (endDate = targetDate + 12)}
 			>
-		{/if}
+				{$_('cashflow.twelveMonths')}
+			</button>
+			<button class:active={endDate === targetDate} onclick={() => (endDate = targetDate)}>
+				{$_('cashflow.customEndDate')}
+			</button>
+		</div>
 	</div>
-{/if}
 
+	{#if isRangeMode}
+		<div class="date-display end-date-display">
+			<span class="date-label-small">{$_('overview.to')}</span>
+			<input
+				type="date"
+				bind:value={endDate}
+				min={targetDate}
+				class="date-input"
+				placeholder={$_('overview.selectEndDate')}
+			/>
+			{#if endDate}
+				<span class="date-label">{formatDate(endDate)}</span>
+			{:else}
+				<span class="date-label hint">{$_('overview.optional')}</span>
+			{/if}
+		</div>
+		<div class="date-actions">
+			<!-- TODO: translate fromToday and untilToday -->
+			<button class="today-btn" onclick={untilToday} disabled={isToday || isUntilToday}>
+				{$_('overview.untilToday')}
+			</button>
+			<span class="range-badge">{$_('overview.rangeMode')}</span>
+		</div>
+	{/if}
+
+	<!-- Focus mode selector -->
+	{#if debts}
+		<div class="focus-selector">
+			<label for="focus-participant">{$_('overview.focusOn')}</label>
+			<select id="focus-participant" bind:value={focusParticipantId}>
+				<option value={null}>{$_('overview.allParticipants')}</option>
+				{#each nonPoolBalances as b (b.participant_id)}
+					<option value={b.participant_id}>{b.participant_name}</option>
+				{/each}
+			</select>
+			{#if focusParticipantId !== null}
+				<button class="clear-focus" onclick={() => (focusParticipantId = null)}
+					>{$_('common.clear')}</button
+				>
+			{/if}
+		</div>
+	{/if}
+</div>
 {#if error}
 	<div class="error">{error}</div>
 {/if}
@@ -2318,6 +2355,24 @@
 	.relative-label {
 		color: #888;
 		font-style: italic;
+	}
+
+	.badge {
+		padding: 0.15rem 0.5rem;
+		border-radius: 12px;
+		font-size: 0.7rem;
+		font-weight: 600;
+		text-transform: uppercase;
+	}
+
+	.future-badge {
+		background: #ff9f43;
+		color: white;
+	}
+
+	.past-badge {
+		background: #6c757d;
+		color: white;
 	}
 
 	.today-btn {

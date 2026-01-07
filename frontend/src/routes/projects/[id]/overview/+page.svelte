@@ -1627,8 +1627,8 @@
 					onclick={goToPreviousPayment}
 					disabled={!previousPaymentDate}
 					title={previousPaymentDate
-						? `Go to ${formatDate(previousPaymentDate)}`
-						: 'No earlier payments'}>⟨</button
+						? $_('overview.goToDate', { values: { date: formatDate(previousPaymentDate) } })
+						: $_('overview.noPreviousPayment')}>⟨</button
 				>
 
 				<div class="date-display">
@@ -1650,8 +1650,9 @@
 					class="nav-btn"
 					onclick={goToNextPayment}
 					disabled={!nextPaymentDate}
-					title={nextPaymentDate ? `Go to ${formatDate(nextPaymentDate)}` : 'No future payments'}
-					>⟩</button
+					title={nextPaymentDate
+						? $_('overview.goToDate', { values: { date: formatDate(nextPaymentDate) } })
+						: $_('overview.noNextPayment')}>⟩</button
 				>
 			</div>
 		</div>
@@ -1714,8 +1715,8 @@
 					onclick={goToPreviousEndPayment}
 					disabled={!previousEndPaymentDate}
 					title={previousEndPaymentDate
-						? `Go to ${formatDate(previousEndPaymentDate)}`
-						: 'No earlier payments'}>⟨</button
+						? $_('overview.goToDate', { values: { date: formatDate(previousEndPaymentDate) } })
+						: $_('overview.noPreviousPayment')}>⟨</button
 				>
 
 				<div class="date-display">
@@ -1730,8 +1731,8 @@
 					onclick={goToNextEndPayment}
 					disabled={!nextEndPaymentDate}
 					title={nextEndPaymentDate
-						? `Go to ${formatDate(nextEndPaymentDate)}`
-						: 'No future payments'}>⟩</button
+						? $_('overview.goToDate', { values: { date: formatDate(nextEndPaymentDate) } })
+						: $_('overview.noNextPayment')}>⟩</button
 				>
 			</div>
 			<button class="today-btn" onclick={untilToday} disabled={disableTodayButtons}>

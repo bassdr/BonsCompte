@@ -82,19 +82,6 @@
 		}
 	}
 
-	function getRoleBadge(role: string): string {
-		switch (role) {
-			case 'admin':
-				return $_('roles.admin');
-			case 'editor':
-				return $_('roles.editor');
-			case 'reader':
-				return $_('roles.reader');
-			default:
-				return role;
-		}
-	}
-
 	function formatRelativeTime(dateStr: string): string {
 		const date = new Date(dateStr);
 		const now = new Date();
@@ -246,7 +233,7 @@
 			<a href={resolveRoute(`/projects/${project.id}`)} class="project-card">
 				<div class="project-header">
 					<h3>{project.name}</h3>
-					<span class="role-badge role-{project.role}">{getRoleBadge(project.role)}</span>
+					<span class="role-badge role-{project.role}">{$_(`roles.${project.role}`)}</span>
 				</div>
 				{#if project.description}
 					<p class="project-description">{project.description}</p>

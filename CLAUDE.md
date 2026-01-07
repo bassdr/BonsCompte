@@ -26,8 +26,8 @@ cargo test                   # Run all unit tests
 npm run dev                  # Start dev server on localhost:5173
 npm run build                # Production build
 npm run check                # TypeScript + Svelte type checking
-npm run lint                 # ESLint + Prettier check
-npm run format               # Auto-format with Prettier
+npm run format               # Auto-format with ESLint + Prettier
+npm run format:check         # Check format with ESLint + Prettier
 npm test                     # Run unit tests with Vitest
 npm run test:watch           # Run tests in watch mode
 ```
@@ -108,21 +108,22 @@ The backend includes several security layers:
 ```
 frontend/src/
 ├── lib/
-│   ├── api.ts           # All API calls + TypeScript interfaces
-│   ├── auth.ts          # Token storage, login state, User type
-│   └── stores/          # Svelte stores
+│   ├── api.ts              # All API calls + TypeScript interfaces
+│   ├── auth.ts             # Token storage, login state, User type
+│   ├── i18n/translations/  # English and French translations
+│   └── stores/             # Svelte stores
 └── routes/
-    ├── +layout.svelte   # Global layout with auth state
-    ├── +page.svelte     # Project list (home)
-    ├── login/           # Login form
-    ├── register/        # Registration form
+    ├── +layout.svelte      # Global layout with auth state
+    ├── +page.svelte        # Project list (home)
+    ├── login/              # Login form
+    ├── join/               # Form to join a project
+    ├── register/           # Create user form
     └── projects/[id]/
-        ├── +layout.svelte   # Project nav tabs
-        ├── +page.svelte     # Payments list + add form
-        ├── participants/    # Participant management
-        ├── members/         # Member/role management
-        ├── debts/           # Debt summary with date picker
-        └── settings/        # Project settings
+        ├── +layout.svelte  # Project nav tabs
+        ├── +page.svelte    # Redirects to overview
+        ├── overview/       # Settlements/Ownership summary with date picker + optional range for graph view
+        ├── payments/       # Add payments form + list with filters and edit mode
+        └── settings/       # Project settings, including participant and member/role management
 ```
 
 ### Key Frontend Patterns
@@ -215,7 +216,8 @@ Determined by `receiver_account_id`:
 ### Recurring Payments
 
 - Types: daily, weekly, monthly, yearly
-- Either "every X periods" OR "X times per period"
+- Supports "every X periods"
+- Supports multiple times per period for days and months
 - Debt calculator expands occurrences up to target date for projection
 
 ### Settlement Calculation
@@ -250,7 +252,7 @@ The settlement calculation has subtle interactions between pool accounts and use
 
 Backend (`.env`):
 ```
-DATABASE_URL=data.db
+DATABASE_URL=data/bonscompte.db
 JWT_SECRET=your-secret-key
 HOST=0.0.0.0
 PORT=8000
@@ -329,9 +331,10 @@ npm test                     # Runs both backend and frontend tests
 
 The project uses Husky to automatically run tests before each commit. The pre-commit hook (`.husky/pre-commit`) will:
 
-1. Run all backend tests (`cargo test`)
-2. Run all frontend tests (`npm test`)
-3. Block the commit if any tests fail
+1. Auto-fix format (currently only frontend, `npm run format`)
+2. Run all backend tests (`cargo test`)
+3. Run all frontend tests (`npm test`)
+4. Block the commit if any tests fail
 
 This ensures that broken code is never committed to the repository.
 

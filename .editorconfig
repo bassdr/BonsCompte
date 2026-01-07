@@ -1,0 +1,17 @@
+root = true
+
+[*]
+indent_style = space
+indent_size = 4
+end_of_line = lf
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Frontend (JS / TS / Svelte often prefers 2 spaces)
+[frontend/**/*.{js,ts,svelte,json,css,scss,prettierrc}]
+indent_size = 2
+
+# Rust (rustfmt defaults to 4, match it)
+[backend/**/*.rs]
+indent_size = 4

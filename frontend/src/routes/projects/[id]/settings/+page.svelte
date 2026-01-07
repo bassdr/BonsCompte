@@ -133,27 +133,27 @@
 				description: description.trim() || undefined
 			});
 
-			success = 'Project updated successfully';
+			success = $_('projectSettings.handleSave.success');
 			await loadProject(projectId);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to update project';
+			error = e instanceof Error ? e.message : $_('projectSettings.handleSave.fail');
 		} finally {
 			saving = false;
 		}
 	}
 
 	async function handleRegenerateCode() {
-		if (!confirm('Generate a new invite code? The old code will stop working.')) return;
+		if (!confirm($_('projectSettings.handleRegenerateCode.confirm'))) return;
 
 		error = '';
 		success = '';
 
 		try {
 			await regenerateInviteCode(projectId);
-			success = 'Invite code regenerated';
+			success = $_('projectSettings.handleRegenerateCode.success');
 			await loadProject(projectId);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to regenerate code';
+			error = e instanceof Error ? e.message : $_('projectSettings.handleRegenerateCode.fail');
 		}
 	}
 
@@ -167,10 +167,10 @@
 				invites_enabled: invitesEnabled,
 				require_approval: requireApproval
 			});
-			success = 'Invite settings updated';
+			success = $_('projectSettings.handleSaveSettings.success');
 			await loadProject(projectId);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to update settings';
+			error = e instanceof Error ? e.message : $_('projectSettings.handleSaveSettings.fail');
 		} finally {
 			savingSettings = false;
 		}
@@ -181,7 +181,7 @@
 		try {
 			pendingMembers = await getPendingMembers(projectId);
 		} catch (e) {
-			console.error('Failed to load pending members:', e);
+			console.error($_('projectSettings.loadPendingMembers.fail'), e);
 		} finally {
 			loadingPending = false;
 		}
@@ -194,16 +194,16 @@
 		try {
 			await approveMember(projectId, userId);
 			await loadPendingMembers();
-			success = 'Member approved';
+			success = $_('projectSettings.handleApproveMember.success');
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to approve member';
+			error = e instanceof Error ? e.message : $_('projectSettings.handleApproveMember.fail');
 		} finally {
 			processingMember = null;
 		}
 	}
 
 	async function handleRejectMember(userId: number) {
-		if (!confirm('Are you sure you want to reject this member request?')) return;
+		if (!confirm($_('projectSettings.handleRejectMember.confirm'))) return;
 
 		processingMember = userId;
 		error = '';
@@ -211,9 +211,9 @@
 		try {
 			await rejectMember(projectId, userId);
 			await loadPendingMembers();
-			success = 'Member rejected';
+			success = $_('projectSettings.handleRejectMember.success');
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to reject member';
+			error = e instanceof Error ? e.message : $_('projectSettings.handleRejectMember.fail');
 		} finally {
 			processingMember = null;
 		}
@@ -240,11 +240,11 @@
 			newParticipantWeight = '1';
 			newParticipantAccountType = 'user';
 			showAddParticipantForm = false;
-			success = 'Participant added successfully';
+			success = $_('projectSettings.handleAddParticipant.success');
 
 			await refreshParticipants(projectId);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to add participant';
+			error = e instanceof Error ? e.message : $_('projectSettings.handleAddParticipant.fail');
 		} finally {
 			addingParticipant = false;
 		}
@@ -281,28 +281,28 @@
 			});
 
 			cancelEditParticipant();
-			success = 'Participant updated successfully';
+			success = $_('projectSettings.handleUpdateParticipant.success');
 
 			await refreshParticipants(projectId);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to update participant';
+			error = e instanceof Error ? e.message : $_('projectSettings.handleUpdateParticipant.fail');
 		} finally {
 			updatingParticipant = false;
 		}
 	}
 
 	async function handleDeleteParticipant(participantId: number) {
-		if (!confirm('Delete this participant? This will also remove their contributions.')) return;
+		if (!confirm($_('projectSettings.handleDeleteParticipant.confirm'))) return;
 
 		error = '';
 		success = '';
 
 		try {
 			await deleteParticipant(projectId, participantId);
-			success = 'Participant deleted successfully';
+			success = $_('projectSettings.handleDeleteParticipant.success');
 			await refreshParticipants(projectId);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to delete participant';
+			error = e instanceof Error ? e.message : $_('projectSettings.handleDeleteParticipant.fail');
 		}
 	}
 
@@ -312,10 +312,10 @@
 
 		try {
 			await claimParticipant(projectId, participantId);
-			success = 'You are now associated with this participant';
+			success = $_('projectSettings.handleClaimParticipant.success');
 			await refreshParticipants(projectId);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to claim participant';
+			error = e instanceof Error ? e.message : $_('projectSettings.handleClaimParticipant.fail');
 		}
 	}
 
@@ -332,17 +332,17 @@
 		try {
 			const invite = await createParticipantInvite(projectId, participantId);
 			participantInvites[participantId] = invite;
-			success = 'Invite link generated';
+			success = $_('projectSettings.handleGenerateParticipantInvite.success');
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to generate invite';
+			if (e instanceof Error) error = e.message;
+			else error = $_('projectSettings.handleGenerateParticipantInvite.fail');
 		} finally {
 			loadingInvite = null;
 		}
 	}
 
 	async function handleRevokeParticipantInvite(participantId: number) {
-		if (!confirm('Revoke this invite link? Anyone who has it will no longer be able to use it.'))
-			return;
+		if (!confirm($_('projectSettings.handleRevokeParticipantInvite.confirm'))) return;
 
 		loadingInvite = participantId;
 		error = '';
@@ -350,9 +350,10 @@
 		try {
 			await revokeParticipantInvite(projectId, participantId);
 			participantInvites[participantId] = null;
-			success = 'Invite link revoked';
+			success = $_('projectSettings.handleRevokeParticipantInvite.success');
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to revoke invite';
+			if (e instanceof Error) error = e.message;
+			else error = $_('projectSettings.handleRevokeParticipantInvite.fail');
 		} finally {
 			loadingInvite = null;
 		}
@@ -389,7 +390,7 @@
 				if (copiedId === participantId) copiedId = null;
 			}, 2000);
 		} catch {
-			error = 'Failed to copy to clipboard';
+			error = $_('projectSettings.copyParticipantInviteUrl.fail');
 		}
 	}
 
@@ -416,11 +417,11 @@
 
 		try {
 			await updateMemberRole(projectId, editingMemberId, editMemberRole);
-			success = 'Role updated successfully';
+			success = $_('projectSettings.handleUpdateMemberRole.success');
 			cancelEditMember();
 			await refreshMembers(projectId);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to update role';
+			error = e instanceof Error ? e.message : $_('projectSettings.handleUpdateMemberRole.fail');
 		} finally {
 			updatingMember = false;
 		}
@@ -432,38 +433,26 @@
 
 		try {
 			await setMemberParticipant(projectId, userId, participantId);
-			success = 'Participant link updated';
+			success = $_('projectSettings.handleSetMemberParticipant.success');
 			await refreshMembers(projectId);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to update participant link';
+			if (e instanceof Error) error = e.message;
+			else error = $_('projectSettings.handleSetMemberParticipant.fail');
 		}
 	}
 
 	async function handleRemoveMember(userId: number) {
-		if (!confirm('Remove this member from the project?')) return;
+		if (!confirm($_('projectSettings.handleRemoveMember.confirm'))) return;
 
 		error = '';
 		success = '';
 
 		try {
 			await removeMember(projectId, userId);
-			success = 'Member removed successfully';
+			success = $_('projectSettings.handleRemoveMember.success');
 			await refreshMembers(projectId);
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to remove member';
-		}
-	}
-
-	function getRoleBadge(role: string): string {
-		switch (role) {
-			case 'admin':
-				return 'Admin';
-			case 'editor':
-				return 'Editor';
-			case 'reader':
-				return 'Reader';
-			default:
-				return role;
+			error = e instanceof Error ? e.message : $_('projectSettings.handleRemoveMember.fail');
 		}
 	}
 
@@ -474,7 +463,7 @@
 	// Delete Project
 	async function handleDelete() {
 		if (deleteConfirmText !== $currentProject?.name) {
-			error = 'Project name does not match';
+			error = $_('projectSettings.handleDelete.cancel');
 			return;
 		}
 
@@ -485,7 +474,7 @@
 			await deleteProject(projectId);
 			await goto('/');
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to delete project';
+			error = e instanceof Error ? e.message : $_('projectSettings.handleDelete.fail');
 			deleting = false;
 		}
 	}
@@ -813,7 +802,7 @@
 									{/if}
 								</div>
 								<div class="item-actions">
-									<span class="role-badge role-{m.role}">{getRoleBadge(m.role)}</span>
+									<span class="role-badge role-{m.role}">{$_(`roles.${m.role}`)}</span>
 									{#if !isCurrentUser(m.user_id)}
 										<button class="btn-edit" onclick={() => startEditMember(m)}
 											>{$_('common.edit')}</button

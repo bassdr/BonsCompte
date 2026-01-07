@@ -1,14 +1,17 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "Running pre-commit checks..."
-
 fail() { echo "$1"; exit 1; }
+
+echo "Running formatter on staged files"
+(cd frontend && npm run format:staged) || fail "Fronted failed to auto-format staged files"
+
+echo "Running pre-commit checks..."
 
 (cd backend && cargo fmt --check) || fail "Backend formatting failed!"
 (cd backend && cargo clippy -- -D warnings) || fail "Backend clippy failed!"
 (cd frontend && npm run check) || fail "Frontend type checking failed!"
-(cd frontend && npm run lint) || fail "Frontend lint failed!"
+(cd frontend && npm run format:check) || fail "Frontend lint failed!"
 (cd backend && cargo test) || fail "Backend tests failed!"
 (cd frontend && npm test) || fail "Frontend tests failed!"
 

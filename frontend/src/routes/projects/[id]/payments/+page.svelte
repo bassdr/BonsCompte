@@ -628,6 +628,11 @@
     }
   }
 
+  // Cancel editing and reset form
+  function cancelEditing() {
+    resetForm();
+  }
+
   // Start editing a payment
   function startEditing(payment: PaymentWithContributions) {
     editingPaymentId = payment.id;
@@ -1774,6 +1779,11 @@
                   : $_('payments.updatePayment')
                 : $_('payments.addPayment')}
           </button>
+          {#if editingPaymentId !== null}
+            <button type="button" class="cancel-btn" onclick={cancelEditing}
+              >{$_('common.cancel')}</button
+            >
+          {/if}
         </div>
       </form>
     {/if}
@@ -2275,6 +2285,20 @@
   button[type='submit']:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .cancel-btn {
+    padding: 0.75rem 1.5rem;
+    background: #e0e0e0;
+    color: #333;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+
+  .cancel-btn:hover {
+    background: #d0d0d0;
   }
 
   .payments-list {

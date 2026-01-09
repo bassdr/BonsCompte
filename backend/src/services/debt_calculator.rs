@@ -298,6 +298,31 @@ pub async fn calculate_debts_at_date(
                     occurrence_date: occurrence.occurrence_date.clone(),
                     amount: occurrence.amount,
                 });
+            } else if occurrence.payer_id.is_none() {
+                // External inflow to user: money from outside enters through this user
+                // Receiver "receives" money on behalf of the group (like they paid it)
+                *paid_map.entry(receiver_id).or_insert(0.0) += occurrence.amount;
+
+                // Contributors owe their share
+                if let Some(contribs) = contribution_map.get(&occurrence.payment_id) {
+                    for (participant_id, amount) in contribs {
+                        *owed_map.entry(*participant_id).or_insert(0.0) += amount;
+                    }
+
+                    // Track pairwise: receiver "paid" for each contributor
+                    for (contributor_id, amount) in contribs {
+                        let entry = pairwise_map
+                            .entry((receiver_id, *contributor_id))
+                            .or_insert((0.0, Vec::new()));
+                        entry.0 += amount;
+                        entry.1.push(PairwisePaymentBreakdown {
+                            payment_id: occurrence.payment_id,
+                            description: occurrence.description.clone(),
+                            occurrence_date: occurrence.occurrence_date.clone(),
+                            amount: *amount,
+                        });
+                    }
+                }
             }
             continue;
         }
@@ -479,6 +504,27 @@ pub async fn calculate_debts_at_date(
                             occurrence_date: occurrence.occurrence_date.clone(),
                             amount: occurrence.amount,
                         });
+                    }
+                } else if occurrence.payer_id.is_none() && receiver_id == pool_id {
+                    // External inflow to pool: each contributor's ownership increases
+                    if let Some(contribs) = contribution_map.get(&occurrence.payment_id) {
+                        for (contributor_id, amount) in contribs {
+                            if *contributor_id != pool_id {
+                                let entry = ownership_map.entry(*contributor_id).or_insert((
+                                    0.0,
+                                    0.0,
+                                    Vec::new(),
+                                    Vec::new(),
+                                ));
+                                entry.0 += amount; // contributed (ownership increases)
+                                entry.2.push(PairwisePaymentBreakdown {
+                                    payment_id: occurrence.payment_id,
+                                    description: occurrence.description.clone(),
+                                    occurrence_date: occurrence.occurrence_date.clone(),
+                                    amount: *amount,
+                                });
+                            }
+                        }
                     }
                 }
                 continue; // Skip contribution-based logic for internal transfers
@@ -2408,5 +2454,143 @@ mod tests {
         };
 
         assert!(occurrence.receiver_account_id.is_none());
+    }
+
+    #[test]
+    fn test_occurrence_without_payer_is_external_inflow() {
+        // Test that PaymentOccurrence without payer_id but with receiver_account_id
+        // is recognized as an external inflow
+        let occurrence = PaymentOccurrence {
+            payment_id: 1,
+            description: "Bank interest deposit".to_string(),
+            amount: 300.0,
+            occurrence_date: "2024-01-01".to_string(),
+            payer_id: None, // External inflow - no payer
+            is_recurring: false,
+            receiver_account_id: Some(4), // Goes to pool account
+        };
+
+        assert!(occurrence.payer_id.is_none());
+        assert!(occurrence.receiver_account_id.is_some());
+    }
+
+    #[test]
+    fn test_external_inflow_to_user_creates_settlements() {
+        // Scenario: External inflow of $300 to Carl, split among Carl, David, Lise
+        // Carl receives $300 from outside (e.g., landlord refund)
+        // Split equally: Carl $100, David $100, Lise $100
+        //
+        // Result:
+        // - Carl: paid $300 (received the money), owes $100 (his share), net = +200
+        // - David: paid $0, owes $100, net = -100
+        // - Lise: paid $0, owes $100, net = -100
+        //
+        // Settlements:
+        // - David owes Carl $100
+        // - Lise owes Carl $100
+
+        let balances = vec![
+            ParticipantBalance {
+                participant_id: 1,
+                participant_name: "Carl".to_string(),
+                total_paid: 300.0, // Received money on behalf of group
+                total_owed: 100.0, // His share
+                net_balance: 200.0,
+            },
+            ParticipantBalance {
+                participant_id: 2,
+                participant_name: "David".to_string(),
+                total_paid: 0.0,
+                total_owed: 100.0,
+                net_balance: -100.0,
+            },
+            ParticipantBalance {
+                participant_id: 3,
+                participant_name: "Lise".to_string(),
+                total_paid: 0.0,
+                total_owed: 100.0,
+                net_balance: -100.0,
+            },
+        ];
+
+        let participant_map: HashMap<i64, String> = vec![
+            (1, "Carl".to_string()),
+            (2, "David".to_string()),
+            (3, "Lise".to_string()),
+        ]
+        .into_iter()
+        .collect();
+
+        let pool_participants: std::collections::HashSet<i64> = std::collections::HashSet::new();
+
+        let settlements = calculate_settlements(&balances, &participant_map, &pool_participants);
+
+        // Should have 2 settlements: David→Carl and Lise→Carl
+        assert_eq!(settlements.len(), 2);
+
+        // Total amount should be $200 (David's $100 + Lise's $100)
+        let total: f64 = settlements.iter().map(|s| s.amount).sum();
+        assert!((total - 200.0).abs() < 0.01);
+
+        // All settlements should go to Carl (id=1)
+        for s in &settlements {
+            assert_eq!(s.to_participant_id, 1);
+        }
+    }
+
+    #[test]
+    fn test_external_inflow_to_pool_no_settlements() {
+        // Scenario: External inflow of $300 to pool, split among Carl, David, Lise
+        // (e.g., government grant for the cooperative)
+        //
+        // Result: Each person's pool ownership increases by $100
+        // No effect on user-to-user settlements (everyone's balance stays 0)
+
+        let balances = vec![
+            ParticipantBalance {
+                participant_id: 1,
+                participant_name: "Carl".to_string(),
+                total_paid: 0.0,
+                total_owed: 0.0,
+                net_balance: 0.0,
+            },
+            ParticipantBalance {
+                participant_id: 2,
+                participant_name: "David".to_string(),
+                total_paid: 0.0,
+                total_owed: 0.0,
+                net_balance: 0.0,
+            },
+            ParticipantBalance {
+                participant_id: 3,
+                participant_name: "Lise".to_string(),
+                total_paid: 0.0,
+                total_owed: 0.0,
+                net_balance: 0.0,
+            },
+            ParticipantBalance {
+                participant_id: 4,
+                participant_name: "Pool".to_string(),
+                total_paid: 0.0,
+                total_owed: 0.0,
+                net_balance: 0.0,
+            },
+        ];
+
+        let participant_map: HashMap<i64, String> = vec![
+            (1, "Carl".to_string()),
+            (2, "David".to_string()),
+            (3, "Lise".to_string()),
+            (4, "Pool".to_string()),
+        ]
+        .into_iter()
+        .collect();
+
+        let pool_participants: std::collections::HashSet<i64> = [4].into_iter().collect();
+
+        let settlements = calculate_settlements(&balances, &participant_map, &pool_participants);
+
+        // No settlements - external inflow to pool doesn't affect user-to-user settlements
+        assert_eq!(settlements.len(), 0);
     }
 }

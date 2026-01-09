@@ -146,6 +146,9 @@
   // number = internal transfer to this account (e.g., deposit to pool)
   let receiverAccountId = $state<number | null>(null);
 
+  // External inflow mode: money entering from outside (no payer)
+  let isExternalInflow = $state(false);
+
   // Image modal state
   let showImageModal = $state(false);
   let modalImage = $state<string | null>(null);
@@ -215,9 +218,14 @@
     // Filter by payment type
     if (filterPaymentType) {
       if (filterPaymentType === 'expense') {
-        result = result.filter((p) => p.receiver_account_id === null);
+        // External expense: has payer, no receiver
+        result = result.filter((p) => p.payer_id !== null && p.receiver_account_id === null);
       } else if (filterPaymentType === 'transfer') {
-        result = result.filter((p) => p.receiver_account_id !== null);
+        // Internal transfer: has both payer and receiver
+        result = result.filter((p) => p.payer_id !== null && p.receiver_account_id !== null);
+      } else if (filterPaymentType === 'inflow') {
+        // External inflow: no payer, has receiver
+        result = result.filter((p) => p.payer_id === null && p.receiver_account_id !== null);
       } else if (filterPaymentType === 'recurring') {
         result = result.filter((p) => p.is_recurring);
       }
@@ -604,6 +612,7 @@
     userModifiedMonthdays = false;
     userModifiedMonths = false;
     receiverAccountId = null; // Reset internal transfer state
+    isExternalInflow = false; // Reset external inflow state
     useSplitDate = false;
     splitFromDate = getLocalDateString();
 
@@ -631,6 +640,7 @@
     receiptPreview = payment.receipt_image;
     isRecurring = payment.is_recurring;
     receiverAccountId = payment.receiver_account_id; // Load internal transfer state
+    isExternalInflow = payment.payer_id === null && payment.receiver_account_id !== null;
 
     // Reset split date option
     useSplitDate = false;
@@ -1068,14 +1078,14 @@
         }));
 
       const payload: CreatePaymentInput = {
-        payer_id: payerId,
+        payer_id: isExternalInflow ? null : payerId,
         amount: parseFloat(amount),
         description,
         payment_date: paymentDate,
         contributions,
         receipt_image: receiptImage ?? undefined,
         is_recurring: isRecurring,
-        receiver_account_id: receiverAccountId // Internal transfer support
+        receiver_account_id: receiverAccountId // Internal transfer or external inflow target
       };
 
       if (isRecurring) {
@@ -1354,14 +1364,29 @@
     {:else}
       <form onsubmit={handleSubmit}>
         <div class="form-row">
-          <div class="field">
-            <label for="payer">{$_('payments.paidBy')}</label>
-            <select id="payer" bind:value={payerId}>
-              {#each $participants as p (p.id)}
-                <option value={p.id}>{p.name}</option>
-              {/each}
-            </select>
-          </div>
+          {#if !isExternalInflow}
+            <div class="field">
+              <label for="payer">{$_('payments.paidBy')}</label>
+              <select id="payer" bind:value={payerId}>
+                {#each $participants as p (p.id)}
+                  <option value={p.id}>{p.name}</option>
+                {/each}
+              </select>
+            </div>
+          {:else}
+            <div class="field">
+              <label for="inflow-receiver">{$_('payments.inflowReceiver')}</label>
+              <select id="inflow-receiver" bind:value={receiverAccountId} required>
+                {#each $participants as p (p.id)}
+                  <option value={p.id}
+                    >{p.name}{p.account_type === 'pool'
+                      ? ` (${$_('participants.pool')})`
+                      : ''}</option
+                  >
+                {/each}
+              </select>
+            </div>
+          {/if}
 
           <div class="field">
             <label for="amount">{$_('payments.amount')}</label>
@@ -1372,6 +1397,30 @@
             <label for="payment-date">{$_('payments.date')}</label>
             <input id="payment-date" type="date" bind:value={paymentDate} required />
           </div>
+        </div>
+
+        <!-- External Inflow Toggle -->
+        <div class="external-inflow-section">
+          <label class="checkbox-label">
+            <input
+              type="checkbox"
+              bind:checked={isExternalInflow}
+              onchange={() => {
+                if (isExternalInflow) {
+                  // When enabling external inflow, set a default receiver
+                  if (!receiverAccountId && $participants.length > 0) {
+                    // Default to first pool account, or first participant
+                    const pool = $participants.find((p) => p.account_type === 'pool');
+                    receiverAccountId = pool ? pool.id : $participants[0].id;
+                  }
+                } else {
+                  // When disabling, clear the receiver
+                  receiverAccountId = null;
+                }
+              }}
+            />
+            {$_('payments.externalInflow')}
+          </label>
         </div>
 
         <div class="field">
@@ -1407,7 +1456,26 @@
           </div>
         </div>
 
-        {#if isInternalTransfer}
+        {#if isExternalInflow && receiverAccountId}
+          {@const receiver = $participants.find((p) => p.id === receiverAccountId)}
+          <div class="external-inflow-banner">
+            <span class="inflow-icon">↙</span>
+            <span class="inflow-text">
+              {$_('payments.externalInflowTo')}
+              {receiver?.name ?? $_('common.unknown')}
+              {receiver?.account_type === 'pool' ? `(${$_('participants.pool')})` : ''}
+            </span>
+            <button
+              type="button"
+              class="clear-inflow-btn"
+              onclick={() => {
+                isExternalInflow = false;
+                receiverAccountId = null;
+                includeAll();
+              }}>{$_('common.cancel')}</button
+            >
+          </div>
+        {:else if isInternalTransfer}
           {@const receiver = $participants.find((p) => p.id === receiverAccountId)}
           <div class="internal-transfer-banner">
             <span class="transfer-icon">↗</span>
@@ -1765,6 +1833,7 @@
           <option value="">{$_('payments.allTypes')}</option>
           <option value="expense">{$_('payments.typeExpense')}</option>
           <option value="transfer">{$_('payments.typeTransfer')}</option>
+          <option value="inflow">{$_('payments.typeInflow')}</option>
           <option value="recurring">{$_('payments.typeRecurring')}</option>
         </select>
       </div>
@@ -1845,12 +1914,20 @@
             </span>
           </div>
           <div class="payment-meta">
-            {#if p.receiver_account_id !== null}
+            {#if p.payer_id === null && p.receiver_account_id !== null}
+              <!-- External inflow -->
+              {@const receiver = $participants.find((pr) => pr.id === p.receiver_account_id)}
+              <span class="inflow-badge">{$_('payments.externalInflow')}</span>
+              {$_('payments.externalIndicator')} → {receiver?.name ?? $_('common.unknown')}
+            {:else if p.receiver_account_id !== null}
+              <!-- Internal transfer -->
               {@const receiver = $participants.find((pr) => pr.id === p.receiver_account_id)}
               <span class="transfer-badge">{$_('payments.transfer')}</span>
               {p.payer_name ?? $_('common.unknown')} → {receiver?.name ?? $_('common.unknown')}
             {:else}
-              {$_('payments.paidBy')} {p.payer_name ?? $_('common.unknown')}
+              <!-- External expense -->
+              {$_('payments.paidBy')}
+              {p.payer_name ?? $_('common.unknown')}
             {/if}
             {#if p.is_recurring && p.recurrence_end_date}
               {$_('payments.dateRangeFromTo', {
@@ -2452,6 +2529,60 @@
 
   .transfer-btn:hover {
     background: #c8e6c9 !important;
+  }
+
+  /* External inflow styles */
+  .external-inflow-section {
+    background: #e3f2fd;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .external-inflow-banner {
+    background: #e3f2fd;
+    border: 1px solid #1976d2;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .inflow-icon {
+    font-size: 1.2rem;
+    color: #1976d2;
+  }
+
+  .inflow-text {
+    flex: 1;
+    color: #1565c0;
+    font-weight: 500;
+  }
+
+  .clear-inflow-btn {
+    padding: 0.25rem 0.5rem;
+    background: transparent;
+    border: 1px solid #1976d2;
+    border-radius: 4px;
+    color: #1976d2;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+
+  .clear-inflow-btn:hover {
+    background: #1976d2;
+    color: white;
+  }
+
+  .inflow-badge {
+    background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
+    color: white;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
   }
 
   /* Split date section */

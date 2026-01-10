@@ -64,10 +64,10 @@
 					{$_('cashflow.title')}
 				</a>-->
         <a
-          href={resolveRoute(`/projects/${$page.params.id}/payments`)}
-          class:active={$page.url.pathname.includes('/payments')}
+          href={resolveRoute(`/projects/${$page.params.id}/transactions`)}
+          class:active={$page.url.pathname.includes('/transactions')}
         >
-          {$_('payments.title')}
+          {$_('nav.transactions')}
         </a>
         <a
           href={resolveRoute(`/projects/${$page.params.id}/history`)}

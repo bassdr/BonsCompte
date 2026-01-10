@@ -17,6 +17,7 @@
   "common.total": "Total",
 
   "nav.projects": "Projects",
+  "nav.transactions": "Transactions",
   "nav.settings": "Settings",
   "nav.logout": "Logout",
 
@@ -311,7 +312,10 @@
   "payments.typeExpense": "External expense",
   "payments.typeTransfer": "Internal transfer",
   "payments.typeInflow": "External funds",
-  "payments.typeRecurring": "Recurring",
+  "payments.filterByRecurring": "Recurrence",
+  "payments.allRecurrence": "All",
+  "payments.recurringOnly": "Recurring only",
+  "payments.oneTimeOnly": "One-time only",
   "payments.externalInflow": "External funds",
   "payments.inflowReceiver": "Received by",
   "payments.externalInflowTo": "External funds to",
@@ -482,5 +486,27 @@
   "months.sep": "Sep",
   "months.oct": "Oct",
   "months.nov": "Nov",
-  "months.dec": "Dec"
+  "months.dec": "Dec",
+
+  "transactions.outgoing": "Add payment",
+  "transactions.incoming": "Add received funds",
+  "transactions.internal": "Add transfered funds",
+  "transactions.addPayment": "Add Payment",
+  "transactions.editPayment": "Edit Payment",
+  "transactions.addDeposit": "Add Deposit",
+  "transactions.editDeposit": "Edit Deposit",
+  "transactions.addReceived": "Add Received",
+  "transactions.editReceived": "Edit Received",
+  "transactions.addTransfer": "Add Transfer",
+  "transactions.editTransfer": "Edit Transfer",
+  "transactions.paidBy": "Paid by",
+  "transactions.receivedInto": "Into",
+  "transactions.receivedBy": "By",
+  "transactions.from": "From",
+  "transactions.to": "To",
+  "transactions.addIncoming": "Add Incoming",
+  "transactions.editIncoming": "Edit Incoming",
+  "transactions.invalidMode": "Invalid transaction mode",
+  "transactions.receiverRequired": "Please select a receiver",
+  "payments.noEditPermission": "You don't have permission to edit payments."
 }

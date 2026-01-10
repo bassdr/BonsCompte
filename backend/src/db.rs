@@ -455,6 +455,37 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         .await
         .ok();
 
+    // =====================
+    // Migration 011: Fix internal transfer contributions
+    // =====================
+    // Internal transfers (user-to-user) should have only the payer as contributor
+    // This migration fixes any transfers that were incorrectly saved with other contributions
+
+    // First, delete all existing contributions for internal transfers
+    sqlx::query(
+        "DELETE FROM contributions WHERE payment_id IN (
+            SELECT id FROM payments
+            WHERE receiver_account_id IS NOT NULL
+            AND payer_id IS NOT NULL
+        )",
+    )
+    .execute(pool)
+    .await
+    .ok();
+
+    // Then, insert the correct contribution (payer with weight 1, amount = payment amount)
+    // Use INSERT OR IGNORE to make this idempotent
+    sqlx::query(
+        "INSERT OR IGNORE INTO contributions (participant_id, payment_id, amount, weight)
+        SELECT payer_id, id, amount, 1.0
+        FROM payments
+        WHERE receiver_account_id IS NOT NULL
+        AND payer_id IS NOT NULL",
+    )
+    .execute(pool)
+    .await
+    .ok();
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

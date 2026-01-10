@@ -250,6 +250,23 @@
     }
   });
 
+  // For internal transfers, always set payer as the only contributor
+  // This applies to both new transfers and edited ones
+  $effect(() => {
+    if (mode !== 'internal' || payerId === null || $participants.length === 0) return;
+
+    // Set contributor to payer only for internal transfers
+    for (const p of $participants) {
+      if (p.id === payerId) {
+        included[p.id] = true;
+        weights[p.id] = 1;
+      } else {
+        included[p.id] = false;
+        weights[p.id] = 0;
+      }
+    }
+  });
+
   // Load payment for editing when editId changes
   $effect(() => {
     if (editId && projectId && $participants.length > 0) {
@@ -865,12 +882,19 @@
     error = '';
 
     try {
-      const contributions = $participants
-        .filter((p) => included[p.id] !== false)
-        .map((p) => ({
-          participant_id: p.id,
-          weight: weights[p.id] ?? p.default_weight
-        }));
+      // For internal transfers, always use payer as sole contributor
+      // This ensures the transfer is 100% paid by the payer
+      let contributions;
+      if (mode === 'internal' && payerId !== null) {
+        contributions = [{ participant_id: payerId, weight: 1 }];
+      } else {
+        contributions = $participants
+          .filter((p) => included[p.id] !== false)
+          .map((p) => ({
+            participant_id: p.id,
+            weight: weights[p.id] ?? p.default_weight
+          }));
+      }
 
       const payload: CreatePaymentInput = {
         payer_id: isExternalInflow ? null : payerId,

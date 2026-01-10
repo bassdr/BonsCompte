@@ -455,7 +455,7 @@
           },
           scales: {
             y: {
-              title: { display: true, text: $_('debts.ownership') },
+              title: { display: true, text: $_('overview.ownership') },
               ticks: { callback: (value: number | string) => formatCurrency(Number(value)) }
             },
             x: {

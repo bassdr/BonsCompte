@@ -34,8 +34,7 @@ export default defineConfig(
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }
       ],
 
-      'svelte/no-navigation-without-resolve': 'off',
-      'svelte/no-unused-svelte-ignore': 'off'
+      'svelte/no-navigation-without-resolve': 'off'
     }
   },
 

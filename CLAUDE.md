@@ -119,11 +119,11 @@ frontend/src/
     ├── join/               # Form to join a project
     ├── register/           # Create user form
     └── projects/[id]/
-        ├── +layout.svelte  # Project nav tabs
-        ├── +page.svelte    # Redirects to overview
-        ├── overview/       # Settlements/Ownership summary with date picker + optional range for graph view
-        ├── payments/       # Add payments form + list with filters and edit mode
-        └── settings/       # Project settings, including participant and member/role management
+        ├── +layout.svelte       # Project nav tabs
+        ├── +page.svelte         # Redirects to overview
+        ├── overview/            # Settlements/Ownership summary with date picker + optional range for graph view
+        ├── transactions/[mode]  # internal (transfer), outgoing (payments) and incoming (deposit) transactions payments form + list of transactions with filters and edit mode
+        └── settings/            # Project settings, including participant and member/role management
 ```
 
 ### Key Frontend Patterns

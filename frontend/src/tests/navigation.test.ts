@@ -6,7 +6,7 @@ describe('Navigation - Project Routes', () => {
   const projectRoutesDir = join(__dirname, '../routes/projects/[id]');
 
   // Define expected project sub-routes based on the navigation
-  const expectedRoutes = ['overview', 'cashflow', 'payments', 'history', 'settings'];
+  const expectedRoutes = ['overview', 'cashflow', 'transactions', 'history', 'settings'];
 
   it('should have all navigation routes as actual page files', () => {
     for (const route of expectedRoutes) {
@@ -103,7 +103,7 @@ describe('Navigation - Project Routes', () => {
     const layoutContent = readFileSync(layoutFile, 'utf-8');
     const redirectContent = readFileSync(redirectFile, 'utf-8');
 
-    const deprecatedRoutes = ['debts', 'participants', 'members']; // Add more deprecated routes here if needed
+    const deprecatedRoutes = ['debts', 'participants', 'members', 'payments']; // Add more deprecated routes here if needed
 
     for (const route of deprecatedRoutes) {
       expect(

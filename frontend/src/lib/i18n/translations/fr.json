@@ -17,6 +17,7 @@
   "common.total": "Total",
 
   "nav.projects": "Projets",
+  "nav.transactions": "Transactions",
   "nav.settings": "Paramètres",
   "nav.logout": "Déconnexion",
 
@@ -311,7 +312,10 @@
   "payments.typeExpense": "Dépense externe",
   "payments.typeTransfer": "Transfert interne",
   "payments.typeInflow": "Fonds externes",
-  "payments.typeRecurring": "Récurrent",
+  "payments.filterByRecurring": "Récurrence",
+  "payments.allRecurrence": "Toutes",
+  "payments.recurringOnly": "Récurrents uniquement",
+  "payments.oneTimeOnly": "Ponctuels uniquement",
   "payments.externalInflow": "Fonds externe",
   "payments.inflowReceiver": "Reçu par",
   "payments.externalInflowTo": "Fonds externe vers",
@@ -482,5 +486,27 @@
   "months.sep": "Sep",
   "months.oct": "Oct",
   "months.nov": "Nov",
-  "months.dec": "Déc"
+  "months.dec": "Déc",
+
+  "transactions.outgoing": "Ajouter un paiement",
+  "transactions.incoming": "Ajouter une entrée d'argent",
+  "transactions.internal": "Ajouter un transfer de fond",
+  "transactions.addPayment": "Ajouter un paiement",
+  "transactions.editPayment": "Modifier le paiement",
+  "transactions.addDeposit": "Ajouter un dépôt",
+  "transactions.editDeposit": "Modifier le dépôt",
+  "transactions.addReceived": "Ajouter une réception",
+  "transactions.editReceived": "Modifier la réception",
+  "transactions.addTransfer": "Ajouter un transfert",
+  "transactions.editTransfer": "Modifier le transfert",
+  "transactions.paidBy": "Payé par",
+  "transactions.receivedInto": "Dans",
+  "transactions.receivedBy": "Par",
+  "transactions.from": "De",
+  "transactions.to": "À",
+  "transactions.addIncoming": "Ajouter un entrant",
+  "transactions.editIncoming": "Modifier l'entrant",
+  "transactions.invalidMode": "Mode de transaction invalide",
+  "transactions.receiverRequired": "Veuillez sélectionner un destinataire",
+  "payments.noEditPermission": "Vous n'avez pas la permission de modifier les paiements."
 }

@@ -2737,17 +2737,86 @@
       gap: 1rem;
     }
 
-    .horizon-buttons {
-      flex-wrap: wrap;
+    .date-selector {
+      overflow-x: hidden;
+      padding: 1rem;
     }
 
     .date-row {
-      flex-wrap: wrap;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      align-items: center;
+      width: 100%;
     }
 
     .date-row-label {
+      text-align: center;
+      margin-bottom: 0;
+    }
+
+    .date-row-center {
       width: 100%;
-      margin-bottom: -0.25rem;
+    }
+
+    .date-row-right {
+      justify-content: center;
+    }
+
+    .date-nav-row {
+      width: 100%;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .date-display {
+      max-width: 100%;
+    }
+
+    .date-input {
+      max-width: 150px;
+    }
+
+    .horizon-selector {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      align-items: center;
+      width: 100%;
+    }
+
+    .horizon-label {
+      text-align: center;
+    }
+
+    .horizon-buttons {
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .horizon-btn {
+      font-size: 0.75rem;
+      padding: 0.3rem 0.6rem;
+    }
+
+    .focus-selector {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.5rem;
+    }
+
+    .focus-selector label {
+      text-align: center;
+    }
+
+    .focus-selector select {
+      width: 100%;
+    }
+
+    .today-btn {
+      font-size: 0.8rem;
+      padding: 0.4rem 0.8rem;
     }
   }
 

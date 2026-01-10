@@ -861,8 +861,7 @@ export const getMyPendingApprovals = (): Promise<ProjectApproval[]> =>
 export const getActionableApprovals = (): Promise<ProjectApproval[]> =>
   authFetch('/approvals/actionable');
 
-export const getApproval = (id: number): Promise<ProjectApproval> =>
-  authFetch(`/approvals/${id}`);
+export const getApproval = (id: number): Promise<ProjectApproval> => authFetch(`/approvals/${id}`);
 
 export const castVote = (
   approvalId: number,

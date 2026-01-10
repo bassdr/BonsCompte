@@ -123,9 +123,10 @@ async fn main() {
 
     tracing::info!("Connected to SQLite at {}", config.database_url);
 
-    // Extract host and port before moving config into state
+    // Extract values before moving config into state
     let host = config.host.clone();
     let port = config.port;
+    let rate_limit_enabled = config.rate_limit_enabled;
 
     // Create app state
     let state = AppState {
@@ -169,7 +170,7 @@ async fn main() {
         .nest("/history", routes::history::router());
 
     // Auth routes with optional rate limiting (5 requests per 60s to prevent brute-force)
-    let auth_routes = if config.rate_limit_enabled {
+    let auth_routes = if rate_limit_enabled {
         routes::auth::router().layer(GovernorLayer {
             config: auth_rate_limit,
         })
@@ -195,7 +196,7 @@ async fn main() {
         ));
 
     // Conditionally apply general rate limiting (100 requests per second)
-    if config.rate_limit_enabled {
+    if rate_limit_enabled {
         app = app.layer(GovernorLayer {
             config: api_rate_limit,
         });

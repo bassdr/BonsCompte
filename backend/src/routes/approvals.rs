@@ -51,20 +51,21 @@ async fn get_approval(
 
     // Verify user has access to this approval
     // Either they are the subject of the approval OR they are a member of the project
-    let has_access = approval.approval.user_id == auth.user_id ||
-        {
-            let is_member: bool = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?)"
-            )
-            .bind(approval.approval.project_id)
-            .bind(auth.user_id)
-            .fetch_one(&pool)
-            .await?;
-            is_member
-        };
+    let has_access = approval.approval.user_id == auth.user_id || {
+        let is_member: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM project_members WHERE project_id = ? AND user_id = ?)",
+        )
+        .bind(approval.approval.project_id)
+        .bind(auth.user_id)
+        .fetch_one(&pool)
+        .await?;
+        is_member
+    };
 
     if !has_access {
-        return Err(crate::error::AppError::Forbidden("You do not have access to this approval".to_string()));
+        return Err(crate::error::AppError::Forbidden(
+            "You do not have access to this approval".to_string(),
+        ));
     }
 
     Ok(Json(approval))
@@ -77,13 +78,8 @@ async fn cast_vote(
     Path(id): Path<i64>,
     Json(input): Json<CastVote>,
 ) -> AppResult<Json<ApprovalWithDetails>> {
-    let approval = approval_service::cast_vote(
-        &pool,
-        id,
-        auth.user_id,
-        &input.vote,
-        input.reason,
-    ).await?;
+    let approval =
+        approval_service::cast_vote(&pool, id, auth.user_id, &input.vote, input.reason).await?;
 
     Ok(Json(approval))
 }

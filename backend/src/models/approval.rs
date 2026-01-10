@@ -8,9 +8,9 @@ pub struct ProjectApproval {
     pub id: i64,
     pub user_id: i64,
     pub project_id: i64,
-    pub event_type: String,  // 'password_reset', 'password_change', etc.
-    pub event_metadata: Option<String>,  // JSON with event details
-    pub status: String,  // 'pending', 'approved', 'rejected'
+    pub event_type: String, // 'password_reset', 'password_change', etc.
+    pub event_metadata: Option<String>, // JSON with event details
+    pub status: String,     // 'pending', 'approved', 'rejected'
     pub created_at: String,
     pub resolved_at: Option<String>,
 }
@@ -21,7 +21,7 @@ pub struct ApprovalVote {
     pub id: i64,
     pub approval_id: i64,
     pub voter_id: i64,
-    pub vote: String,  // 'approve' or 'reject'
+    pub vote: String, // 'approve' or 'reject'
     pub reason: Option<String>,
     pub voted_at: String,
 }
@@ -29,7 +29,7 @@ pub struct ApprovalVote {
 /// Input for casting a vote on an approval
 #[derive(Debug, Deserialize)]
 pub struct CastVote {
-    pub vote: String,  // 'approve' or 'reject'
+    pub vote: String, // 'approve' or 'reject'
     pub reason: Option<String>,
 }
 

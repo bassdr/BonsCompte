@@ -3,10 +3,19 @@ use axum::{
     http::{Request, StatusCode},
     Router,
 };
-use bonscompte_backend::{auth::handlers, db, AppState};
+use bonscompte_backend::{auth::handlers, config::Config, db, AppState};
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
 use tower::ServiceExt;
+
+/// Helper to activate a user (since new users start in pending_approval state)
+async fn activate_user(pool: &SqlitePool, username: &str) {
+    sqlx::query("UPDATE users SET user_state = 'active' WHERE username = ?")
+        .bind(username)
+        .execute(pool)
+        .await
+        .expect("Failed to activate user");
+}
 
 /// Helper to create a test app with an in-memory database
 async fn create_test_app() -> (Router, SqlitePool) {
@@ -22,9 +31,19 @@ async fn create_test_app() -> (Router, SqlitePool) {
 
     let jwt_secret = "test-secret-key-for-testing".to_string();
 
+    let config = Config {
+        database_url: "sqlite::memory:".to_string(),
+        jwt_secret: jwt_secret.clone(),
+        host: "127.0.0.1".to_string(),
+        port: 8000,
+        rate_limit_enabled: false,
+        max_projects_per_user: None,
+    };
+
     let state = AppState {
         pool: pool.clone(),
         jwt_secret,
+        config,
     };
 
     let app = Router::new()
@@ -37,7 +56,7 @@ async fn create_test_app() -> (Router, SqlitePool) {
 
 #[tokio::test]
 async fn test_register_and_login_success() {
-    let (app, _pool) = create_test_app().await;
+    let (app, pool) = create_test_app().await;
 
     // Register a new user
     let register_response = app
@@ -70,6 +89,9 @@ async fn test_register_and_login_success() {
     assert!(register_body["token"].is_string());
     assert_eq!(register_body["user"]["username"], "testuser");
     assert_eq!(register_body["user"]["display_name"], "Test User");
+
+    // Activate the user (new users start in pending_approval state)
+    activate_user(&pool, "testuser").await;
 
     // Login with the registered user
     let login_response = app
@@ -137,7 +159,7 @@ async fn test_login_invalid_credentials() {
 
 #[tokio::test]
 async fn test_login_wrong_password() {
-    let (app, _pool) = create_test_app().await;
+    let (app, pool) = create_test_app().await;
 
     // Register a user
     let _register = app
@@ -158,6 +180,9 @@ async fn test_login_wrong_password() {
         )
         .await
         .unwrap();
+
+    // Activate the user (new users start in pending_approval state)
+    activate_user(&pool, "testuser").await;
 
     // Try to login with wrong password
     let response = app
@@ -279,7 +304,7 @@ async fn test_register_password_too_short() {
 
 #[tokio::test]
 async fn test_login_returns_user_preferences() {
-    let (app, _pool) = create_test_app().await;
+    let (app, pool) = create_test_app().await;
 
     // Register a user
     let _register = app
@@ -300,6 +325,9 @@ async fn test_login_returns_user_preferences() {
         )
         .await
         .unwrap();
+
+    // Activate the user (new users start in pending_approval state)
+    activate_user(&pool, "testuser").await;
 
     // Login
     let response = app

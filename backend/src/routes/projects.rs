@@ -143,17 +143,17 @@ async fn create_project(
 ) -> AppResult<Json<Project>> {
     // Check project creation limit if configured
     if let Some(max_projects) = state.config.max_projects_per_user {
-        let project_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM projects WHERE created_by = ?"
-        )
-        .bind(auth.user_id)
-        .fetch_one(&pool)
-        .await?;
+        let project_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM projects WHERE created_by = ?")
+                .bind(auth.user_id)
+                .fetch_one(&pool)
+                .await?;
 
         if project_count >= max_projects {
-            return Err(AppError::Forbidden(
-                format!("Project creation limit reached (maximum {} projects per user)", max_projects)
-            ));
+            return Err(AppError::Forbidden(format!(
+                "Project creation limit reached (maximum {} projects per user)",
+                max_projects
+            )));
         }
     }
 

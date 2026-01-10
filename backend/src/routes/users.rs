@@ -126,11 +126,13 @@ async fn change_password(
 
     // Update password AND increment token_version to invalidate existing sessions
     // This is critical for security: old tokens become invalid after password change
-    sqlx::query("UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?")
-        .bind(&new_hash)
-        .bind(auth.user_id)
-        .execute(&pool)
-        .await?;
+    sqlx::query(
+        "UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?",
+    )
+    .bind(&new_hash)
+    .bind(auth.user_id)
+    .execute(&pool)
+    .await?;
 
     // Trigger approval workflow
     // Creates approval records in all user's projects and sets memberships to pending
@@ -393,7 +395,9 @@ async fn approve_user(
 ) -> AppResult<Json<UserResponse>> {
     // Check if requester is admin
     if !is_system_admin(auth.user_id) {
-        return Err(AppError::Forbidden("System admin access required".to_string()));
+        return Err(AppError::Forbidden(
+            "System admin access required".to_string(),
+        ));
     }
 
     // Update user state to active
@@ -421,12 +425,16 @@ async fn revoke_user(
 ) -> AppResult<Json<UserResponse>> {
     // Check if requester is admin
     if !is_system_admin(auth.user_id) {
-        return Err(AppError::Forbidden("System admin access required".to_string()));
+        return Err(AppError::Forbidden(
+            "System admin access required".to_string(),
+        ));
     }
 
     // Prevent revoking yourself
     if auth.user_id == user_id {
-        return Err(AppError::Forbidden("Cannot revoke your own account".to_string()));
+        return Err(AppError::Forbidden(
+            "Cannot revoke your own account".to_string(),
+        ));
     }
 
     // Update user state to revoked and increment token_version to invalidate tokens

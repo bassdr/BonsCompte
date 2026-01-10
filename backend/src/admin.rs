@@ -97,11 +97,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
 
             // Set all project memberships to pending
-            let rows_updated = sqlx::query("UPDATE project_members SET status = 'pending' WHERE user_id = ?")
-                .bind(user_id)
-                .execute(&pool)
-                .await?
-                .rows_affected();
+            let rows_updated =
+                sqlx::query("UPDATE project_members SET status = 'pending' WHERE user_id = ?")
+                    .bind(user_id)
+                    .execute(&pool)
+                    .await?
+                    .rows_affected();
 
             println!("Password reset for user '{}'", username);
             println!("Temporary password: {}", temp_password);
@@ -148,11 +149,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .await?;
 
             // Activate ALL project memberships (system admin bypass)
-            let rows_updated = sqlx::query("UPDATE project_members SET status = 'active' WHERE user_id = ?")
-                .bind(user_id)
-                .execute(&pool)
-                .await?
-                .rows_affected();
+            let rows_updated =
+                sqlx::query("UPDATE project_members SET status = 'active' WHERE user_id = ?")
+                    .bind(user_id)
+                    .execute(&pool)
+                    .await?
+                    .rows_affected();
 
             println!("User '{}' approved", username);
             println!("Previous state: {}", current_state);

@@ -87,10 +87,10 @@ where
                 // - POST /approvals/*/vote (cast votes - validation happens in handler)
                 let allowed = matches!(
                     (method, path),
-                    ("GET", "/users/me") |
-                    ("PUT", "/users/me/profile") |
-                    ("PUT", "/users/me/preferences") |
-                    ("GET", "/users/me/preferences")
+                    ("GET", "/users/me")
+                        | ("PUT", "/users/me/profile")
+                        | ("PUT", "/users/me/preferences")
+                        | ("GET", "/users/me/preferences")
                 ) || path.starts_with("/approvals/");
 
                 if !allowed {

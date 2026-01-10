@@ -490,7 +490,7 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             FOREIGN KEY (approval_id) REFERENCES project_approvals(id) ON DELETE CASCADE,
             FOREIGN KEY (voter_id) REFERENCES users(id) ON DELETE CASCADE,
             UNIQUE(approval_id, voter_id)
-        )"
+        )",
     )
     .execute(pool)
     .await?;
@@ -506,10 +506,12 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         .await
         .ok();
 
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_approval_votes_approval ON approval_votes(approval_id)")
-        .execute(pool)
-        .await
-        .ok();
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_approval_votes_approval ON approval_votes(approval_id)",
+    )
+    .execute(pool)
+    .await
+    .ok();
 
     tracing::info!("Database migrations completed");
     Ok(())

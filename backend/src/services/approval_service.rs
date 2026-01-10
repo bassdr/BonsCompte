@@ -1,8 +1,8 @@
-use sqlx::SqlitePool;
 use crate::{
     error::{AppError, AppResult},
-    models::{ProjectApproval, ApprovalVote, ApprovalWithDetails, VoteWithVoter, UserState},
+    models::{ApprovalVote, ApprovalWithDetails, ProjectApproval, UserState, VoteWithVoter},
 };
+use sqlx::SqlitePool;
 
 /// Calculate the number of required approvals based on project member count and voter role
 ///
@@ -12,11 +12,11 @@ use crate::{
 /// - Multiple users: ceil(33% * member_count)
 fn calculate_required_votes(member_count: i64, voter_is_admin: bool) -> i64 {
     if voter_is_admin {
-        return 1;  // Admin vote is instant approval
+        return 1; // Admin vote is instant approval
     }
 
     if member_count == 1 {
-        return i64::MAX;  // Single user can't self-approve, only sysadmin can
+        return i64::MAX; // Single user can't self-approve, only sysadmin can
     }
 
     // 33% quorum, round up
@@ -33,18 +33,17 @@ pub async fn create_approval_for_all_projects(
     let mut tx = pool.begin().await?;
 
     // Get all projects where user is a member
-    let project_ids: Vec<i64> = sqlx::query_scalar(
-        "SELECT project_id FROM project_members WHERE user_id = ?"
-    )
-    .bind(user_id)
-    .fetch_all(&mut *tx)
-    .await?;
+    let project_ids: Vec<i64> =
+        sqlx::query_scalar("SELECT project_id FROM project_members WHERE user_id = ?")
+            .bind(user_id)
+            .fetch_all(&mut *tx)
+            .await?;
 
     // Create one approval record per project
     for project_id in project_ids {
         sqlx::query(
             "INSERT INTO project_approvals (user_id, project_id, event_type)
-             VALUES (?, ?, ?)"
+             VALUES (?, ?, ?)",
         )
         .bind(user_id)
         .bind(project_id)
@@ -97,7 +96,7 @@ pub async fn get_pending_approvals_for_user(
          JOIN projects p ON pa.project_id = p.id
          JOIN users u ON pa.user_id = u.id
          WHERE pa.user_id = ? AND pa.status = 'pending'
-         ORDER BY pa.created_at DESC"
+         ORDER BY pa.created_at DESC",
     )
     .bind(user_id)
     .fetch_all(pool)
@@ -112,7 +111,7 @@ pub async fn get_pending_approvals_for_user(
 
         // Get member count to calculate required votes
         let member_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM project_members WHERE project_id = ? AND status = 'active'"
+            "SELECT COUNT(*) FROM project_members WHERE project_id = ? AND status = 'active'",
         )
         .bind(approval_row.project_id)
         .fetch_one(pool)
@@ -183,7 +182,7 @@ pub async fn get_actionable_approvals(
                SELECT 1 FROM approval_votes av
                WHERE av.approval_id = pa.id AND av.voter_id = ?
            )
-         ORDER BY pa.created_at DESC"
+         ORDER BY pa.created_at DESC",
     )
     .bind(voter_id)
     .bind(voter_id)
@@ -200,7 +199,7 @@ pub async fn get_actionable_approvals(
 
         // Get member count
         let member_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM project_members WHERE project_id = ? AND status = 'active'"
+            "SELECT COUNT(*) FROM project_members WHERE project_id = ? AND status = 'active'",
         )
         .bind(approval_row.project_id)
         .fetch_one(pool)
@@ -208,7 +207,7 @@ pub async fn get_actionable_approvals(
 
         // Check if voter is admin
         let voter_role: String = sqlx::query_scalar(
-            "SELECT role FROM project_members WHERE project_id = ? AND user_id = ?"
+            "SELECT role FROM project_members WHERE project_id = ? AND user_id = ?",
         )
         .bind(approval_row.project_id)
         .bind(voter_id)
@@ -264,24 +263,27 @@ async fn get_votes_for_approval(
          FROM approval_votes av
          JOIN users u ON av.voter_id = u.id
          WHERE av.approval_id = ?
-         ORDER BY av.voted_at ASC"
+         ORDER BY av.voted_at ASC",
     )
     .bind(approval_id)
     .fetch_all(pool)
     .await?;
 
-    Ok(votes.into_iter().map(|v| VoteWithVoter {
-        vote: ApprovalVote {
-            id: v.id,
-            approval_id: v.approval_id,
-            voter_id: v.voter_id,
-            vote: v.vote,
-            reason: v.reason,
-            voted_at: v.voted_at,
-        },
-        voter_username: v.voter_username,
-        voter_display_name: v.voter_display_name,
-    }).collect())
+    Ok(votes
+        .into_iter()
+        .map(|v| VoteWithVoter {
+            vote: ApprovalVote {
+                id: v.id,
+                approval_id: v.approval_id,
+                voter_id: v.voter_id,
+                vote: v.vote,
+                reason: v.reason,
+                voted_at: v.voted_at,
+            },
+            voter_username: v.voter_username,
+            voter_display_name: v.voter_display_name,
+        })
+        .collect())
 }
 
 /// Cast a vote on an approval
@@ -297,35 +299,38 @@ pub async fn cast_vote(
 
     // Validate vote value
     if vote != "approve" && vote != "reject" {
-        return Err(AppError::BadRequest("Vote must be 'approve' or 'reject'".to_string()));
+        return Err(AppError::BadRequest(
+            "Vote must be 'approve' or 'reject'".to_string(),
+        ));
     }
 
     // Get approval details
     #[derive(sqlx::FromRow)]
     struct ApprovalInfo {
-        id: i64,
         user_id: i64,
         project_id: i64,
         status: String,
     }
 
-    let approval: Option<ApprovalInfo> = sqlx::query_as(
-        "SELECT id, user_id, project_id, status FROM project_approvals WHERE id = ?"
-    )
-    .bind(approval_id)
-    .fetch_optional(&mut *tx)
-    .await?;
+    let approval: Option<ApprovalInfo> =
+        sqlx::query_as("SELECT user_id, project_id, status FROM project_approvals WHERE id = ?")
+            .bind(approval_id)
+            .fetch_optional(&mut *tx)
+            .await?;
 
     let approval = approval.ok_or_else(|| AppError::NotFound("Approval not found".to_string()))?;
 
     // Check approval is still pending
     if approval.status != "pending" {
-        return Err(AppError::BadRequest(format!("Approval is already {}", approval.status)));
+        return Err(AppError::BadRequest(format!(
+            "Approval is already {}",
+            approval.status
+        )));
     }
 
     // Check voter is a member of the project
     let voter_membership: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM project_members WHERE project_id = ? AND user_id = ?"
+        "SELECT status FROM project_members WHERE project_id = ? AND user_id = ?",
     )
     .bind(approval.project_id)
     .bind(voter_id)
@@ -333,22 +338,28 @@ pub async fn cast_vote(
     .await?;
 
     if voter_membership.is_none() {
-        return Err(AppError::Forbidden("You are not a member of this project".to_string()));
+        return Err(AppError::Forbidden(
+            "You are not a member of this project".to_string(),
+        ));
     }
 
     if voter_membership.as_deref() != Some("active") {
-        return Err(AppError::Forbidden("Your membership in this project is not active".to_string()));
+        return Err(AppError::Forbidden(
+            "Your membership in this project is not active".to_string(),
+        ));
     }
 
     // Check voter is not voting on their own approval
     if approval.user_id == voter_id {
-        return Err(AppError::BadRequest("Cannot vote on your own approval".to_string()));
+        return Err(AppError::BadRequest(
+            "Cannot vote on your own approval".to_string(),
+        ));
     }
 
     // Insert the vote (will fail if already voted due to UNIQUE constraint)
     sqlx::query(
         "INSERT INTO approval_votes (approval_id, voter_id, vote, reason)
-         VALUES (?, ?, ?, ?)"
+         VALUES (?, ?, ?, ?)",
     )
     .bind(approval_id)
     .bind(voter_id)
@@ -374,10 +385,7 @@ pub async fn cast_vote(
 }
 
 /// Check if an approval has met the threshold and resolve it accordingly
-async fn check_and_resolve_approval(
-    pool: &SqlitePool,
-    approval_id: i64,
-) -> AppResult<()> {
+async fn check_and_resolve_approval(pool: &SqlitePool, approval_id: i64) -> AppResult<()> {
     let mut tx = pool.begin().await?;
 
     // Get approval info
@@ -388,20 +396,19 @@ async fn check_and_resolve_approval(
         status: String,
     }
 
-    let approval: ApprovalInfo = sqlx::query_as(
-        "SELECT user_id, project_id, status FROM project_approvals WHERE id = ?"
-    )
-    .bind(approval_id)
-    .fetch_one(&mut *tx)
-    .await?;
+    let approval: ApprovalInfo =
+        sqlx::query_as("SELECT user_id, project_id, status FROM project_approvals WHERE id = ?")
+            .bind(approval_id)
+            .fetch_one(&mut *tx)
+            .await?;
 
     if approval.status != "pending" {
-        return Ok(());  // Already resolved
+        return Ok(()); // Already resolved
     }
 
     // Check for any rejections
     let rejection_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM approval_votes WHERE approval_id = ? AND vote = 'reject'"
+        "SELECT COUNT(*) FROM approval_votes WHERE approval_id = ? AND vote = 'reject'",
     )
     .bind(approval_id)
     .fetch_one(&mut *tx)
@@ -422,7 +429,7 @@ async fn check_and_resolve_approval(
 
     // Count approve votes
     let approve_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM approval_votes WHERE approval_id = ? AND vote = 'approve'"
+        "SELECT COUNT(*) FROM approval_votes WHERE approval_id = ? AND vote = 'approve'",
     )
     .bind(approval_id)
     .fetch_one(&mut *tx)
@@ -430,7 +437,7 @@ async fn check_and_resolve_approval(
 
     // Get member count (active members only)
     let member_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM project_members WHERE project_id = ? AND status = 'active'"
+        "SELECT COUNT(*) FROM project_members WHERE project_id = ? AND status = 'active'",
     )
     .bind(approval.project_id)
     .fetch_one(&mut *tx)
@@ -442,7 +449,7 @@ async fn check_and_resolve_approval(
             SELECT 1 FROM approval_votes av
             JOIN project_members pm ON av.voter_id = pm.user_id AND pm.project_id = ?
             WHERE av.approval_id = ? AND pm.role = 'admin' AND av.vote = 'approve'
-        )"
+        )",
     )
     .bind(approval.project_id)
     .bind(approval_id)
@@ -462,7 +469,7 @@ async fn check_and_resolve_approval(
 
         // Activate the project membership
         sqlx::query(
-            "UPDATE project_members SET status = 'active' WHERE project_id = ? AND user_id = ?"
+            "UPDATE project_members SET status = 'active' WHERE project_id = ? AND user_id = ?",
         )
         .bind(approval.project_id)
         .bind(approval.user_id)
@@ -502,7 +509,7 @@ pub async fn get_approval_with_details(
          FROM project_approvals pa
          JOIN projects p ON pa.project_id = p.id
          JOIN users u ON pa.user_id = u.id
-         WHERE pa.id = ?"
+         WHERE pa.id = ?",
     )
     .bind(approval_id)
     .fetch_one(pool)
@@ -513,7 +520,7 @@ pub async fn get_approval_with_details(
     let vote_count = votes.iter().filter(|v| v.vote.vote == "approve").count() as i64;
 
     let member_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM project_members WHERE project_id = ? AND status = 'active'"
+        "SELECT COUNT(*) FROM project_members WHERE project_id = ? AND status = 'active'",
     )
     .bind(approval_row.project_id)
     .fetch_one(pool)
@@ -525,7 +532,7 @@ pub async fn get_approval_with_details(
             SELECT 1 FROM approval_votes av
             JOIN project_members pm ON av.voter_id = pm.user_id AND pm.project_id = ?
             WHERE av.approval_id = ? AND pm.role = 'admin' AND av.vote = 'approve'
-        )"
+        )",
     )
     .bind(approval_row.project_id)
     .bind(approval_row.id)

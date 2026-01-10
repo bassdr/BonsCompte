@@ -1,3 +1,4 @@
+pub mod approvals;
 pub mod auth;
 pub mod cashflow;
 pub mod debts;

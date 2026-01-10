@@ -3,8 +3,9 @@ set -euo pipefail
 
 fail() { echo "$1"; exit 1; }
 
-echo "Running formatter on staged files"
-(cd frontend && npm run format:staged) || fail "Fronted failed to auto-format staged files"
+echo "Running formatters"
+(cd backend && cargo fmt) || fail "Backend failed to auto-format"
+(cd frontend && npm run format:staged) || fail "Frontend failed to auto-format staged files"
 
 echo "Running pre-commit checks..."
 

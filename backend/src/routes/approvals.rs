@@ -17,8 +17,8 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/my-pending", get(get_my_pending_approvals))
         .route("/actionable", get(get_actionable_approvals))
-        .route("/:id", get(get_approval))
-        .route("/:id/vote", post(cast_vote))
+        .route("/{id}", get(get_approval))
+        .route("/{id}/vote", post(cast_vote))
 }
 
 /// Get all pending approvals for the current user

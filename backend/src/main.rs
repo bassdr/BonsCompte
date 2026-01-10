@@ -160,7 +160,7 @@ async fn main() {
             .expect("Failed to create API rate limiter"),
     );
 
-    // Project sub-routes (nested under /api/projects/:id)
+    // Project sub-routes (nested under /api/projects/{id})
     let project_routes = Router::new()
         .nest("/participants", routes::participants::router())
         .nest("/members", routes::members::router())

@@ -513,18 +513,42 @@
 
           // Skip pool transfers for user balance computation
           if (!isPoolReceiver && !isPoolPayer) {
-            // Credit the payer
-            if (occ.payer_id !== null && !poolIds.has(occ.payer_id)) {
-              const current = runningBalance.get(occ.payer_id) ?? 0;
-              runningBalance.set(occ.payer_id, current + occ.amount);
-            }
+            if (occ.receiver_account_id !== null) {
+              // User-to-user transfer or external inflow
+              if (occ.payer_id !== null) {
+                // User-to-user transfer: payer credit, receiver debit
+                const payerCurrent = runningBalance.get(occ.payer_id) ?? 0;
+                runningBalance.set(occ.payer_id, payerCurrent + occ.amount);
 
-            // Debit contributors based on their weights
-            if (payment.contributions) {
-              for (const contrib of payment.contributions) {
-                if (!poolIds.has(contrib.participant_id)) {
-                  const current = runningBalance.get(contrib.participant_id) ?? 0;
-                  runningBalance.set(contrib.participant_id, current - contrib.amount);
+                const receiverCurrent = runningBalance.get(occ.receiver_account_id) ?? 0;
+                runningBalance.set(occ.receiver_account_id, receiverCurrent - occ.amount);
+              } else {
+                // External inflow: receiver credit, contributors debit
+                const receiverCurrent = runningBalance.get(occ.receiver_account_id) ?? 0;
+                runningBalance.set(occ.receiver_account_id, receiverCurrent + occ.amount);
+
+                if (payment.contributions) {
+                  for (const contrib of payment.contributions) {
+                    if (!poolIds.has(contrib.participant_id)) {
+                      const current = runningBalance.get(contrib.participant_id) ?? 0;
+                      runningBalance.set(contrib.participant_id, current - contrib.amount);
+                    }
+                  }
+                }
+              }
+            } else {
+              // External expense: payer credit, contributors debit
+              if (occ.payer_id !== null && !poolIds.has(occ.payer_id)) {
+                const current = runningBalance.get(occ.payer_id) ?? 0;
+                runningBalance.set(occ.payer_id, current + occ.amount);
+              }
+
+              if (payment.contributions) {
+                for (const contrib of payment.contributions) {
+                  if (!poolIds.has(contrib.participant_id)) {
+                    const current = runningBalance.get(contrib.participant_id) ?? 0;
+                    runningBalance.set(contrib.participant_id, current - contrib.amount);
+                  }
                 }
               }
             }
@@ -580,34 +604,74 @@
           const isPoolPayer = occ.payer_id !== null && poolIds.has(occ.payer_id);
 
           if (!isPoolReceiver && !isPoolPayer) {
-            // If focused participant is the payer
-            if (occ.payer_id === focusParticipantId && payment.contributions) {
-              for (const contrib of payment.contributions) {
-                if (
-                  contrib.participant_id !== focusParticipantId &&
-                  !poolIds.has(contrib.participant_id)
-                ) {
-                  // Focused participant paid for this other person
-                  const current = runningPairwise.get(contrib.participant_id) ?? 0;
-                  runningPairwise.set(contrib.participant_id, current + contrib.amount);
+            if (occ.receiver_account_id !== null) {
+              // User-to-user transfer or external inflow
+              if (occ.payer_id !== null) {
+                // User-to-user transfer: direct payment from payer to receiver
+                if (occ.payer_id === focusParticipantId) {
+                  // Focused participant paid the receiver
+                  const current = runningPairwise.get(occ.receiver_account_id) ?? 0;
+                  runningPairwise.set(occ.receiver_account_id, current + occ.amount);
+                } else if (occ.receiver_account_id === focusParticipantId) {
+                  // Focused participant received from the payer
+                  const current = runningPairwise.get(occ.payer_id) ?? 0;
+                  runningPairwise.set(occ.payer_id, current - occ.amount);
+                }
+              } else {
+                // External inflow: receiver "paid" for contributors
+                if (occ.receiver_account_id === focusParticipantId && payment.contributions) {
+                  // Focused participant received external funds for others
+                  for (const contrib of payment.contributions) {
+                    if (
+                      contrib.participant_id !== focusParticipantId &&
+                      !poolIds.has(contrib.participant_id)
+                    ) {
+                      const current = runningPairwise.get(contrib.participant_id) ?? 0;
+                      runningPairwise.set(contrib.participant_id, current + contrib.amount);
+                    }
+                  }
+                } else if (payment.contributions) {
+                  // Check if focused participant is a contributor
+                  const focusedContrib = payment.contributions.find(
+                    (c) => c.participant_id === focusParticipantId
+                  );
+                  if (focusedContrib && !poolIds.has(occ.receiver_account_id)) {
+                    // Someone else received external funds that benefited focused participant
+                    const current = runningPairwise.get(occ.receiver_account_id) ?? 0;
+                    runningPairwise.set(occ.receiver_account_id, current - focusedContrib.amount);
+                  }
                 }
               }
-            }
+            } else {
+              // External expense: payer paid for contributors
+              if (occ.payer_id === focusParticipantId && payment.contributions) {
+                for (const contrib of payment.contributions) {
+                  if (
+                    contrib.participant_id !== focusParticipantId &&
+                    !poolIds.has(contrib.participant_id)
+                  ) {
+                    // Focused participant paid for this other person
+                    const current = runningPairwise.get(contrib.participant_id) ?? 0;
+                    runningPairwise.set(contrib.participant_id, current + contrib.amount);
+                  }
+                }
+              }
 
-            // If focused participant is a contributor and someone else paid
-            if (
-              occ.payer_id !== focusParticipantId &&
-              occ.payer_id !== null &&
-              !poolIds.has(occ.payer_id)
-            ) {
-              if (payment.contributions) {
-                const focusedContrib = payment.contributions.find(
-                  (c) => c.participant_id === focusParticipantId
-                );
-                if (focusedContrib) {
-                  // Someone else paid for the focused participant
-                  const current = runningPairwise.get(occ.payer_id) ?? 0;
-                  runningPairwise.set(occ.payer_id, current - focusedContrib.amount);
+              // If focused participant is a contributor and someone else paid
+              if (
+                occ.payer_id !== focusParticipantId &&
+                occ.payer_id !== null &&
+                !poolIds.has(occ.payer_id)
+              ) {
+                if (payment.contributions) {
+                  const focusedContrib = payment.contributions.find(
+                    (c) => c.participant_id === focusParticipantId
+                  );
+                  if (focusedContrib) {
+                    // Someone else paid for the focused participant
+                    const current = runningPairwise.get(occ.payer_id) ?? 0;
+                    runningPairwise.set(occ.payer_id, current - focusedContrib.amount);
+                  }
                 }
               }
             }

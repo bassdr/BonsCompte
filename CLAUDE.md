@@ -13,30 +13,31 @@ BonsCompte is a financial coordination tool for shared living situations (roomma
 
 ## Common Commands
 
-### Backend (from `/backend`)
+**Important:** Always use `cd` or run commands from the correct directory. The working directory may change during a session.
+
+### Backend (run from `/backend`)
 ```bash
-cargo run                    # Start server on localhost:8000
-cargo check                  # Type check without building
-cargo build --release        # Production build
-cargo test                   # Run all unit tests
+cd /home/david/src/BonsCompte/backend && cargo run      # Start server on localhost:8000
+cd /home/david/src/BonsCompte/backend && cargo check    # Type check without building
+cd /home/david/src/BonsCompte/backend && cargo build --release  # Production build
+cd /home/david/src/BonsCompte/backend && cargo test     # Run all unit tests
 ```
 
-### Frontend (from `/frontend`)
+### Frontend (run from `/frontend`)
 ```bash
-npm run dev                  # Start dev server on localhost:5173
-npm run build                # Production build
-npm run check                # TypeScript + Svelte type checking
-npm run format               # Auto-format with ESLint + Prettier
-npm run format:check         # Check format with ESLint + Prettier
-npm test                     # Run unit tests with Vitest
-npm run test:watch           # Run tests in watch mode
+cd /home/david/src/BonsCompte/frontend && npm run dev   # Start dev server on localhost:5173
+cd /home/david/src/BonsCompte/frontend && npm run build # Production build
+cd /home/david/src/BonsCompte/frontend && npm run check # TypeScript + Svelte type checking
+cd /home/david/src/BonsCompte/frontend && npm run format # Auto-format with ESLint + Prettier
+cd /home/david/src/BonsCompte/frontend && npm run format:check # Check format
+cd /home/david/src/BonsCompte/frontend && npm test      # Run unit tests with Vitest
 ```
 
-### Root (from `/`)
+### Root (run from `/`)
 ```bash
-npm test                     # Run all tests (backend + frontend)
-npm run test:backend         # Run backend tests only
-npm run test:frontend        # Run frontend tests only
+cd /home/david/src/BonsCompte && npm test               # Run all tests (backend + frontend)
+cd /home/david/src/BonsCompte && npm run test:backend   # Run backend tests only
+cd /home/david/src/BonsCompte && npm run test:frontend  # Run frontend tests only
 ```
 
 ## Database

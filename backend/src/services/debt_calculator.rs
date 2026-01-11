@@ -76,6 +76,8 @@ pub struct PaymentOccurrence {
     // None = external expense (money leaves system, affects settlements)
     // Some = internal transfer (money moves between accounts, only affects pool ownership)
     pub receiver_account_id: Option<i64>,
+    // Payment status: 'final' or 'draft'
+    pub status: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -185,9 +187,13 @@ pub struct CashflowProjection {
 }
 
 /// Calculate debts as of today
-pub async fn calculate_debts(pool: &SqlitePool, project_id: i64) -> AppResult<DebtSummary> {
+pub async fn calculate_debts(
+    pool: &SqlitePool,
+    project_id: i64,
+    include_drafts: bool,
+) -> AppResult<DebtSummary> {
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-    calculate_debts_at_date(pool, project_id, &today).await
+    calculate_debts_at_date(pool, project_id, &today, include_drafts).await
 }
 
 /// Calculate debts as of a specific target date
@@ -195,6 +201,7 @@ pub async fn calculate_debts_at_date(
     pool: &SqlitePool,
     project_id: i64,
     target_date: &str,
+    include_drafts: bool,
 ) -> AppResult<DebtSummary> {
     let target = parse_date(target_date).unwrap_or_else(|| chrono::Utc::now().date_naive());
 
@@ -217,11 +224,18 @@ pub async fn calculate_debts_at_date(
         .map(|(id, _, _)| *id)
         .collect();
 
-    // Get all payments for this project
-    let payments: Vec<Payment> = sqlx::query_as("SELECT * FROM payments WHERE project_id = ?")
-        .bind(project_id)
-        .fetch_all(pool)
-        .await?;
+    // Get payments for this project (optionally filtering out drafts)
+    let payments: Vec<Payment> = if include_drafts {
+        sqlx::query_as("SELECT * FROM payments WHERE project_id = ?")
+            .bind(project_id)
+            .fetch_all(pool)
+            .await?
+    } else {
+        sqlx::query_as("SELECT * FROM payments WHERE project_id = ? AND status = 'final'")
+            .bind(project_id)
+            .fetch_all(pool)
+            .await?
+    };
 
     // Generate all payment occurrences (including recurring expansions)
     let mut all_occurrences: Vec<PaymentOccurrence> = Vec::new();
@@ -661,6 +675,7 @@ fn generate_payment_occurrences(
             payer_id: payment.payer_id,
             is_recurring: false,
             receiver_account_id: payment.receiver_account_id,
+            status: payment.status.clone(),
         });
         return occurrences;
     }
@@ -737,6 +752,7 @@ fn generate_payment_occurrences(
             payer_id: payment.payer_id,
             is_recurring: true,
             receiver_account_id: payment.receiver_account_id,
+            status: payment.status.clone(),
         });
 
         current = match add_interval(current, &effective_type, effective_interval) {
@@ -806,6 +822,7 @@ fn generate_weekly_with_weekdays(
                     payer_id: payment.payer_id,
                     is_recurring: true,
                     receiver_account_id: payment.receiver_account_id,
+                    status: payment.status.clone(),
                 });
             }
         }
@@ -879,6 +896,7 @@ fn generate_monthly_with_monthdays(
                         payer_id: payment.payer_id,
                         is_recurring: true,
                         receiver_account_id: payment.receiver_account_id,
+                        status: payment.status.clone(),
                     });
                 }
             }
@@ -958,6 +976,7 @@ fn generate_yearly_with_months(
                         payer_id: payment.payer_id,
                         is_recurring: true,
                         receiver_account_id: payment.receiver_account_id,
+                        status: payment.status.clone(),
                     });
                 }
             }
@@ -1662,6 +1681,7 @@ fn generate_synthetic_contribution_events(
             payer_id: Some(payer_id),
             is_recurring: true,
             receiver_account_id: Some(receiver_id),
+            status: "final".to_string(), // Synthetic events are always final
         });
 
         // Advance date based on frequency
@@ -2435,6 +2455,7 @@ mod tests {
             payer_id: Some(1),
             is_recurring: false,
             receiver_account_id: Some(2), // Internal transfer to pool
+            status: "final".to_string(),
         };
 
         assert!(occurrence.receiver_account_id.is_some());
@@ -2451,6 +2472,7 @@ mod tests {
             payer_id: Some(1),
             is_recurring: false,
             receiver_account_id: None, // External expense
+            status: "final".to_string(),
         };
 
         assert!(occurrence.receiver_account_id.is_none());
@@ -2468,6 +2490,7 @@ mod tests {
             payer_id: None, // External inflow - no payer
             is_recurring: false,
             receiver_account_id: Some(4), // Goes to pool account
+            status: "final".to_string(),
         };
 
         assert!(occurrence.payer_id.is_none());

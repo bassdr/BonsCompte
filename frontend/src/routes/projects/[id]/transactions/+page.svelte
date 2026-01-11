@@ -18,6 +18,7 @@
   let filterContributorId = $state<number | null>(null);
   let filterPaymentType = $state<string>('');
   let filterRecurring = $state<string>('');
+  let filterStatus = $state<string>('');
   let filterDateFrom = $state('');
   let filterDateTo = $state('');
 
@@ -91,6 +92,11 @@
       }
     }
 
+    // Filter by status
+    if (filterStatus) {
+      result = result.filter((p) => p.status === filterStatus);
+    }
+
     // Filter by date range
     if (filterDateFrom) {
       result = result.filter((p) => {
@@ -115,6 +121,7 @@
       (filterContributorId !== null ? 1 : 0) +
       (filterPaymentType !== '' ? 1 : 0) +
       (filterRecurring !== '' ? 1 : 0) +
+      (filterStatus !== '' ? 1 : 0) +
       (filterDateFrom !== '' ? 1 : 0) +
       (filterDateTo !== '' ? 1 : 0)
   );
@@ -129,6 +136,7 @@
     filterContributorId = null;
     filterPaymentType = '';
     filterRecurring = '';
+    filterStatus = '';
     filterDateFrom = '';
     filterDateTo = '';
   }
@@ -272,6 +280,16 @@
       </select>
     </div>
 
+    <!-- Status Filter -->
+    <div class="filter-field">
+      <label for="filter-status">{$_('payments.filterByStatus')}</label>
+      <select id="filter-status" bind:value={filterStatus}>
+        <option value="">{$_('payments.allStatuses')}</option>
+        <option value="final">{$_('payments.statusFinal')}</option>
+        <option value="draft">{$_('payments.statusDraft')}</option>
+      </select>
+    </div>
+
     <!-- Date From -->
     <div class="filter-field">
       <label for="filter-date-from">{$_('payments.dateFrom')}</label>
@@ -316,6 +334,9 @@
             <div class="payment-title">
               <strong>{p.description}</strong>
               <div class="payment-icons">
+                {#if p.status === 'draft'}
+                  <span class="badge draft">{$_('payments.statusDraft')}</span>
+                {/if}
                 {#if p.is_recurring}
                   <span class="icon recurring" title={formatRecurrence(p)}>&#x21bb;</span>
                 {/if}
@@ -563,6 +584,16 @@
 
   .icon.recurring {
     color: var(--accent, #7b61ff);
+  }
+
+  .badge.draft {
+    background: #f0ad4e;
+    color: white;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
   }
 
   .icon-btn {

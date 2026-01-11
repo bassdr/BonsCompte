@@ -26,6 +26,9 @@ pub struct Payment {
     // NULL = external expense (money leaves system)
     // NOT NULL = internal transfer (money moves between accounts, e.g., user → pool)
     pub receiver_account_id: Option<i64>,
+    // Payment status: 'final' (default) or 'draft'
+    // Draft payments are excluded from balance calculations by default
+    pub status: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,6 +52,8 @@ pub struct CreatePayment {
     pub recurrence_months: Option<String>,    // JSON array
     // Internal transfer: recipient account (NULL = external expense)
     pub receiver_account_id: Option<i64>,
+    // Payment status: 'final' (default) or 'draft'
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

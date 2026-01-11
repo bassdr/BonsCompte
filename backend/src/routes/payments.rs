@@ -192,6 +192,14 @@ async fn create_payment(
         validate_image_base64(image)?;
     }
 
+    // Validate and set status (default to 'final')
+    let status = input.status.as_deref().unwrap_or("final");
+    if status != "final" && status != "draft" {
+        return Err(AppError::BadRequest(
+            "Status must be 'final' or 'draft'".to_string(),
+        ));
+    }
+
     // Insert payment
     let payment_date = input
         .payment_date
@@ -200,8 +208,8 @@ async fn create_payment(
     let is_recurring = input.is_recurring.unwrap_or(false);
 
     let result = sqlx::query(
-        "INSERT INTO payments (project_id, payer_id, amount, description, payment_date, receipt_image, is_recurring, recurrence_type, recurrence_interval, recurrence_times_per, recurrence_end_date, recurrence_weekdays, recurrence_monthdays, recurrence_months, receiver_account_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO payments (project_id, payer_id, amount, description, payment_date, receipt_image, is_recurring, recurrence_type, recurrence_interval, recurrence_times_per, recurrence_end_date, recurrence_weekdays, recurrence_monthdays, recurrence_months, receiver_account_id, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(member.project_id)
     .bind(input.payer_id)
@@ -218,6 +226,7 @@ async fn create_payment(
     .bind(&input.recurrence_monthdays)
     .bind(&input.recurrence_months)
     .bind(input.receiver_account_id)
+    .bind(status)
     .execute(&pool)
     .await?;
 
@@ -407,6 +416,14 @@ async fn update_payment(
         validate_image_base64(image)?;
     }
 
+    // Validate and set status (default to 'final')
+    let status = input.status.as_deref().unwrap_or("final");
+    if status != "final" && status != "draft" {
+        return Err(AppError::BadRequest(
+            "Status must be 'final' or 'draft'".to_string(),
+        ));
+    }
+
     let payment_date = input
         .payment_date
         .clone()
@@ -419,7 +436,7 @@ async fn update_payment(
         "UPDATE payments SET payer_id = ?, amount = ?, description = ?, payment_date = ?,
          receipt_image = ?, is_recurring = ?, recurrence_type = ?, recurrence_interval = ?,
          recurrence_times_per = ?, recurrence_end_date = ?, recurrence_weekdays = ?,
-         recurrence_monthdays = ?, recurrence_months = ?, receiver_account_id = ?
+         recurrence_monthdays = ?, recurrence_months = ?, receiver_account_id = ?, status = ?
          WHERE id = ? AND project_id = ?",
     )
     .bind(input.payer_id)
@@ -436,6 +453,7 @@ async fn update_payment(
     .bind(&input.recurrence_monthdays)
     .bind(&input.recurrence_months)
     .bind(input.receiver_account_id)
+    .bind(status)
     .bind(path.payment_id)
     .bind(member.project_id)
     .execute(&pool)

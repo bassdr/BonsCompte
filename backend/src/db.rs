@@ -486,6 +486,22 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .await
     .ok();
 
+    // =====================
+    // Migration 012: Payment Status (Draft Support)
+    // =====================
+
+    // Add status column to payments (final or draft)
+    // Existing payments default to 'final' to maintain backwards compatibility
+    sqlx::query("ALTER TABLE payments ADD COLUMN status TEXT NOT NULL DEFAULT 'final'")
+        .execute(pool)
+        .await
+        .ok(); // Ignore error if column already exists
+
+    // Index for efficient filtering by status
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status)")
+        .execute(pool)
+        .await?;
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

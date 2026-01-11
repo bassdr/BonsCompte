@@ -61,6 +61,9 @@
   let recurrenceMonthdays = $state<number[]>([]);
   let recurrenceMonths = $state<number[]>([]);
 
+  // Payment status (final or draft)
+  let paymentStatus = $state<'final' | 'draft'>('final');
+
   // Track if user has manually modified recurrence selections
   let userModifiedWeekdays = $state(false);
   let userModifiedMonthdays = $state(false);
@@ -515,6 +518,7 @@
     isRecurring = payment.is_recurring;
     receiverAccountId = payment.receiver_account_id;
     isExternalInflow = payment.payer_id === null && payment.receiver_account_id !== null;
+    paymentStatus = payment.status;
 
     useSplitDate = false;
     splitFromDate = getLocalDateString();
@@ -904,7 +908,8 @@
         contributions,
         receipt_image: receiptImage ?? undefined,
         is_recurring: isRecurring,
-        receiver_account_id: receiverAccountId
+        receiver_account_id: receiverAccountId,
+        status: paymentStatus
       };
 
       if (isRecurring) {
@@ -1009,7 +1014,8 @@
           })),
           receipt_image: editingPaymentOriginal.receipt_image ?? undefined,
           is_recurring: originalShouldRecur,
-          receiver_account_id: editingPaymentOriginal.receiver_account_id
+          receiver_account_id: editingPaymentOriginal.receiver_account_id,
+          status: editingPaymentOriginal.status
         };
 
         if (originalShouldRecur) {
@@ -1243,6 +1249,29 @@
               </tbody>
             </table>
           {/if}
+
+          <!-- Status Section -->
+          <div class="status-section">
+            <label for="payment-status">{$_('payments.status')}</label>
+            <div class="status-toggle">
+              <button
+                type="button"
+                class="status-btn"
+                class:active={paymentStatus === 'final'}
+                onclick={() => (paymentStatus = 'final')}
+              >
+                {$_('payments.statusFinal')}
+              </button>
+              <button
+                type="button"
+                class="status-btn"
+                class:active={paymentStatus === 'draft'}
+                onclick={() => (paymentStatus = 'draft')}
+              >
+                {$_('payments.statusDraft')}
+              </button>
+            </div>
+          </div>
 
           <!-- Recurrence Section -->
           <div class="recurrence-section">
@@ -1616,6 +1645,51 @@
     cursor: pointer;
     font-size: 14px;
     line-height: 1;
+  }
+
+  /* Status section */
+  .status-section {
+    margin-bottom: 1rem;
+  }
+
+  .status-section > label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: #333;
+  }
+
+  .status-toggle {
+    display: flex;
+    gap: 0;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid #ddd;
+    width: fit-content;
+  }
+
+  .status-btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    background: #f5f5f5;
+    color: #666;
+    cursor: pointer;
+    font-size: 0.875rem;
+    transition: all 0.2s;
+  }
+
+  .status-btn:hover {
+    background: #eee;
+  }
+
+  .status-btn.active {
+    background: #4a90d9;
+    color: white;
+  }
+
+  .status-btn.active:last-child {
+    background: #f0ad4e;
+    color: white;
   }
 
   /* Recurrence section */

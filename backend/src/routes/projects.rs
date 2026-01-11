@@ -88,7 +88,8 @@ async fn list_projects(
         // If user has a participant in this project, get their debt summary
         if let Some(participant_id) = row.user_participant_id {
             // Use the debt calculator to get accurate balances (including recurring payments)
-            if let Ok(debt_summary) = debt_calculator::calculate_debts(&pool, row.id).await {
+            // Exclude drafts from project list summary
+            if let Ok(debt_summary) = debt_calculator::calculate_debts(&pool, row.id, false).await {
                 // Find user's balance
                 if let Some(balance) = debt_summary
                     .balances

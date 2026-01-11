@@ -103,6 +103,9 @@
   // Settlement mode: false = minimal (default), true = direct-only
   let useDirectSettlements = $state(false);
 
+  // Include draft payments in calculations
+  let includeDrafts = $state(false);
+
   function toggleBalanceRow(participantId: number) {
     if (expandedBalanceRows.has(participantId)) {
       expandedBalanceRows.delete(participantId);
@@ -1308,11 +1311,11 @@
     try {
       // In range mode, load debts up to endDate; otherwise use targetDate
       const dateToLoad = isRangeMode && endDate ? endDate : targetDate;
-      debts = await getDebts(projectId, dateToLoad);
+      debts = await getDebts(projectId, dateToLoad, includeDrafts);
 
       // In range mode, also load debts at the start date for settlement comparison
       if (isRangeMode) {
-        startDebts = await getDebts(projectId, targetDate);
+        startDebts = await getDebts(projectId, targetDate, includeDrafts);
       } else {
         startDebts = null;
       }
@@ -1328,9 +1331,11 @@
 
   $effect(() => {
     if (projectId && targetDate) {
-      // Track endDate to reload when range changes
+      // Track endDate and includeDrafts to reload when they change
       const _endDate = endDate;
+      const _includeDrafts = includeDrafts;
       void _endDate;
+      void _includeDrafts;
       loadDebts();
     }
   });
@@ -1797,6 +1802,14 @@
       </button>
     </div>
   {/if}
+
+  <!-- Include drafts toggle -->
+  <div class="include-drafts-toggle">
+    <label class="checkbox-label">
+      <input type="checkbox" bind:checked={includeDrafts} />
+      {$_('overview.includeDrafts')}
+    </label>
+  </div>
 
   <!-- Focus mode selector -->
   {#if debts}
@@ -3140,6 +3153,28 @@
   .total-row td {
     border-top: 2px solid #e0e0e0;
     padding-top: 0.75rem;
+  }
+
+  /* Include drafts toggle */
+  .include-drafts-toggle {
+    display: flex;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+
+  .include-drafts-toggle .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    color: #666;
+    cursor: pointer;
+  }
+
+  .include-drafts-toggle input[type='checkbox'] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
   }
 
   /* Focus mode styles */

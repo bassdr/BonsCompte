@@ -187,6 +187,7 @@
   "overview.goToDate": "Go to {date}",
   "overview.noPreviousPayment": "No previous payment",
   "overview.noNextPayment": "No next payment",
+  "overview.includeDrafts": "Include drafts",
 
   "cashflow.title": "Cashflow Planning",
   "cashflow.failedToLoad": "Failed to load cashflow projection",
@@ -328,6 +329,11 @@
   "payments.dateRangeFromTo": "from {startDate} to {endDate}",
   "payments.startingFrom": "from {date}",
   "payments.occurringOn": "on {date}",
+  "payments.status": "Status",
+  "payments.statusFinal": "Final",
+  "payments.statusDraft": "Draft",
+  "payments.filterByStatus": "Status",
+  "payments.allStatuses": "All statuses",
 
   "participants.title": "Participants",
   "participants.description": "Natural or legal persons participating in the project, with or without an associated member user",

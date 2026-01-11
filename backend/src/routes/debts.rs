@@ -11,6 +11,7 @@ use crate::{auth::ProjectMember, error::AppResult, services::DebtSummary, AppSta
 #[derive(Deserialize)]
 struct DebtsQuery {
     date: Option<String>,
+    include_drafts: Option<bool>,
 }
 
 pub fn router() -> Router<AppState> {
@@ -22,11 +23,19 @@ async fn get_debts(
     State(pool): State<SqlitePool>,
     Query(query): Query<DebtsQuery>,
 ) -> AppResult<Json<DebtSummary>> {
+    let include_drafts = query.include_drafts.unwrap_or(false);
+
     let summary = match query.date {
         Some(target_date) => {
-            crate::services::calculate_debts_at_date(&pool, member.project_id, &target_date).await?
+            crate::services::calculate_debts_at_date(
+                &pool,
+                member.project_id,
+                &target_date,
+                include_drafts,
+            )
+            .await?
         }
-        None => crate::services::calculate_debts(&pool, member.project_id).await?,
+        None => crate::services::calculate_debts(&pool, member.project_id, include_drafts).await?,
     };
     Ok(Json(summary))
 }

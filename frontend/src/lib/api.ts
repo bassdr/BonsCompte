@@ -297,6 +297,8 @@ export interface Payment {
   // null = external expense (money leaves system, affects settlements)
   // number = internal transfer to this account (only affects pool ownership)
   receiver_account_id: number | null;
+  // Payment status: 'final' (default) or 'draft'
+  status: 'final' | 'draft';
 }
 
 export interface Contribution {
@@ -338,6 +340,8 @@ export interface PaymentOccurrence {
   is_recurring: boolean;
   // Internal transfer support
   receiver_account_id: number | null;
+  // Payment status: 'final' or 'draft'
+  status: 'final' | 'draft';
 }
 
 export interface PairwisePaymentBreakdown {
@@ -627,6 +631,8 @@ export interface CreatePaymentInput {
   recurrence_months?: string;
   // Internal transfer: recipient account (null = external expense)
   receiver_account_id?: number | null;
+  // Payment status: 'final' (default) or 'draft'
+  status?: 'final' | 'draft';
 }
 
 export const getPayments = (projectId: number): Promise<PaymentWithContributions[]> =>
@@ -660,9 +666,16 @@ export const deletePayment = (projectId: number, paymentId: number) =>
   authFetch(`/projects/${projectId}/payments/${paymentId}`, { method: 'DELETE' });
 
 // Debts
-export const getDebts = (projectId: number, targetDate?: string): Promise<DebtSummary> => {
-  const params = targetDate ? `?date=${targetDate}` : '';
-  return authFetch(`/projects/${projectId}/debts${params}`);
+export const getDebts = (
+  projectId: number,
+  targetDate?: string,
+  includeDrafts?: boolean
+): Promise<DebtSummary> => {
+  const params = new URLSearchParams();
+  if (targetDate) params.set('date', targetDate);
+  if (includeDrafts !== undefined) params.set('include_drafts', includeDrafts.toString());
+  const queryString = params.toString();
+  return authFetch(`/projects/${projectId}/debts${queryString ? '?' + queryString : ''}`);
 };
 
 export interface CashflowProjectionParams {

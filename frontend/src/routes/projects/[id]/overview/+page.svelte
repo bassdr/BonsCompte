@@ -770,9 +770,146 @@
     return result;
   });
 
-  // Get today annotation for charts
+  // Compute pool total time series (sum of all participant ownerships per date)
+  let poolTotalTimeSeries = $derived.by(() => {
+    if (!isRangeMode || poolOwnershipTimeSeries.size === 0 || rangeDates.length === 0) {
+      return new SvelteMap<number, Map<string, number>>();
+    }
+
+    const result = new SvelteMap<number, Map<string, number>>();
+
+    for (const [poolId, poolData] of poolOwnershipTimeSeries) {
+      const totals = new SvelteMap<string, number>();
+
+      for (const date of rangeDates) {
+        const participantOwnerships = poolData.get(date);
+        if (participantOwnerships) {
+          let total = 0;
+          for (const ownership of participantOwnerships.values()) {
+            total += ownership;
+          }
+          totals.set(date, total);
+        } else {
+          totals.set(date, 0);
+        }
+      }
+
+      result.set(poolId, totals);
+    }
+
+    return result;
+  });
+
+  // Compute pool total stats (current, projected, min) for each pool
+  interface PoolTotalStats {
+    currentTotal: number;
+    projectedTotal: number;
+    minTotal: number;
+    minTotalDate: string;
+    hasNegative: boolean;
+  }
+
+  let poolTotalStats = $derived.by(() => {
+    const result = new SvelteMap<number, PoolTotalStats>();
+
+    if (!debts?.pool_ownerships) return result;
+
+    for (const pool of debts.pool_ownerships) {
+      if (!isRangeMode) {
+        // Non-range mode: use focused participant's ownership or total
+        let currentValue: number;
+        if (focusParticipantId !== null) {
+          const entry = pool.entries.find((e) => e.participant_id === focusParticipantId);
+          currentValue = entry?.ownership ?? 0;
+        } else {
+          currentValue = pool.total_balance;
+        }
+
+        result.set(pool.pool_id, {
+          currentTotal: currentValue,
+          projectedTotal: currentValue,
+          minTotal: currentValue,
+          minTotalDate: targetDate,
+          hasNegative: currentValue < 0
+        });
+      } else {
+        // Range mode: compute from time series
+        const poolData = poolOwnershipTimeSeries.get(pool.pool_id);
+        if (!poolData || poolData.size === 0) {
+          result.set(pool.pool_id, {
+            currentTotal: 0,
+            projectedTotal: 0,
+            minTotal: 0,
+            minTotalDate: targetDate,
+            hasNegative: false
+          });
+          continue;
+        }
+
+        let currentTotal = 0;
+        let projectedTotal = 0;
+        let minTotal = Infinity;
+        let minTotalDate = targetDate;
+        let hasNegative = false;
+
+        const dates = [...poolData.keys()];
+        if (dates.length > 0) {
+          // Get value for first and last date
+          const getValueForDate = (date: string): number => {
+            const participantOwnerships = poolData.get(date);
+            if (!participantOwnerships) return 0;
+
+            if (focusParticipantId !== null) {
+              // Focus mode: use focused participant's ownership
+              return participantOwnerships.get(focusParticipantId) ?? 0;
+            } else {
+              // Normal mode: sum all ownerships
+              let sum = 0;
+              for (const ownership of participantOwnerships.values()) {
+                sum += ownership;
+              }
+              return sum;
+            }
+          };
+
+          currentTotal = getValueForDate(dates[0]);
+          projectedTotal = getValueForDate(dates[dates.length - 1]);
+
+          for (const date of dates) {
+            const value = getValueForDate(date);
+            if (value < minTotal) {
+              minTotal = value;
+              minTotalDate = date;
+            }
+            if (value < 0) {
+              hasNegative = true;
+            }
+          }
+        }
+
+        if (minTotal === Infinity) minTotal = 0;
+
+        result.set(pool.pool_id, {
+          currentTotal,
+          projectedTotal,
+          minTotal,
+          minTotalDate,
+          hasNegative
+        });
+      }
+    }
+
+    return result;
+  });
+
+  // Get today annotation for charts (only if today is within the visible range)
   function getTodayAnnotation() {
     if (!annotationPlugin) return {};
+
+    // Don't show today line if it's outside the visible date range
+    const isTodayInRange = todayStr >= targetDate && (!endDate || todayStr <= endDate);
+    if (!isTodayInRange) return {};
+
     return {
       todayLine: {
         type: 'line' as const,
@@ -808,7 +945,7 @@
       data: { x: string; y: number }[];
       borderColor: string;
       backgroundColor: string;
-      tension: number;
+      stepped: 'before' | 'after' | 'middle' | boolean;
       fill: boolean;
       pointRadius: number;
       pointHoverRadius: number;
@@ -832,7 +969,7 @@
           })),
           borderColor: CHART_COLORS[idx % CHART_COLORS.length],
           backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] + '20',
-          tension: 0.3,
+          stepped: 'before',
           fill: false,
           pointRadius: 3,
           pointHoverRadius: 5
@@ -856,7 +993,7 @@
           })),
           borderColor: CHART_COLORS[idx % CHART_COLORS.length],
           backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] + '20',
-          tension: 0.3,
+          stepped: 'before',
           fill: false,
           pointRadius: 3,
           pointHoverRadius: 5
@@ -928,16 +1065,23 @@
     const pool = debts?.pool_ownerships?.find((p) => p.pool_id === poolId);
     if (!pool) return;
 
-    const datasets: {
+    const totalData = poolTotalTimeSeries.get(poolId);
+
+    interface DatasetConfig {
       label: string;
       data: { x: string; y: number }[];
       borderColor: string;
       backgroundColor: string;
-      tension: number;
+      stepped: 'before' | 'after' | 'middle' | boolean;
       fill: boolean;
       pointRadius: number;
       pointHoverRadius: number;
-    }[] = [];
+      borderWidth?: number;
+      borderDash?: number[];
+      order?: number;
+    }
+
+    const datasets: DatasetConfig[] = [];
 
     // Get participant IDs to show (filter by focus if applicable)
     const entriesToShow =
@@ -954,12 +1098,100 @@
         })),
         borderColor: CHART_COLORS[idx % CHART_COLORS.length],
         backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] + '20',
-        tension: 0.3,
+        stepped: 'before',
         fill: false,
         pointRadius: 3,
-        pointHoverRadius: 5
+        pointHoverRadius: 5,
+        order: 1
       });
     });
+
+    // Add Total line (distinct styling: thick, dashed, dark)
+    if (totalData && focusParticipantId === null) {
+      datasets.push({
+        label: $_('common.total'),
+        data: rangeDates.map((date) => ({
+          x: date,
+          y: totalData.get(date) ?? 0
+        })),
+        borderColor: '#1a1a1a',
+        backgroundColor: '#1a1a1a20',
+        stepped: 'before',
+        fill: false,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        borderWidth: 3,
+        borderDash: [6, 4],
+        order: 0 // Draw on top
+      });
+    }
+
+    // Build annotations: today line + red zones for negative periods
+    const baseAnnotations = getTodayAnnotation();
+
+    // Find negative periods based on total or focused participant's ownership
+    interface NegativePeriod {
+      startDate: string;
+      endDate: string;
+    }
+    const negativePeriods: NegativePeriod[] = [];
+
+    if (poolData && annotationPlugin) {
+      let inNegativePeriod = false;
+      let periodStart = '';
+
+      // Helper to get the value for a date (total or focused participant)
+      const getValueForDate = (date: string): number => {
+        const participantOwnerships = poolData.get(date);
+        if (!participantOwnerships) return 0;
+
+        if (focusParticipantId !== null) {
+          // Focus mode: use focused participant's ownership
+          return participantOwnerships.get(focusParticipantId) ?? 0;
+        } else {
+          // Normal mode: sum all ownerships (use totalData)
+          return totalData?.get(date) ?? 0;
+        }
+      };
+
+      for (const date of rangeDates) {
+        const value = getValueForDate(date);
+
+        if (value < 0 && !inNegativePeriod) {
+          // Entering negative period
+          inNegativePeriod = true;
+          periodStart = date;
+        } else if (value >= 0 && inNegativePeriod) {
+          // Exiting negative period
+          negativePeriods.push({ startDate: periodStart, endDate: date });
+          inNegativePeriod = false;
+        }
+      }
+
+      // If still in negative period at end, close it with the last date
+      if (inNegativePeriod && rangeDates.length > 0) {
+        negativePeriods.push({
+          startDate: periodStart,
+          endDate: rangeDates[rangeDates.length - 1]
+        });
+      }
+    }
+
+    // Create box annotations for each negative period
+    const negativeZoneAnnotations: Record<string, unknown> = {};
+    negativePeriods.forEach((period, idx) => {
+      negativeZoneAnnotations[`negativeZone${idx}`] = {
+        type: 'box' as const,
+        xMin: period.startDate,
+        xMax: period.endDate,
+        backgroundColor: 'rgba(220, 53, 69, 0.15)',
+        borderColor: 'rgba(220, 53, 69, 0.4)',
+        borderWidth: 1,
+        drawTime: 'beforeDatasetsDraw' as const
+      };
+    });
+
+    const annotations = { ...baseAnnotations, ...negativeZoneAnnotations };
 
     const chart = new Chart(canvas, {
       type: 'line',
@@ -977,7 +1209,7 @@
             labels: { usePointStyle: true }
           },
           annotation: {
-            annotations: getTodayAnnotation()
+            annotations
           },
           tooltip: {
             callbacks: {
@@ -1459,10 +1691,6 @@
   let todayStr = $derived(getLocalDateString());
   let isToday = $derived(targetDate === todayStr);
   let isUntilToday = $derived(endDate === todayStr);
-  let daysDiff = $derived(getDaysDiff(targetDate));
-  let isFuture = $derived(daysDiff > 0);
-  let isPast = $derived(daysDiff < 0);
-  let relativeDateLabel = $derived(getRelativeDateLabel(targetDate));
 
   // End date navigation - find previous/next payment dates relative to endDate
   let previousEndPaymentDate = $derived.by(() => {
@@ -1700,17 +1928,6 @@
 
         <div class="date-display">
           <input type="date" bind:value={targetDate} class="date-input" />
-          <span class="date-label">
-            {formatDate(targetDate)}
-            {#if relativeDateLabel && !isToday}
-              <span class="relative-label">({relativeDateLabel})</span>
-            {/if}
-            {#if isFuture}
-              <span class="badge future-badge">{$_('overview.future')}</span>
-            {:else if isPast}
-              <span class="badge past-badge">{$_('overview.past')}</span>
-            {/if}
-          </span>
         </div>
 
         <button
@@ -1788,9 +2005,6 @@
 
         <div class="date-display">
           <input type="date" bind:value={endDate} min={targetDate} class="date-input" />
-          {#if endDate}
-            <span class="date-label">{formatDate(endDate)}</span>
-          {/if}
         </div>
 
         <button
@@ -1843,8 +2057,57 @@
 {:else if debts}
   <!-- Pool Ownerships (shown for each pool) -->
   {#each filteredPoolOwnerships as poolOwnership (poolOwnership.pool_id)}
+    {@const stats = poolTotalStats.get(poolOwnership.pool_id)}
     <section class="card">
       <h3>{poolOwnership.pool_name}</h3>
+
+      <!-- Pool Total Summary Banner -->
+      {#if stats && poolOwnership.entries.length > 0}
+        <div class="pool-total-banner" class:has-warning={isRangeMode && stats.hasNegative}>
+          {#if isRangeMode && stats.hasNegative}
+            <div class="pool-warning-badge">
+              <span class="warning-icon">⚠️</span>
+              <span class="warning-text">{$_('overview.poolNegativeWarning')}</span>
+            </div>
+          {/if}
+          <div class="pool-total-stats">
+            <div class="pool-stat">
+              <span class="stat-label">{$_('overview.currentTotal')}</span>
+              <span
+                class="stat-value"
+                class:positive={stats.currentTotal > 0}
+                class:negative={stats.currentTotal < 0}
+              >
+                {stats.currentTotal >= 0 ? '+' : ''}{formatCurrency(stats.currentTotal)}
+              </span>
+            </div>
+            {#if isRangeMode}
+              <div class="pool-stat">
+                <span class="stat-label">{$_('overview.projectedTotal')}</span>
+                <span
+                  class="stat-value"
+                  class:positive={stats.projectedTotal > 0}
+                  class:negative={stats.projectedTotal < 0}
+                >
+                  {stats.projectedTotal >= 0 ? '+' : ''}{formatCurrency(stats.projectedTotal)}
+                </span>
+              </div>
+              <div class="pool-stat">
+                <span class="stat-label">{$_('overview.minimumTotal')}</span>
+                <span
+                  class="stat-value"
+                  class:positive={stats.minTotal > 0}
+                  class:negative={stats.minTotal < 0}
+                >
+                  {stats.minTotal >= 0 ? '+' : ''}{formatCurrency(stats.minTotal)}
+                  <span class="stat-date">({formatDate(stats.minTotalDate)})</span>
+                </span>
+              </div>
+            {/if}
+          </div>
+        </div>
+      {/if}
+
       {#if poolOwnership.entries.length === 0}
         <p class="no-ownership">{$_('overview.noPoolActivity')}</p>
       {:else if isRangeMode && chartReady}
@@ -2043,22 +2306,6 @@
               {/if}
             {/each}
           </tbody>
-          <tfoot>
-            <tr class="total-row">
-              <td></td>
-              <td><strong>{$_('common.total')}</strong></td>
-              <td
-                class:positive={poolOwnership.total_balance > 0}
-                class:negative={poolOwnership.total_balance < 0}
-              >
-                <strong
-                  >{poolOwnership.total_balance >= 0 ? '+' : ''}{formatCurrency(
-                    poolOwnership.total_balance
-                  )}</strong
-                >
-              </td>
-            </tr>
-          </tfoot>
         </table>
       {/if}
     </section>
@@ -2609,6 +2856,80 @@
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
   }
 
+  /* Pool Total Banner */
+  .pool-total-banner {
+    background: linear-gradient(135deg, rgba(123, 97, 255, 0.08), rgba(123, 97, 255, 0.02));
+    border: 1px solid rgba(123, 97, 255, 0.2);
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .pool-total-banner.has-warning {
+    background: linear-gradient(135deg, rgba(220, 53, 69, 0.08), rgba(220, 53, 69, 0.02));
+    border-color: rgba(220, 53, 69, 0.3);
+  }
+
+  .pool-warning-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(220, 53, 69, 0.15);
+    color: #dc3545;
+    padding: 0.5rem 0.75rem;
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
+    font-weight: 500;
+  }
+
+  .warning-icon {
+    font-size: 1.1rem;
+  }
+
+  .warning-text {
+    font-size: 0.9rem;
+  }
+
+  .pool-total-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .pool-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 120px;
+  }
+
+  .stat-label {
+    font-size: 0.75rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .stat-value {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #333;
+  }
+
+  .stat-value.positive {
+    color: #198754;
+  }
+
+  .stat-value.negative {
+    color: #dc3545;
+  }
+
+  .stat-date {
+    font-size: 0.85rem;
+    font-weight: 400;
+    color: #666;
+  }
+
   h3 {
     margin-top: 0;
     margin-bottom: 1rem;
@@ -2685,29 +3006,6 @@
     gap: 0.5rem;
     flex-wrap: wrap;
     justify-content: center;
-  }
-
-  .relative-label {
-    color: #888;
-    font-style: italic;
-  }
-
-  .badge {
-    padding: 0.15rem 0.5rem;
-    border-radius: 12px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-  }
-
-  .future-badge {
-    background: #ff9f43;
-    color: white;
-  }
-
-  .past-badge {
-    background: #6c757d;
-    color: white;
   }
 
   .today-btn {
@@ -3175,12 +3473,6 @@
   .no-ownership {
     color: #888;
     font-style: italic;
-  }
-
-  /* Total row in table footer */
-  .total-row td {
-    border-top: 2px solid #e0e0e0;
-    padding-top: 0.75rem;
   }
 
   /* Include drafts toggle */

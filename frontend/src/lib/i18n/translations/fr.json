@@ -187,6 +187,10 @@
   "overview.noPreviousPayment": "Aucun paiement précédent",
   "overview.noNextPayment": "Aucun paiement suivant",
   "overview.includeDrafts": "Inclure les brouillons",
+  "overview.currentTotal": "Total actuel",
+  "overview.projectedTotal": "Total projeté",
+  "overview.minimumTotal": "Minimum",
+  "overview.poolNegativeWarning": "Le solde du pot commun devient négatif sur cette période !",
 
   "cashflow.title": "Planification de trésorerie",
   "cashflow.failedToLoad": "Échec du chargement de la projection de trésorerie",

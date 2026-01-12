@@ -163,7 +163,6 @@
   "overview.paymentsIncluded": "Paiements inclus",
   "overview.transaction": "transaction",
   "overview.transactions": "transactions",
-  "overview.recurring": "récurrent",
   "overview.paidBy": "Payé par",
   "overview.from": "Du",
   "overview.to": "Au",
@@ -187,6 +186,7 @@
   "overview.goToDate": "Aller au {date}",
   "overview.noPreviousPayment": "Aucun paiement précédent",
   "overview.noNextPayment": "Aucun paiement suivant",
+  "overview.includeDrafts": "Inclure les brouillons",
 
   "cashflow.title": "Planification de trésorerie",
   "cashflow.failedToLoad": "Échec du chargement de la projection de trésorerie",
@@ -328,6 +328,11 @@
   "payments.dateRangeFromTo": "du {startDate} au {endDate}",
   "payments.startingFrom": "à partir du {date}",
   "payments.occurringOn": "le {date}",
+  "payments.status": "Statut",
+  "payments.statusFinal": "Final",
+  "payments.statusDraft": "Brouillon",
+  "payments.filterByStatus": "Statut",
+  "payments.allStatuses": "Tous les statuts",
 
   "participants.title": "Participants",
   "participants.description": "Personnes physiques ou morales participant au projet, avec ou sans utilisateur membre associé",

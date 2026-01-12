@@ -10,6 +10,7 @@
     type PaymentOccurrence
   } from '$lib/api';
   import { _ } from '$lib/i18n';
+  import { participants } from '$lib/stores/project';
   import { formatDateWithWeekday, formatMonthYear as formatMonthYearI18n } from '$lib/format/date';
   import { formatCurrency } from '$lib/format/currency';
   import { SvelteSet, SvelteMap, SvelteDate } from 'svelte/reactivity';
@@ -21,16 +22,20 @@
   let annotationPlugin: typeof import('chartjs-plugin-annotation').default | null = null;
   let chartReady = $state(false);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  type LineChart = Chart<'line', any, unknown>;
+  type XYPoint = { x: string; y: number };
+  type LineChart = Chart<'line', XYPoint[], unknown>;
 
   // Chart instances for cleanup (not reactive - just for cleanup/destroy)
   let balanceChart: LineChart | null = null;
+
+  // This Map is written by the chart, it creates an endless loop if we change it to a SvelteMap
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   let poolCharts = new Map<number, LineChart>();
 
   // Chart canvas references (not reactive - just for DOM binding)
   let balanceChartCanvas: HTMLCanvasElement | null = $state(null);
+
+  // This Map is written by the chart, it creates an endless loop if we change it to a SvelteMap
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   let poolChartCanvases = new Map<number, HTMLCanvasElement>();
 
@@ -2494,22 +2499,45 @@
                             {#each dateData.occurrences as occ (occ.payment_id)}
                               {@const payment = paymentMap.get(occ.payment_id)}
                               {@const occRelative = getRelativeDateLabel(occ.occurrence_date)}
+                              {@const receiver = occ.receiver_account_id
+                                ? $participants.find((pr) => pr.id === occ.receiver_account_id)
+                                : null}
                               <div class="transaction">
                                 <div class="trans-header">
                                   <span class="trans-desc">
                                     {occ.description}
-                                    {#if occ.is_recurring}
-                                      <span class="occ-tag recurring-tag"
-                                        >{$_('overview.recurring')}</span
+                                    <span class="trans-badges">
+                                      {#if occ.status === 'draft'}
+                                        <span class="badge draft">{$_('payments.statusDraft')}</span
+                                        >
+                                      {/if}
+                                    </span>
+                                    {#if occ.is_recurring && payment}
+                                      <span class="icon recurring" title={formatRecurrence(payment)}
+                                        >&#x27F3;</span
                                       >
                                     {/if}
                                   </span>
                                   <span class="trans-amount">{formatCurrency(occ.amount)}</span>
                                 </div>
                                 <div class="trans-meta">
-                                  {#if payment}
+                                  {#if occ.payer_id === null && occ.receiver_account_id !== null}
+                                    <!-- External inflow -->
+                                    <span class="inflow-badge">{$_('payments.externalInflow')}</span
+                                    >
+                                    {$_('payments.externalIndicator')} → {receiver?.name ??
+                                      $_('common.unknown')}
+                                  {:else if occ.receiver_account_id !== null && payment}
+                                    <!-- Internal transfer -->
+                                    <span class="transfer-badge">{$_('payments.transfer')}</span>
+                                    {payment.payer_name ?? $_('common.unknown')} → {receiver?.name ??
+                                      $_('common.unknown')}
+                                  {:else if payment}
+                                    <!-- External expense -->
                                     {$_('overview.paidBy')}
                                     {payment.payer_name ?? $_('common.unknown')}
+                                  {/if}
+                                  {#if payment}
                                     {#if payment.is_recurring && payment.recurrence_end_date}
                                       {$_('overview.from')}
                                       {formatDate(payment.payment_date)}
@@ -3562,17 +3590,47 @@
     text-transform: uppercase;
   }
 
-  .occ-tag {
-    padding: 0.1rem 0.4rem;
+  .trans-badges {
+    display: inline-flex;
+    gap: 0.25rem;
+    margin-left: 0.25rem;
+  }
+
+  .badge.draft {
+    background: #f0ad4e;
+    color: white;
+    padding: 0.15rem 0.4rem;
     border-radius: 4px;
-    font-size: 0.65rem;
+    font-size: 0.7rem;
     font-weight: 600;
     text-transform: uppercase;
   }
 
-  .recurring-tag {
-    background: var(--accent, #7b61ff);
+  .transfer-badge {
+    background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
     color: white;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .inflow-badge {
+    background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
+    color: white;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .icon {
+    font-size: 1rem;
+    cursor: default;
+  }
+
+  .icon.recurring {
+    color: var(--accent, #7b61ff);
   }
 
   .chip {

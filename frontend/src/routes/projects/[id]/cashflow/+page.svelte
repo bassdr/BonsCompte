@@ -12,6 +12,7 @@
   import { formatCurrency } from '$lib/format/currency';
   import { Chart, registerables, type TooltipItem } from 'chart.js';
   import 'chartjs-adapter-date-fns';
+  import type { AnnotationOptions } from 'chartjs-plugin-annotation';
   import { onMount } from 'svelte';
   import { SvelteMap, SvelteDate } from 'svelte/reactivity';
   import type { RecurringContributionRecommendation } from '$lib/api';
@@ -292,8 +293,7 @@
               }
             },
             annotation: {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              annotations: annotations as any
+              annotations: annotations as Record<string, AnnotationOptions>
             }
           },
           scales: {

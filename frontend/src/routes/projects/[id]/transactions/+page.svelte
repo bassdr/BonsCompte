@@ -338,7 +338,7 @@
                   <span class="badge draft">{$_('payments.statusDraft')}</span>
                 {/if}
                 {#if p.is_recurring}
-                  <span class="icon recurring" title={formatRecurrence(p)}>&#x21bb;</span>
+                  <span class="icon recurring" title={formatRecurrence(p)}>&#x27F3;</span>
                 {/if}
                 {#if p.receipt_image}
                   <button

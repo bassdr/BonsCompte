@@ -105,9 +105,9 @@ async fn main() {
     tracing::info!(
         "Rate limiting: {}",
         if config.rate_limit_enabled {
-            "enabled"
+            "enabled (set RATE_LIMIT_ENABLED=false if behind reverse proxy)"
         } else {
-            "disabled (development mode)"
+            "disabled (reverse proxy should handle rate limiting)"
         }
     );
 

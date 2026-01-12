@@ -23,10 +23,14 @@ impl Config {
                 .unwrap_or_else(|_| "8000".to_string())
                 .parse()
                 .expect("PORT must be a number"),
+            // Rate limiting disabled by default - only useful when backend is directly
+            // exposed to internet without a reverse proxy. When behind nginx/Caddy/etc,
+            // the proxy should handle rate limiting since it sees real client IPs.
+            // Backend sees all requests as coming from proxy IP (e.g., 127.0.0.1).
             rate_limit_enabled: env::var("RATE_LIMIT_ENABLED")
-                .unwrap_or_else(|_| "true".to_string())
+                .unwrap_or_else(|_| "false".to_string())
                 .parse()
-                .unwrap_or(true),
+                .unwrap_or(false),
         }
     }
 }

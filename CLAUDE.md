@@ -57,7 +57,7 @@ The SQLite database is located at `backend/data/bonscompte.db`. The database sch
 ```
 backend/src/
 ├── main.rs              # Axum router setup, middleware, server start
-├── config.rs            # Environment config (DATABASE_URL, JWT_SECRET, HOST, PORT)
+├── config.rs            # Environment config (DATABASE_URL, JWT_SECRET, HOST, PORT, RATE_LIMIT_ENABLED)
 ├── db.rs                # SQLite pool init + migrations (run at startup)
 ├── error.rs             # AppError enum with Into<Response>
 ├── auth/
@@ -93,9 +93,11 @@ backend/src/
 
 The backend includes several security layers:
 
-- **Rate limiting** (tower_governor):
-  - Auth routes: 5 requests/sec with burst of 5 (prevents brute-force)
-  - General API: 100 requests/sec with burst of 100
+- **Rate limiting** (tower_governor) - **disabled by default**:
+  - Only enable with `RATE_LIMIT_ENABLED=true` if backend is directly exposed to internet (no reverse proxy)
+  - When behind nginx/Caddy/etc, keep disabled - the proxy handles rate limiting with real client IPs
+  - Backend sees all proxied requests as coming from one IP (e.g., 127.0.0.1), breaking per-user limits
+  - If enabled: Auth routes get 5 req/60s, General API gets 100 req/s
 
 - **Scan path blocking**: Silently returns 404 for common scanner probes:
   - Prefixes: `/.git`, `/.env`, `/wp-admin`, `/phpmyadmin`, `/cgi-bin`, etc.
@@ -257,6 +259,7 @@ DATABASE_URL=data/bonscompte.db
 JWT_SECRET=your-secret-key
 HOST=0.0.0.0
 PORT=8000
+RATE_LIMIT_ENABLED=false  # Default. Only set to true if NOT behind a reverse proxy
 ```
 
 Frontend (`.env` or inline):

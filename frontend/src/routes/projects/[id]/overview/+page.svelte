@@ -10,7 +10,7 @@
     type PaymentOccurrence
   } from '$lib/api';
   import { _ } from '$lib/i18n';
-  import { participants } from '$lib/stores/project';
+  import { participants, currentProject } from '$lib/stores/project';
   import { formatDateWithWeekday, formatMonthYear as formatMonthYearI18n } from '$lib/format/date';
   import { formatCurrency } from '$lib/format/currency';
   import { SvelteSet, SvelteMap, SvelteDate } from 'svelte/reactivity';
@@ -371,7 +371,7 @@
   let endDate = $state<string | null>(null);
 
   // Horizon options for the range selector
-  type HorizonOption = 'none' | '3months' | '6months' | '12months' | 'custom';
+  type HorizonOption = 'none' | '3months' | '6months' | '12months' | 'warning' | 'custom';
 
   // Compute end date for a given horizon from a start date
   function getHorizonEndDate(startDate: string, months: number): string {
@@ -394,6 +394,7 @@
     if (endDate === horizon3Months) return '3months';
     if (endDate === horizon6Months) return '6months';
     if (endDate === horizon12Months) return '12months';
+    if (endDate === warningHorizonEndDate) return 'warning';
     return 'custom';
   });
 
@@ -412,6 +413,9 @@
         break;
       case '12months':
         endDate = horizon12Months;
+        break;
+      case 'warning':
+        endDate = warningHorizonEndDate;
         break;
       case 'custom':
         // If switching to custom from none, set a default (e.g., 1 month ahead)
@@ -433,6 +437,8 @@
       endDate = horizon6Months;
     } else if (chosenHorizon === '12months') {
       endDate = horizon12Months;
+    } else if (chosenHorizon === 'warning') {
+      endDate = warningHorizonEndDate;
     }
   });
 
@@ -446,6 +452,36 @@
 
   // Range mode is active when endDate is set and > targetDate
   let isRangeMode = $derived(endDate !== null && endDate > targetDate);
+
+  // Warning horizon: compute end date based on project settings
+  function getWarningHorizonEndDate(setting: string): string {
+    const now = new Date();
+    switch (setting) {
+      case 'end_of_current_month':
+        // Last day of current month
+        return getLocalDateString(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+      case 'end_of_next_month':
+        // Last day of next month
+        return getLocalDateString(new Date(now.getFullYear(), now.getMonth() + 2, 0));
+      case '3_months':
+        return getHorizonEndDate(getLocalDateString(), 3);
+      case '6_months':
+        return getHorizonEndDate(getLocalDateString(), 6);
+      default:
+        // Default to end of next month
+        return getLocalDateString(new Date(now.getFullYear(), now.getMonth() + 2, 0));
+    }
+  }
+
+  // Warning horizon end date derived from project settings
+  let warningHorizonEndDate = $derived(
+    getWarningHorizonEndDate($currentProject?.pool_warning_horizon ?? 'end_of_next_month')
+  );
+
+  // Warning debts: loaded separately for the warning period (today to warning horizon)
+  let warningDebts: DebtSummary | null = $state(null);
+  let warningStartDebts: DebtSummary | null = $state(null); // Debts at today for starting balance
+  let loadingWarningDebts = $state(false);
 
   let projectId = $derived(parseInt($page.params.id ?? ''));
 
@@ -897,6 +933,148 @@
           hasNegative
         });
       }
+    }
+
+    return result;
+  });
+
+  // Warning pool stats: compute when each pool or user will go negative within the warning horizon
+  // This is independent of the current view and always computed from today to warning horizon
+  interface UserWarning {
+    participantId: number;
+    participantName: string;
+    firstNegativeDate: string;
+  }
+
+  interface WarningPoolStats {
+    poolTotalNegative: boolean;
+    poolFirstNegativeDate: string | null;
+    poolName: string;
+    userWarnings: UserWarning[];
+  }
+
+  let warningPoolStats = $derived.by(() => {
+    const result = new SvelteMap<number, WarningPoolStats>();
+
+    if (!warningDebts?.pool_ownerships || !warningStartDebts?.pool_ownerships) return result;
+
+    const today = getLocalDateString();
+
+    for (const pool of warningDebts.pool_ownerships) {
+      // Get current pool data from warningStartDebts (loaded at today)
+      const startPoolData = warningStartDebts.pool_ownerships.find(
+        (p) => p.pool_id === pool.pool_id
+      );
+
+      // === Pool Total Warning ===
+      let runningBalance = startPoolData?.total_balance ?? 0;
+      let poolTotalNegative = false;
+      let poolFirstNegativeDate: string | null = null;
+
+      // Check if pool total is already negative today
+      if (runningBalance < 0) {
+        poolTotalNegative = true;
+        poolFirstNegativeDate = today;
+      } else {
+        // Get future occurrences where pool is directly involved (payer or receiver)
+        const poolOccurrences = warningDebts.occurrences
+          .filter(
+            (occ) =>
+              occ.occurrence_date > today &&
+              (occ.payer_id === pool.pool_id || occ.receiver_account_id === pool.pool_id)
+          )
+          .sort((a, b) => a.occurrence_date.localeCompare(b.occurrence_date));
+
+        for (const occ of poolOccurrences) {
+          if (occ.payer_id === pool.pool_id) {
+            runningBalance -= occ.amount;
+          }
+          if (occ.receiver_account_id === pool.pool_id) {
+            runningBalance += occ.amount;
+          }
+
+          if (runningBalance < 0 && !poolTotalNegative) {
+            poolTotalNegative = true;
+            poolFirstNegativeDate = occ.occurrence_date;
+            break;
+          }
+        }
+      }
+
+      // === Per-User Warnings ===
+      const userWarnings: UserWarning[] = [];
+
+      // For each user in the pool, track their ownership
+      for (const entry of pool.entries) {
+        const startEntry = startPoolData?.entries.find(
+          (e) => e.participant_id === entry.participant_id
+        );
+        let userBalance = startEntry?.ownership ?? 0;
+
+        // Check if user is already negative today
+        if (userBalance < 0) {
+          userWarnings.push({
+            participantId: entry.participant_id,
+            participantName: entry.participant_name,
+            firstNegativeDate: today
+          });
+          continue;
+        }
+
+        // Track user-specific transactions with the pool
+        // Deposit to pool: user is payer, pool is receiver -> user's ownership increases
+        // Withdrawal from pool: pool is payer, user is receiver -> user's ownership decreases
+        const userPoolOccurrences = warningDebts.occurrences
+          .filter(
+            (occ) =>
+              occ.occurrence_date > today &&
+              ((occ.payer_id === entry.participant_id &&
+                occ.receiver_account_id === pool.pool_id) ||
+                (occ.payer_id === pool.pool_id && occ.receiver_account_id === entry.participant_id))
+          )
+          .sort((a, b) => a.occurrence_date.localeCompare(b.occurrence_date));
+
+        let userWentNegative = false;
+        for (const occ of userPoolOccurrences) {
+          if (occ.payer_id === entry.participant_id && occ.receiver_account_id === pool.pool_id) {
+            // User deposits to pool: their ownership increases
+            userBalance += occ.amount;
+          } else if (
+            occ.payer_id === pool.pool_id &&
+            occ.receiver_account_id === entry.participant_id
+          ) {
+            // User withdraws from pool: their ownership decreases
+            userBalance -= occ.amount;
+          }
+
+          if (userBalance < 0 && !userWentNegative) {
+            userWentNegative = true;
+            userWarnings.push({
+              participantId: entry.participant_id,
+              participantName: entry.participant_name,
+              firstNegativeDate: occ.occurrence_date
+            });
+            break;
+          }
+        }
+
+        // Also check final state at horizon end in case we missed something
+        // (e.g., pool expenses that affect user's share)
+        if (!userWentNegative && entry.ownership < 0) {
+          userWarnings.push({
+            participantId: entry.participant_id,
+            participantName: entry.participant_name,
+            firstNegativeDate: warningHorizonEndDate
+          });
+        }
+      }
+
+      result.set(pool.pool_id, {
+        poolTotalNegative,
+        poolFirstNegativeDate,
+        poolName: pool.pool_name,
+        userWarnings
+      });
     }
 
     return result;
@@ -1577,6 +1755,44 @@
     }
   });
 
+  // Load warning debts separately (from today to warning horizon)
+  async function loadWarningDebts() {
+    if (!projectId || !warningHorizonEndDate) return;
+
+    const today = getLocalDateString();
+    // Don't load if warning horizon is in the past
+    if (warningHorizonEndDate <= today) {
+      warningDebts = null;
+      warningStartDebts = null;
+      return;
+    }
+
+    loadingWarningDebts = true;
+    try {
+      // Load debts at today (for starting balance) and at warning horizon end date
+      // Both exclude drafts for warning calculation
+      const [startDebts, endDebts] = await Promise.all([
+        getDebts(projectId, today, false),
+        getDebts(projectId, warningHorizonEndDate, false)
+      ]);
+      warningStartDebts = startDebts;
+      warningDebts = endDebts;
+    } catch (e) {
+      console.error('Failed to load warning debts:', e);
+      warningDebts = null;
+      warningStartDebts = null;
+    } finally {
+      loadingWarningDebts = false;
+    }
+  }
+
+  // Effect to load warning debts when project or warning horizon changes
+  $effect(() => {
+    if (projectId && warningHorizonEndDate) {
+      loadWarningDebts();
+    }
+  });
+
   // Track if we've already auto-expanded on initial load
   let autoExpandedOnce = $state(false);
 
@@ -1910,6 +2126,63 @@
 
 <h2>{$_('overview.title')}</h2>
 
+<!-- Pool Warning Banners (always visible, independent of range mode) -->
+{#if loadingWarningDebts}
+  <div class="pool-warning-banner loading">
+    <span class="warning-icon">⏳</span>
+    <span class="warning-text">{$_('common.loading')}</span>
+  </div>
+{:else}
+  {#each [...warningPoolStats.entries()] as [poolId, warnStats] (poolId)}
+    {@const hasAnyWarning = warnStats.poolTotalNegative || warnStats.userWarnings.length > 0}
+    {#if hasAnyWarning}
+      <button
+        class="pool-warning-banner"
+        onclick={() => setHorizon('warning')}
+        title={$_('overview.warningPeriod')}
+      >
+        <span class="warning-icon">⚠️</span>
+        <div class="warning-content">
+          {#if warnStats.poolTotalNegative && warnStats.poolFirstNegativeDate}
+            <span class="warning-text">
+              {#if warnStats.poolFirstNegativeDate <= todayStr}
+                {$_('overview.poolIsNegative', { values: { pool: warnStats.poolName } })}
+              {:else}
+                {$_('overview.poolWillGoNegative', {
+                  values: {
+                    pool: warnStats.poolName,
+                    date: formatDate(warnStats.poolFirstNegativeDate)
+                  }
+                })}
+              {/if}
+            </span>
+          {/if}
+          {#each warnStats.userWarnings as userWarn (userWarn.participantId)}
+            <span class="warning-text">
+              {#if userWarn.firstNegativeDate <= todayStr}
+                {$_('overview.userIsNegative', {
+                  values: {
+                    user: userWarn.participantName,
+                    pool: warnStats.poolName
+                  }
+                })}
+              {:else}
+                {$_('overview.userWillGoNegative', {
+                  values: {
+                    user: userWarn.participantName,
+                    pool: warnStats.poolName,
+                    date: formatDate(userWarn.firstNegativeDate)
+                  }
+                })}
+              {/if}
+            </span>
+          {/each}
+        </div>
+      </button>
+    {/if}
+  {/each}
+{/if}
+
 <!-- Date selector -->
 <div class="date-selector card" class:range-mode={isRangeMode}>
   <!-- Start Date Row -->
@@ -1978,6 +2251,13 @@
         onclick={() => setHorizon('12months')}
       >
         {$_('overview.twelveMonths')}
+      </button>
+      <button
+        class="horizon-btn warning-horizon"
+        class:active={selectedHorizon === 'warning'}
+        onclick={() => setHorizon('warning')}
+      >
+        {$_('overview.warningPeriod')}
       </button>
       <button
         class="horizon-btn"
@@ -2882,6 +3162,62 @@
     font-weight: 500;
   }
 
+  /* Always-visible warning banner (clickable) */
+  .pool-warning-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    background: linear-gradient(135deg, rgba(220, 53, 69, 0.12), rgba(220, 53, 69, 0.06));
+    color: #dc3545;
+    padding: 0.75rem 1rem;
+    border: 1px solid rgba(220, 53, 69, 0.3);
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition:
+      background-color 0.2s ease,
+      transform 0.1s ease;
+  }
+
+  .pool-warning-banner:hover {
+    background: linear-gradient(135deg, rgba(220, 53, 69, 0.18), rgba(220, 53, 69, 0.1));
+    transform: translateY(-1px);
+  }
+
+  .pool-warning-banner:active {
+    transform: translateY(0);
+  }
+
+  .pool-warning-banner.loading {
+    background: linear-gradient(135deg, rgba(108, 117, 125, 0.12), rgba(108, 117, 125, 0.06));
+    border-color: rgba(108, 117, 125, 0.3);
+    color: #6c757d;
+    cursor: default;
+  }
+
+  .pool-warning-banner.loading:hover {
+    background: linear-gradient(135deg, rgba(108, 117, 125, 0.12), rgba(108, 117, 125, 0.06));
+    transform: none;
+  }
+
+  .pool-warning-banner .warning-icon {
+    flex-shrink: 0;
+  }
+
+  .pool-warning-banner .warning-content {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    text-align: left;
+  }
+
+  .pool-warning-banner .warning-text {
+    display: block;
+  }
+
   .warning-icon {
     font-size: 1.1rem;
   }
@@ -3104,6 +3440,22 @@
   .horizon-btn.active {
     background: var(--accent, #7b61ff);
     border-color: var(--accent, #7b61ff);
+    color: white;
+  }
+
+  .horizon-btn.warning-horizon {
+    border-color: rgba(220, 53, 69, 0.4);
+    color: #dc3545;
+  }
+
+  .horizon-btn.warning-horizon:hover {
+    border-color: #dc3545;
+    background: rgba(220, 53, 69, 0.08);
+  }
+
+  .horizon-btn.warning-horizon.active {
+    background: #dc3545;
+    border-color: #dc3545;
     color: white;
   }
 

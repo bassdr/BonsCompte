@@ -50,6 +50,10 @@
   let requireApproval = $state(false);
   let savingSettings = $state(false);
 
+  // Pool warning settings
+  let poolWarningHorizon = $state('end_of_next_month');
+  let savingPoolWarning = $state(false);
+
   // Pending members
   let pendingMembers = $state<ProjectMember[]>([]);
   let loadingPending = $state(false);
@@ -91,6 +95,7 @@
       description = $currentProject.description || '';
       invitesEnabled = $currentProject.invites_enabled;
       requireApproval = $currentProject.require_approval;
+      poolWarningHorizon = $currentProject.pool_warning_horizon;
     }
   });
 
@@ -173,6 +178,24 @@
       error = e instanceof Error ? e.message : $_('projectSettings.handleSaveSettings.fail');
     } finally {
       savingSettings = false;
+    }
+  }
+
+  async function handleSavePoolWarning() {
+    savingPoolWarning = true;
+    error = '';
+    success = '';
+
+    try {
+      await updateProjectSettings(projectId, {
+        pool_warning_horizon: poolWarningHorizon
+      });
+      success = $_('projectSettings.handleSavePoolWarning.success');
+      await loadProject(projectId);
+    } catch (e) {
+      error = e instanceof Error ? e.message : $_('projectSettings.handleSavePoolWarning.fail');
+    } finally {
+      savingPoolWarning = false;
     }
   }
 
@@ -545,6 +568,26 @@
     </div>
     <button class="btn-secondary" onclick={handleSaveSettings} disabled={savingSettings}>
       {savingSettings ? $_('common.saving') : $_('projectSettings.saveSettings')}
+    </button>
+  </section>
+
+  <!-- Pool Warning Settings -->
+  <section class="card">
+    <h3>{$_('projectSettings.poolWarningSettings')}</h3>
+    <p class="section-desc">{$_('projectSettings.poolWarningDescription')}</p>
+    <div class="field">
+      <label for="pool-warning-horizon">{$_('projectSettings.warningHorizon')}</label>
+      <select id="pool-warning-horizon" bind:value={poolWarningHorizon}>
+        <option value="end_of_current_month"
+          >{$_('projectSettings.horizonEndOfCurrentMonth')}</option
+        >
+        <option value="end_of_next_month">{$_('projectSettings.horizonEndOfNextMonth')}</option>
+        <option value="3_months">{$_('projectSettings.horizon3Months')}</option>
+        <option value="6_months">{$_('projectSettings.horizon6Months')}</option>
+      </select>
+    </div>
+    <button class="btn-secondary" onclick={handleSavePoolWarning} disabled={savingPoolWarning}>
+      {savingPoolWarning ? $_('common.saving') : $_('projectSettings.saveSettings')}
     </button>
   </section>
 

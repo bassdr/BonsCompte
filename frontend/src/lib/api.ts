@@ -210,6 +210,7 @@ export interface Project {
   created_at: string;
   invites_enabled: boolean;
   require_approval: boolean;
+  pool_warning_horizon: string;
 }
 
 export interface PoolSummary {
@@ -512,7 +513,11 @@ export const joinProject = (
 
 export const updateProjectSettings = (
   id: number,
-  settings: { invites_enabled?: boolean; require_approval?: boolean }
+  settings: {
+    invites_enabled?: boolean;
+    require_approval?: boolean;
+    pool_warning_horizon?: string;
+  }
 ): Promise<Project> =>
   authFetch(`/projects/${id}/settings`, {
     method: 'PUT',

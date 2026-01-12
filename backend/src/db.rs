@@ -502,6 +502,20 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         .execute(pool)
         .await?;
 
+    // =====================
+    // Migration 013: Pool Warning Horizon Setting
+    // =====================
+
+    // Add pool_warning_horizon column to projects
+    // Configures how far ahead to check for pool going negative
+    // Default: 'end_of_next_month' means check from today until end of next calendar month
+    sqlx::query(
+        "ALTER TABLE projects ADD COLUMN pool_warning_horizon TEXT NOT NULL DEFAULT 'end_of_next_month'",
+    )
+    .execute(pool)
+    .await
+    .ok(); // Ignore error if column already exists
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

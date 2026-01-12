@@ -187,6 +187,10 @@
   "overview.noPreviousPayment": "No previous payment",
   "overview.noNextPayment": "No next payment",
   "overview.includeDrafts": "Include drafts",
+  "overview.currentTotal": "Current Total",
+  "overview.projectedTotal": "Projected Total",
+  "overview.minimumTotal": "Minimum",
+  "overview.poolNegativeWarning": "Pool balance goes negative in this period!",
 
   "cashflow.title": "Cashflow Planning",
   "cashflow.failedToLoad": "Failed to load cashflow projection",

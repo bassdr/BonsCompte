@@ -2157,6 +2157,7 @@
               {/if}
             </span>
           {/if}
+          <!-- Disabled as userWarn.firstNegativeDate is wrong
           {#each warnStats.userWarnings as userWarn (userWarn.participantId)}
             <span class="warning-text">
               {#if userWarn.firstNegativeDate <= todayStr}
@@ -2177,6 +2178,7 @@
               {/if}
             </span>
           {/each}
+		   -->
         </div>
       </button>
     {/if}

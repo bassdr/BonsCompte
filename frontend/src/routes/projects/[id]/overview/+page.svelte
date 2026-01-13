@@ -956,12 +956,13 @@
   let warningPoolStats = $derived.by(() => {
     const result = new SvelteMap<number, WarningPoolStats>();
 
-    if (!warningDebts?.pool_ownerships || !warningStartDebts?.pool_ownerships) return result;
+    if (!warningDebts?.pool_ownerships || !warningStartDebts?.pool_ownerships) {
+      return result;
+    }
 
     const today = getLocalDateString();
 
     for (const pool of warningDebts.pool_ownerships) {
-      // Get current pool data from warningStartDebts (loaded at today)
       const startPoolData = warningStartDebts.pool_ownerships.find(
         (p) => p.pool_id === pool.pool_id
       );
@@ -971,12 +972,10 @@
       let poolTotalNegative = false;
       let poolFirstNegativeDate: string | null = null;
 
-      // Check if pool total is already negative today
       if (runningBalance < 0) {
         poolTotalNegative = true;
         poolFirstNegativeDate = today;
       } else {
-        // Get future occurrences where pool is directly involved (payer or receiver)
         const poolOccurrences = warningDebts.occurrences
           .filter(
             (occ) =>
@@ -993,7 +992,7 @@
             runningBalance += occ.amount;
           }
 
-          if (runningBalance < 0 && !poolTotalNegative) {
+          if (runningBalance < 0) {
             poolTotalNegative = true;
             poolFirstNegativeDate = occ.occurrence_date;
             break;
@@ -1004,14 +1003,14 @@
       // === Per-User Warnings ===
       const userWarnings: UserWarning[] = [];
 
-      // For each user in the pool, track their ownership
       for (const entry of pool.entries) {
         const startEntry = startPoolData?.entries.find(
           (e) => e.participant_id === entry.participant_id
         );
+
         let userBalance = startEntry?.ownership ?? 0;
 
-        // Check if user is already negative today
+        // Already negative today
         if (userBalance < 0) {
           userWarnings.push({
             participantId: entry.participant_id,
@@ -1021,54 +1020,52 @@
           continue;
         }
 
-        // Track user-specific transactions with the pool
-        // Deposit to pool: user is payer, pool is receiver -> user's ownership increases
-        // Withdrawal from pool: pool is payer, user is receiver -> user's ownership decreases
-        const userPoolOccurrences = warningDebts.occurrences
-          .filter(
-            (occ) =>
-              occ.occurrence_date > today &&
-              ((occ.payer_id === entry.participant_id &&
-                occ.receiver_account_id === pool.pool_id) ||
-                (occ.payer_id === pool.pool_id && occ.receiver_account_id === entry.participant_id))
-          )
-          .sort((a, b) => a.occurrence_date.localeCompare(b.occurrence_date));
+        // Track ALL ownership changes using the breakdown data
+        // Contributed breakdown: user deposits to pool (ownership increases)
+        // Consumed breakdown: pool pays expenses (ownership decreases by user's share)
+        const ownershipChanges: { date: string; delta: number }[] = [];
 
-        let userWentNegative = false;
-        for (const occ of userPoolOccurrences) {
-          if (occ.payer_id === entry.participant_id && occ.receiver_account_id === pool.pool_id) {
-            // User deposits to pool: their ownership increases
-            userBalance += occ.amount;
-          } else if (
-            occ.payer_id === pool.pool_id &&
-            occ.receiver_account_id === entry.participant_id
-          ) {
-            // User withdraws from pool: their ownership decreases
-            userBalance -= occ.amount;
-          }
-
-          if (userBalance < 0 && !userWentNegative) {
-            userWentNegative = true;
-            userWarnings.push({
-              participantId: entry.participant_id,
-              participantName: entry.participant_name,
-              firstNegativeDate: occ.occurrence_date
+        // Add contributions (ownership increases)
+        for (const contrib of entry.contributed_breakdown) {
+          if (contrib.occurrence_date > today) {
+            ownershipChanges.push({
+              date: contrib.occurrence_date,
+              delta: contrib.amount
             });
+          }
+        }
+
+        // Add consumption (ownership decreases)
+        for (const consumed of entry.consumed_breakdown) {
+          if (consumed.occurrence_date > today) {
+            ownershipChanges.push({
+              date: consumed.occurrence_date,
+              delta: -consumed.amount
+            });
+          }
+        }
+
+        // Sort by date to process chronologically
+        ownershipChanges.sort((a, b) => a.date.localeCompare(b.date));
+
+        // Find first date where ownership goes negative
+        let firstNegativeDate: string | null = null;
+        for (const change of ownershipChanges) {
+          userBalance += change.delta;
+          if (userBalance < 0 && !firstNegativeDate) {
+            firstNegativeDate = change.date;
             break;
           }
         }
 
-        // Also check final state at horizon end in case we missed something
-        // (e.g., pool expenses that affect user's share)
-        if (!userWentNegative && entry.ownership < 0) {
+        if (firstNegativeDate) {
           userWarnings.push({
             participantId: entry.participant_id,
             participantName: entry.participant_name,
-            firstNegativeDate: warningHorizonEndDate
+            firstNegativeDate
           });
         }
       }
-
       result.set(pool.pool_id, {
         poolTotalNegative,
         poolFirstNegativeDate,
@@ -2157,7 +2154,6 @@
               {/if}
             </span>
           {/if}
-          <!-- Disabled as userWarn.firstNegativeDate is wrong
           {#each warnStats.userWarnings as userWarn (userWarn.participantId)}
             <span class="warning-text">
               {#if userWarn.firstNegativeDate <= todayStr}
@@ -2178,7 +2174,6 @@
               {/if}
             </span>
           {/each}
-		   -->
         </div>
       </button>
     {/if}

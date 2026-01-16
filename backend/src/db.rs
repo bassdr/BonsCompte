@@ -516,6 +516,43 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .await
     .ok(); // Ignore error if column already exists
 
+    // =====================
+    // Migration 014: Per-Pool Warning Settings
+    // =====================
+
+    // Add warning horizon settings to participants table (only used for pool accounts)
+    // warning_horizon_account: How far ahead to warn if the pool total goes negative
+    //   NULL = disabled (no warning)
+    //   'end_of_current_month', 'end_of_next_month', '3_months', '6_months'
+    sqlx::query(
+        "ALTER TABLE participants ADD COLUMN warning_horizon_account TEXT DEFAULT 'end_of_next_month'",
+    )
+    .execute(pool)
+    .await
+    .ok(); // Ignore error if column already exists
+
+    // warning_horizon_users: How far ahead to warn if any user's ownership goes negative
+    //   NULL = disabled (no warning for user ownership)
+    //   'end_of_current_month', 'end_of_next_month', '3_months', '6_months'
+    sqlx::query(
+        "ALTER TABLE participants ADD COLUMN warning_horizon_users TEXT DEFAULT 'end_of_next_month'",
+    )
+    .execute(pool)
+    .await
+    .ok(); // Ignore error if column already exists
+
+    // =====================
+    // Migration 015: Cleanup from failed migration attempts
+    // =====================
+    // Note: We no longer remove pool_warning_horizon from projects table
+    // The column is simply unused - removing it caused too many issues with SQLite
+
+    // Clean up any leftover projects_new table from failed migration attempts
+    sqlx::query("DROP TABLE IF EXISTS projects_new")
+        .execute(pool)
+        .await
+        .ok();
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

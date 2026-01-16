@@ -19,6 +19,7 @@
     updateMemberRole,
     removeMember,
     setMemberParticipant,
+    updatePoolWarningSettings,
     type ProjectMember,
     type ParticipantInvite
   } from '$lib/api';
@@ -50,9 +51,8 @@
   let requireApproval = $state(false);
   let savingSettings = $state(false);
 
-  // Pool warning settings
-  let poolWarningHorizon = $state('end_of_next_month');
-  let savingPoolWarning = $state(false);
+  // Pool warning settings (tracks which pool is being saved)
+  let savingPoolWarning = $state<number | null>(null);
 
   // Pending members
   let pendingMembers = $state<ProjectMember[]>([]);
@@ -95,7 +95,6 @@
       description = $currentProject.description || '';
       invitesEnabled = $currentProject.invites_enabled;
       requireApproval = $currentProject.require_approval;
-      poolWarningHorizon = $currentProject.pool_warning_horizon;
     }
   });
 
@@ -181,21 +180,29 @@
     }
   }
 
-  async function handleSavePoolWarning() {
-    savingPoolWarning = true;
+  async function handlePoolWarningChange(
+    poolId: number,
+    settingType: 'account' | 'users',
+    value: string
+  ) {
+    savingPoolWarning = poolId;
     error = '';
     success = '';
 
     try {
-      await updateProjectSettings(projectId, {
-        pool_warning_horizon: poolWarningHorizon
-      });
+      // Send empty string for "disable", or the value directly
+      const data =
+        settingType === 'account'
+          ? { warning_horizon_account: value }
+          : { warning_horizon_users: value };
+
+      await updatePoolWarningSettings(projectId, poolId, data);
       success = $_('projectSettings.handleSavePoolWarning.success');
-      await loadProject(projectId);
+      await refreshParticipants(projectId);
     } catch (e) {
       error = e instanceof Error ? e.message : $_('projectSettings.handleSavePoolWarning.fail');
     } finally {
-      savingPoolWarning = false;
+      savingPoolWarning = null;
     }
   }
 
@@ -571,26 +578,6 @@
     </button>
   </section>
 
-  <!-- Pool Warning Settings -->
-  <section class="card">
-    <h3>{$_('projectSettings.poolWarningSettings')}</h3>
-    <p class="section-desc">{$_('projectSettings.poolWarningDescription')}</p>
-    <div class="field">
-      <label for="pool-warning-horizon">{$_('projectSettings.warningHorizon')}</label>
-      <select id="pool-warning-horizon" bind:value={poolWarningHorizon}>
-        <option value="end_of_current_month"
-          >{$_('projectSettings.horizonEndOfCurrentMonth')}</option
-        >
-        <option value="end_of_next_month">{$_('projectSettings.horizonEndOfNextMonth')}</option>
-        <option value="3_months">{$_('projectSettings.horizon3Months')}</option>
-        <option value="6_months">{$_('projectSettings.horizon6Months')}</option>
-      </select>
-    </div>
-    <button class="btn-secondary" onclick={handleSavePoolWarning} disabled={savingPoolWarning}>
-      {savingPoolWarning ? $_('common.saving') : $_('projectSettings.saveSettings')}
-    </button>
-  </section>
-
   <!-- Pending Requests -->
   {#if requireApproval}
     <section class="card">
@@ -862,6 +849,55 @@
       </ul>
     {/if}
   </section>
+
+  <!-- Pool Warning Settings -->
+  {#each $participants.filter((p) => p.account_type === 'pool') as pool (pool.id)}
+    <section class="card">
+      <h3>{$_('projectSettings.poolWarningSettingsFor', { values: { pool: pool.name } })}</h3>
+      <p class="section-desc">{$_('projectSettings.poolWarningDescription')}</p>
+
+      <div class="field">
+        <label for="pool-warning-account-{pool.id}"
+          >{$_('projectSettings.warningHorizonAccount')}</label
+        >
+        <select
+          id="pool-warning-account-{pool.id}"
+          value={pool.warning_horizon_account ?? ''}
+          onchange={(e) => handlePoolWarningChange(pool.id, 'account', e.currentTarget.value)}
+        >
+          <option value="">{$_('projectSettings.warningDisabled')}</option>
+          <option value="end_of_current_month"
+            >{$_('projectSettings.horizonEndOfCurrentMonth')}</option
+          >
+          <option value="end_of_next_month">{$_('projectSettings.horizonEndOfNextMonth')}</option>
+          <option value="3_months">{$_('projectSettings.horizon3Months')}</option>
+          <option value="6_months">{$_('projectSettings.horizon6Months')}</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="pool-warning-users-{pool.id}">{$_('projectSettings.warningHorizonUsers')}</label
+        >
+        <select
+          id="pool-warning-users-{pool.id}"
+          value={pool.warning_horizon_users ?? ''}
+          onchange={(e) => handlePoolWarningChange(pool.id, 'users', e.currentTarget.value)}
+        >
+          <option value="">{$_('projectSettings.warningDisabled')}</option>
+          <option value="end_of_current_month"
+            >{$_('projectSettings.horizonEndOfCurrentMonth')}</option
+          >
+          <option value="end_of_next_month">{$_('projectSettings.horizonEndOfNextMonth')}</option>
+          <option value="3_months">{$_('projectSettings.horizon3Months')}</option>
+          <option value="6_months">{$_('projectSettings.horizon6Months')}</option>
+        </select>
+      </div>
+
+      {#if savingPoolWarning === pool.id}
+        <p class="muted">{$_('common.saving')}</p>
+      {/if}
+    </section>
+  {/each}
 
   <!-- Danger Zone -->
   <section class="card danger-zone">

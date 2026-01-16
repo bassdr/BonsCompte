@@ -10,7 +10,7 @@
     type PaymentOccurrence
   } from '$lib/api';
   import { _ } from '$lib/i18n';
-  import { participants, currentProject } from '$lib/stores/project';
+  import { participants } from '$lib/stores/project';
   import { formatDateWithWeekday, formatMonthYear as formatMonthYearI18n } from '$lib/format/date';
   import { formatCurrency } from '$lib/format/currency';
   import { SvelteSet, SvelteMap, SvelteDate } from 'svelte/reactivity';
@@ -371,7 +371,14 @@
   let endDate = $state<string | null>(null);
 
   // Horizon options for the range selector
-  type HorizonOption = 'none' | '3months' | '6months' | '12months' | 'warning' | 'custom';
+  type HorizonOption =
+    | 'none'
+    | 'thisMonth'
+    | 'nextMonth'
+    | '3months'
+    | '6months'
+    | '12months'
+    | 'custom';
 
   // Compute end date for a given horizon from a start date
   function getHorizonEndDate(startDate: string, months: number): string {
@@ -381,6 +388,13 @@
   }
 
   // Precomputed horizon dates (relative to targetDate)
+  const now = new Date();
+  let horizonThisMonth = $derived(
+    getLocalDateString(new Date(now.getFullYear(), now.getMonth() + 1, 0))
+  );
+  let horizonNextMonth = $derived(
+    getLocalDateString(new Date(now.getFullYear(), now.getMonth() + 2, 0))
+  );
   let horizon3Months = $derived(getHorizonEndDate(targetDate, 3));
   let horizon6Months = $derived(getHorizonEndDate(targetDate, 6));
   let horizon12Months = $derived(getHorizonEndDate(targetDate, 12));
@@ -391,10 +405,11 @@
   // Detect which horizon the current endDate matches (for UI button highlighting)
   let selectedHorizon = $derived.by((): HorizonOption => {
     if (endDate === null) return 'none';
+    if (endDate === horizonThisMonth) return 'thisMonth';
+    if (endDate === horizonNextMonth) return 'nextMonth';
     if (endDate === horizon3Months) return '3months';
     if (endDate === horizon6Months) return '6months';
     if (endDate === horizon12Months) return '12months';
-    if (endDate === warningHorizonEndDate) return 'warning';
     return 'custom';
   });
 
@@ -405,6 +420,12 @@
       case 'none':
         endDate = null;
         break;
+      case 'thisMonth':
+        endDate = horizonThisMonth;
+        break;
+      case 'nextMonth':
+        endDate = horizonNextMonth;
+        break;
       case '3months':
         endDate = horizon3Months;
         break;
@@ -413,9 +434,6 @@
         break;
       case '12months':
         endDate = horizon12Months;
-        break;
-      case 'warning':
-        endDate = warningHorizonEndDate;
         break;
       case 'custom':
         // If switching to custom from none, set a default (e.g., 1 month ahead)
@@ -431,14 +449,16 @@
   // This ensures 3/6/12 months stay selected when navigating start dates
   $effect(() => {
     // Only apply when user has explicitly chosen a preset horizon
-    if (chosenHorizon === '3months') {
+    if (chosenHorizon === 'thisMonth') {
+      endDate = horizonThisMonth;
+    } else if (chosenHorizon === 'nextMonth') {
+      endDate = horizonNextMonth;
+    } else if (chosenHorizon === '3months') {
       endDate = horizon3Months;
     } else if (chosenHorizon === '6months') {
       endDate = horizon6Months;
     } else if (chosenHorizon === '12months') {
       endDate = horizon12Months;
-    } else if (chosenHorizon === 'warning') {
-      endDate = warningHorizonEndDate;
     }
   });
 
@@ -473,10 +493,23 @@
     }
   }
 
-  // Warning horizon end date derived from project settings
-  let warningHorizonEndDate = $derived(
-    getWarningHorizonEndDate($currentProject?.pool_warning_horizon ?? 'end_of_next_month')
-  );
+  // Warning horizons: compute the maximum horizon needed across all pools
+  let maxWarningHorizonEndDate = $derived.by(() => {
+    const poolParticipants = $participants.filter((p) => p.account_type === 'pool');
+    if (poolParticipants.length === 0) return null;
+
+    const horizons: string[] = [];
+    for (const pool of poolParticipants) {
+      if (pool.warning_horizon_account) horizons.push(pool.warning_horizon_account);
+      if (pool.warning_horizon_users) horizons.push(pool.warning_horizon_users);
+    }
+
+    if (horizons.length === 0) return null;
+
+    // Convert all horizons to dates and find the maximum
+    const dates = horizons.map((h) => getWarningHorizonEndDate(h));
+    return dates.reduce((max, date) => (date > max ? date : max));
+  });
 
   // Warning debts: loaded separately for the warning period (today to warning horizon)
   let warningDebts: DebtSummary | null = $state(null);
@@ -956,47 +989,56 @@
   let warningPoolStats = $derived.by(() => {
     const result = new SvelteMap<number, WarningPoolStats>();
 
-    if (!warningDebts?.pool_ownerships || !warningStartDebts?.pool_ownerships) return result;
+    if (!warningDebts?.pool_ownerships || !warningStartDebts?.pool_ownerships) {
+      return result;
+    }
 
     const today = getLocalDateString();
 
     for (const pool of warningDebts.pool_ownerships) {
-      // Get current pool data from warningStartDebts (loaded at today)
       const startPoolData = warningStartDebts.pool_ownerships.find(
         (p) => p.pool_id === pool.pool_id
       );
+
+      // Get pool participant settings
+      const poolParticipant = $participants.find((p) => p.id === pool.pool_id);
+      if (!poolParticipant) continue;
 
       // === Pool Total Warning ===
       let runningBalance = startPoolData?.total_balance ?? 0;
       let poolTotalNegative = false;
       let poolFirstNegativeDate: string | null = null;
 
-      // Check if pool total is already negative today
-      if (runningBalance < 0) {
-        poolTotalNegative = true;
-        poolFirstNegativeDate = today;
-      } else {
-        // Get future occurrences where pool is directly involved (payer or receiver)
-        const poolOccurrences = warningDebts.occurrences
-          .filter(
-            (occ) =>
-              occ.occurrence_date > today &&
-              (occ.payer_id === pool.pool_id || occ.receiver_account_id === pool.pool_id)
-          )
-          .sort((a, b) => a.occurrence_date.localeCompare(b.occurrence_date));
+      // Only calculate if account warning is enabled
+      if (poolParticipant.warning_horizon_account) {
+        const accountHorizonEnd = getWarningHorizonEndDate(poolParticipant.warning_horizon_account);
 
-        for (const occ of poolOccurrences) {
-          if (occ.payer_id === pool.pool_id) {
-            runningBalance -= occ.amount;
-          }
-          if (occ.receiver_account_id === pool.pool_id) {
-            runningBalance += occ.amount;
-          }
+        if (runningBalance < 0) {
+          poolTotalNegative = true;
+          poolFirstNegativeDate = today;
+        } else {
+          const poolOccurrences = warningDebts.occurrences
+            .filter(
+              (occ) =>
+                occ.occurrence_date > today &&
+                occ.occurrence_date <= accountHorizonEnd &&
+                (occ.payer_id === pool.pool_id || occ.receiver_account_id === pool.pool_id)
+            )
+            .sort((a, b) => a.occurrence_date.localeCompare(b.occurrence_date));
 
-          if (runningBalance < 0 && !poolTotalNegative) {
-            poolTotalNegative = true;
-            poolFirstNegativeDate = occ.occurrence_date;
-            break;
+          for (const occ of poolOccurrences) {
+            if (occ.payer_id === pool.pool_id) {
+              runningBalance -= occ.amount;
+            }
+            if (occ.receiver_account_id === pool.pool_id) {
+              runningBalance += occ.amount;
+            }
+
+            if (runningBalance < 0) {
+              poolTotalNegative = true;
+              poolFirstNegativeDate = occ.occurrence_date;
+              break;
+            }
           }
         }
       }
@@ -1004,71 +1046,74 @@
       // === Per-User Warnings ===
       const userWarnings: UserWarning[] = [];
 
-      // For each user in the pool, track their ownership
-      for (const entry of pool.entries) {
-        const startEntry = startPoolData?.entries.find(
-          (e) => e.participant_id === entry.participant_id
-        );
-        let userBalance = startEntry?.ownership ?? 0;
+      // Only calculate if user warning is enabled
+      if (poolParticipant.warning_horizon_users) {
+        const usersHorizonEnd = getWarningHorizonEndDate(poolParticipant.warning_horizon_users);
 
-        // Check if user is already negative today
-        if (userBalance < 0) {
-          userWarnings.push({
-            participantId: entry.participant_id,
-            participantName: entry.participant_name,
-            firstNegativeDate: today
-          });
-          continue;
-        }
+        for (const entry of pool.entries) {
+          const startEntry = startPoolData?.entries.find(
+            (e) => e.participant_id === entry.participant_id
+          );
 
-        // Track user-specific transactions with the pool
-        // Deposit to pool: user is payer, pool is receiver -> user's ownership increases
-        // Withdrawal from pool: pool is payer, user is receiver -> user's ownership decreases
-        const userPoolOccurrences = warningDebts.occurrences
-          .filter(
-            (occ) =>
-              occ.occurrence_date > today &&
-              ((occ.payer_id === entry.participant_id &&
-                occ.receiver_account_id === pool.pool_id) ||
-                (occ.payer_id === pool.pool_id && occ.receiver_account_id === entry.participant_id))
-          )
-          .sort((a, b) => a.occurrence_date.localeCompare(b.occurrence_date));
+          let userBalance = startEntry?.ownership ?? 0;
 
-        let userWentNegative = false;
-        for (const occ of userPoolOccurrences) {
-          if (occ.payer_id === entry.participant_id && occ.receiver_account_id === pool.pool_id) {
-            // User deposits to pool: their ownership increases
-            userBalance += occ.amount;
-          } else if (
-            occ.payer_id === pool.pool_id &&
-            occ.receiver_account_id === entry.participant_id
-          ) {
-            // User withdraws from pool: their ownership decreases
-            userBalance -= occ.amount;
-          }
-
-          if (userBalance < 0 && !userWentNegative) {
-            userWentNegative = true;
+          // Already negative today
+          if (userBalance < 0) {
             userWarnings.push({
               participantId: entry.participant_id,
               participantName: entry.participant_name,
-              firstNegativeDate: occ.occurrence_date
+              firstNegativeDate: today
             });
-            break;
+            continue;
+          }
+
+          // Track ALL ownership changes using the breakdown data
+          // Contributed breakdown: user deposits to pool (ownership increases)
+          // Consumed breakdown: pool pays expenses (ownership decreases by user's share)
+          const ownershipChanges: { date: string; delta: number }[] = [];
+
+          // Add contributions (ownership increases)
+          for (const contrib of entry.contributed_breakdown) {
+            if (contrib.occurrence_date > today && contrib.occurrence_date <= usersHorizonEnd) {
+              ownershipChanges.push({
+                date: contrib.occurrence_date,
+                delta: contrib.amount
+              });
+            }
+          }
+
+          // Add consumption (ownership decreases)
+          for (const consumed of entry.consumed_breakdown) {
+            if (consumed.occurrence_date > today && consumed.occurrence_date <= usersHorizonEnd) {
+              ownershipChanges.push({
+                date: consumed.occurrence_date,
+                delta: -consumed.amount
+              });
+            }
+          }
+
+          // Sort by date to process chronologically
+          ownershipChanges.sort((a, b) => a.date.localeCompare(b.date));
+
+          // Find first date where ownership goes negative
+          let firstNegativeDate: string | null = null;
+          for (const change of ownershipChanges) {
+            userBalance += change.delta;
+            if (userBalance < 0 && !firstNegativeDate) {
+              firstNegativeDate = change.date;
+              break;
+            }
+          }
+
+          if (firstNegativeDate) {
+            userWarnings.push({
+              participantId: entry.participant_id,
+              participantName: entry.participant_name,
+              firstNegativeDate
+            });
           }
         }
-
-        // Also check final state at horizon end in case we missed something
-        // (e.g., pool expenses that affect user's share)
-        if (!userWentNegative && entry.ownership < 0) {
-          userWarnings.push({
-            participantId: entry.participant_id,
-            participantName: entry.participant_name,
-            firstNegativeDate: warningHorizonEndDate
-          });
-        }
       }
-
       result.set(pool.pool_id, {
         poolTotalNegative,
         poolFirstNegativeDate,
@@ -1757,11 +1802,11 @@
 
   // Load warning debts separately (from today to warning horizon)
   async function loadWarningDebts() {
-    if (!projectId || !warningHorizonEndDate) return;
+    if (!projectId || !maxWarningHorizonEndDate) return;
 
     const today = getLocalDateString();
     // Don't load if warning horizon is in the past
-    if (warningHorizonEndDate <= today) {
+    if (maxWarningHorizonEndDate <= today) {
       warningDebts = null;
       warningStartDebts = null;
       return;
@@ -1769,11 +1814,11 @@
 
     loadingWarningDebts = true;
     try {
-      // Load debts at today (for starting balance) and at warning horizon end date
+      // Load debts at today (for starting balance) and at max warning horizon end date
       // Both exclude drafts for warning calculation
       const [startDebts, endDebts] = await Promise.all([
         getDebts(projectId, today, false),
-        getDebts(projectId, warningHorizonEndDate, false)
+        getDebts(projectId, maxWarningHorizonEndDate, false)
       ]);
       warningStartDebts = startDebts;
       warningDebts = endDebts;
@@ -1788,7 +1833,7 @@
 
   // Effect to load warning debts when project or warning horizon changes
   $effect(() => {
-    if (projectId && warningHorizonEndDate) {
+    if (projectId && maxWarningHorizonEndDate) {
       loadWarningDebts();
     }
   });
@@ -1824,15 +1869,6 @@
       }
     }
   });
-
-  function goToToday() {
-    targetDate = getLocalDateString();
-  }
-
-  function untilToday() {
-    endDate = getLocalDateString();
-    chosenHorizon = 'custom';
-  }
 
   function goToPreviousPayment() {
     if (previousPaymentDate) {
@@ -1905,8 +1941,6 @@
   }
 
   let todayStr = $derived(getLocalDateString());
-  let isToday = $derived(targetDate === todayStr);
-  let isUntilToday = $derived(endDate === todayStr);
 
   // End date navigation - find previous/next payment dates relative to endDate
   let previousEndPaymentDate = $derived.by(() => {
@@ -1959,9 +1993,6 @@
       chosenHorizon = 'custom';
     }
   }
-
-  // Corner case: disable Today/Until Today if both dates would be the same
-  let disableTodayButtons = $derived(isToday || isUntilToday);
 
   // Map payment_id to full payment details for showing contributions
   let paymentMap = $derived.by(() => {
@@ -2136,11 +2167,7 @@
   {#each [...warningPoolStats.entries()] as [poolId, warnStats] (poolId)}
     {@const hasAnyWarning = warnStats.poolTotalNegative || warnStats.userWarnings.length > 0}
     {#if hasAnyWarning}
-      <button
-        class="pool-warning-banner"
-        onclick={() => setHorizon('warning')}
-        title={$_('overview.warningPeriod')}
-      >
+      <div class="pool-warning-banner" title={$_('overview.warningPeriod')}>
         <span class="warning-icon">⚠️</span>
         <div class="warning-content">
           {#if warnStats.poolTotalNegative && warnStats.poolFirstNegativeDate}
@@ -2157,7 +2184,6 @@
               {/if}
             </span>
           {/if}
-          <!-- Disabled as userWarn.firstNegativeDate is wrong
           {#each warnStats.userWarnings as userWarn (userWarn.participantId)}
             <span class="warning-text">
               {#if userWarn.firstNegativeDate <= todayStr}
@@ -2178,9 +2204,8 @@
               {/if}
             </span>
           {/each}
-		   -->
         </div>
-      </button>
+      </div>
     {/if}
   {/each}
 {/if}
@@ -2215,11 +2240,6 @@
         >
       </div>
     </div>
-    <div class="date-row-right">
-      <button class="today-btn" onclick={goToToday} disabled={disableTodayButtons}>
-        {$_('overview.today')}
-      </button>
-    </div>
   </div>
 
   <!-- Horizon Selector -->
@@ -2232,6 +2252,20 @@
         onclick={() => setHorizon('none')}
       >
         {$_('overview.horizonNone')}
+      </button>
+      <button
+        class="horizon-btn"
+        class:active={selectedHorizon === 'thisMonth'}
+        onclick={() => setHorizon('thisMonth')}
+      >
+        {$_('overview.thisMonth')}
+      </button>
+      <button
+        class="horizon-btn"
+        class:active={selectedHorizon === 'nextMonth'}
+        onclick={() => setHorizon('nextMonth')}
+      >
+        {$_('overview.nextMonth')}
       </button>
       <button
         class="horizon-btn"
@@ -2253,20 +2287,6 @@
         onclick={() => setHorizon('12months')}
       >
         {$_('overview.twelveMonths')}
-      </button>
-      <button
-        class="horizon-btn warning-horizon"
-        class:active={selectedHorizon === 'warning'}
-        onclick={() => setHorizon('warning')}
-      >
-        {$_('overview.warningPeriod')}
-      </button>
-      <button
-        class="horizon-btn"
-        class:active={selectedHorizon === 'custom'}
-        onclick={() => setHorizon('custom')}
-      >
-        {$_('overview.customDate')}
       </button>
     </div>
   </div>
@@ -2298,9 +2318,6 @@
             : $_('overview.noNextPayment')}>⟩</button
         >
       </div>
-      <button class="today-btn" onclick={untilToday} disabled={disableTodayButtons}>
-        {$_('overview.untilToday')}
-      </button>
     </div>
   {/if}
 
@@ -3177,15 +3194,6 @@
     border-radius: 8px;
     margin-bottom: 1rem;
     font-weight: 500;
-    cursor: pointer;
-    transition:
-      background-color 0.2s ease,
-      transform 0.1s ease;
-  }
-
-  .pool-warning-banner:hover {
-    background: linear-gradient(135deg, rgba(220, 53, 69, 0.18), rgba(220, 53, 69, 0.1));
-    transform: translateY(-1px);
   }
 
   .pool-warning-banner:active {
@@ -3346,26 +3354,6 @@
     justify-content: center;
   }
 
-  .today-btn {
-    background: #2a9d8f;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
-    cursor: pointer;
-    transition: background 0.2s;
-  }
-
-  .today-btn:hover:not(:disabled) {
-    background: #21867a;
-  }
-
-  .today-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
   /* Date row layout - table-like grid with 3 columns */
   .date-row {
     display: grid;
@@ -3386,11 +3374,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-  }
-
-  .date-row-right {
-    display: flex;
-    justify-content: flex-end;
   }
 
   .end-date-row {
@@ -3445,22 +3428,6 @@
     color: white;
   }
 
-  .horizon-btn.warning-horizon {
-    border-color: rgba(220, 53, 69, 0.4);
-    color: #dc3545;
-  }
-
-  .horizon-btn.warning-horizon:hover {
-    border-color: #dc3545;
-    background: rgba(220, 53, 69, 0.08);
-  }
-
-  .horizon-btn.warning-horizon.active {
-    background: #dc3545;
-    border-color: #dc3545;
-    color: white;
-  }
-
   /* Settlements range mode */
   .settlements-range {
     display: grid;
@@ -3507,10 +3474,6 @@
 
     .date-row-center {
       width: 100%;
-    }
-
-    .date-row-right {
-      justify-content: center;
     }
 
     .date-nav-row {
@@ -3562,11 +3525,6 @@
 
     .focus-selector select {
       width: 100%;
-    }
-
-    .today-btn {
-      font-size: 0.8rem;
-      padding: 0.4rem 0.8rem;
     }
   }
 

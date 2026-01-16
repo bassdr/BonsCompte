@@ -313,28 +313,30 @@ pub async fn calculate_debts_at_date(
                     amount: occurrence.amount,
                 });
             } else if occurrence.payer_id.is_none() {
-                // External inflow to user: money from outside enters through this user
-                // Receiver "receives" money on behalf of the group (like they paid it)
-                *paid_map.entry(receiver_id).or_insert(0.0) += occurrence.amount;
+                // External inflow to user: receiver holds money for the group
+                // Receiver is debited (holds/owes the full amount)
+                *owed_map.entry(receiver_id).or_insert(0.0) += occurrence.amount;
 
-                // Contributors owe their share
+                // Contributors are credited (owed their share from receiver)
                 if let Some(contribs) = contribution_map.get(&occurrence.payment_id) {
                     for (participant_id, amount) in contribs {
-                        *owed_map.entry(*participant_id).or_insert(0.0) += amount;
+                        *paid_map.entry(*participant_id).or_insert(0.0) += amount;
                     }
 
-                    // Track pairwise: receiver "paid" for each contributor
+                    // Track pairwise: each contributor is owed by receiver
                     for (contributor_id, amount) in contribs {
-                        let entry = pairwise_map
-                            .entry((receiver_id, *contributor_id))
-                            .or_insert((0.0, Vec::new()));
-                        entry.0 += amount;
-                        entry.1.push(PairwisePaymentBreakdown {
-                            payment_id: occurrence.payment_id,
-                            description: occurrence.description.clone(),
-                            occurrence_date: occurrence.occurrence_date.clone(),
-                            amount: *amount,
-                        });
+                        if *contributor_id != receiver_id {
+                            let entry = pairwise_map
+                                .entry((*contributor_id, receiver_id))
+                                .or_insert((0.0, Vec::new()));
+                            entry.0 += amount;
+                            entry.1.push(PairwisePaymentBreakdown {
+                                payment_id: occurrence.payment_id,
+                                description: occurrence.description.clone(),
+                                occurrence_date: occurrence.occurrence_date.clone(),
+                                amount: *amount,
+                            });
+                        }
                     }
                 }
             }
@@ -2504,35 +2506,35 @@ mod tests {
         // Split equally: Carl $100, David $100, Lise $100
         //
         // Result:
-        // - Carl: paid $300 (received the money), owes $100 (his share), net = +200
-        // - David: paid $0, owes $100, net = -100
-        // - Lise: paid $0, owes $100, net = -100
+        // - Carl: holds $300 (owed), entitled to $100 (paid), net = -200
+        // - David: entitled to $100 (paid), owes $0, net = +100
+        // - Lise: entitled to $100 (paid), owes $0, net = +100
         //
         // Settlements:
-        // - David owes Carl $100
-        // - Lise owes Carl $100
+        // - Carl owes David $100
+        // - Carl owes Lise $100
 
         let balances = vec![
             ParticipantBalance {
                 participant_id: 1,
                 participant_name: "Carl".to_string(),
-                total_paid: 300.0, // Received money on behalf of group
-                total_owed: 100.0, // His share
-                net_balance: 200.0,
+                total_paid: 100.0, // His share (credited)
+                total_owed: 300.0, // Holds full amount (debited)
+                net_balance: -200.0,
             },
             ParticipantBalance {
                 participant_id: 2,
                 participant_name: "David".to_string(),
-                total_paid: 0.0,
-                total_owed: 100.0,
-                net_balance: -100.0,
+                total_paid: 100.0, // His share (credited)
+                total_owed: 0.0,
+                net_balance: 100.0,
             },
             ParticipantBalance {
                 participant_id: 3,
                 participant_name: "Lise".to_string(),
-                total_paid: 0.0,
-                total_owed: 100.0,
-                net_balance: -100.0,
+                total_paid: 100.0, // Her share (credited)
+                total_owed: 0.0,
+                net_balance: 100.0,
             },
         ];
 
@@ -2548,16 +2550,16 @@ mod tests {
 
         let settlements = calculate_settlements(&balances, &participant_map, &pool_participants);
 
-        // Should have 2 settlements: David→Carl and Lise→Carl
+        // Should have 2 settlements: Carl→David and Carl→Lise
         assert_eq!(settlements.len(), 2);
 
-        // Total amount should be $200 (David's $100 + Lise's $100)
+        // Total amount should be $200 (Carl pays $100 to David + $100 to Lise)
         let total: f64 = settlements.iter().map(|s| s.amount).sum();
         assert!((total - 200.0).abs() < 0.01);
 
-        // All settlements should go to Carl (id=1)
+        // All settlements should come from Carl (id=1)
         for s in &settlements {
-            assert_eq!(s.to_participant_id, 1);
+            assert_eq!(s.from_participant_id, 1);
         }
     }
 

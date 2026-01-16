@@ -600,15 +600,15 @@
                 const receiverCurrent = runningBalance.get(occ.receiver_account_id) ?? 0;
                 runningBalance.set(occ.receiver_account_id, receiverCurrent - occ.amount);
               } else {
-                // External inflow: receiver credit, contributors debit
+                // External inflow: receiver debit (holds money), contributors credit (owed their share)
                 const receiverCurrent = runningBalance.get(occ.receiver_account_id) ?? 0;
-                runningBalance.set(occ.receiver_account_id, receiverCurrent + occ.amount);
+                runningBalance.set(occ.receiver_account_id, receiverCurrent - occ.amount);
 
                 if (payment.contributions) {
                   for (const contrib of payment.contributions) {
                     if (!poolIds.has(contrib.participant_id)) {
                       const current = runningBalance.get(contrib.participant_id) ?? 0;
-                      runningBalance.set(contrib.participant_id, current - contrib.amount);
+                      runningBalance.set(contrib.participant_id, current + contrib.amount);
                     }
                   }
                 }
@@ -695,16 +695,16 @@
                   runningPairwise.set(occ.payer_id, current - occ.amount);
                 }
               } else {
-                // External inflow: receiver "paid" for contributors
+                // External inflow: receiver holds money for contributors (owes them their share)
                 if (occ.receiver_account_id === focusParticipantId && payment.contributions) {
-                  // Focused participant received external funds for others
+                  // Focused participant received external funds, owes others their share
                   for (const contrib of payment.contributions) {
                     if (
                       contrib.participant_id !== focusParticipantId &&
                       !poolIds.has(contrib.participant_id)
                     ) {
                       const current = runningPairwise.get(contrib.participant_id) ?? 0;
-                      runningPairwise.set(contrib.participant_id, current + contrib.amount);
+                      runningPairwise.set(contrib.participant_id, current - contrib.amount);
                     }
                   }
                 } else if (payment.contributions) {
@@ -713,9 +713,9 @@
                     (c) => c.participant_id === focusParticipantId
                   );
                   if (focusedContrib && !poolIds.has(occ.receiver_account_id)) {
-                    // Someone else received external funds that benefited focused participant
+                    // Someone else received external funds, they owe focused participant their share
                     const current = runningPairwise.get(occ.receiver_account_id) ?? 0;
-                    runningPairwise.set(occ.receiver_account_id, current - focusedContrib.amount);
+                    runningPairwise.set(occ.receiver_account_id, current + focusedContrib.amount);
                   }
                 }
               }
@@ -822,6 +822,20 @@
                 if (!poolIds.has(contrib.participant_id)) {
                   const current = runningOwnership.get(contrib.participant_id) ?? 0;
                   runningOwnership.set(contrib.participant_id, current - contrib.amount);
+                }
+              }
+            }
+
+            // External funds to pool - contributors brought in money, their ownership increases
+            if (
+              occ.receiver_account_id === pool.pool_id &&
+              occ.payer_id === null &&
+              payment.contributions
+            ) {
+              for (const contrib of payment.contributions) {
+                if (!poolIds.has(contrib.participant_id)) {
+                  const current = runningOwnership.get(contrib.participant_id) ?? 0;
+                  runningOwnership.set(contrib.participant_id, current + contrib.amount);
                 }
               }
             }

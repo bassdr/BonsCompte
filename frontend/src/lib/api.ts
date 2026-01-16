@@ -210,7 +210,7 @@ export interface Project {
   created_at: string;
   invites_enabled: boolean;
   require_approval: boolean;
-  pool_warning_horizon: string;
+  pool_warning_horizon: string; // Deprecated: now per-pool in participants table
 }
 
 export interface PoolSummary {
@@ -233,6 +233,8 @@ export interface Participant {
   default_weight: number;
   created_at: string;
   account_type: 'user' | 'pool';
+  warning_horizon_account: string | null; // Pool warning horizon for account total (null = disabled)
+  warning_horizon_users: string | null; // Pool warning horizon for user ownership (null = disabled)
 }
 
 export interface ProjectMember {
@@ -516,7 +518,6 @@ export const updateProjectSettings = (
   settings: {
     invites_enabled?: boolean;
     require_approval?: boolean;
-    pool_warning_horizon?: string;
   }
 ): Promise<Project> =>
   authFetch(`/projects/${id}/settings`, {
@@ -555,6 +556,19 @@ export const deleteParticipant = (projectId: number, participantId: number) =>
 
 export const claimParticipant = (projectId: number, participantId: number): Promise<Participant> =>
   authFetch(`/projects/${projectId}/participants/${participantId}/claim`, { method: 'POST' });
+
+export const updatePoolWarningSettings = (
+  projectId: number,
+  participantId: number,
+  data: {
+    warning_horizon_account?: string; // empty string = disable
+    warning_horizon_users?: string; // empty string = disable
+  }
+): Promise<Participant> =>
+  authFetch(`/projects/${projectId}/participants/${participantId}/warning-settings`, {
+    method: 'PATCH',
+    body: JSON.stringify(data)
+  });
 
 // Participant Invites
 export const createParticipantInvite = (

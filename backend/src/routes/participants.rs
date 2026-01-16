@@ -10,7 +10,9 @@ use sqlx::SqlitePool;
 use crate::{
     auth::{AdminMember, ProjectMember},
     error::{AppError, AppResult},
-    models::{CreateParticipant, EntityType, Participant, UpdateParticipant},
+    models::{
+        CreateParticipant, EntityType, Participant, UpdateParticipant, UpdatePoolWarningSettings,
+    },
     services::HistoryService,
     AppState,
 };
@@ -33,6 +35,10 @@ pub fn router() -> Router<AppState> {
         .route(
             "/{participant_id}/invite",
             post(create_invite).get(get_invite).delete(revoke_invite),
+        )
+        .route(
+            "/{participant_id}/warning-settings",
+            axum::routing::patch(update_pool_warning_settings),
         )
 }
 
@@ -467,4 +473,120 @@ async fn revoke_invite(
     }
 
     Ok(Json(serde_json::json!({ "revoked": true })))
+}
+
+async fn update_pool_warning_settings(
+    Path(path): Path<ParticipantPath>,
+    member: ProjectMember,
+    State(pool): State<SqlitePool>,
+    Json(input): Json<UpdatePoolWarningSettings>,
+) -> AppResult<Json<Participant>> {
+    // Check editor permission
+    if !member.can_edit() {
+        return Err(AppError::Forbidden("Editor access required".to_string()));
+    }
+
+    // Verify participant belongs to project and is a pool account
+    let existing: Option<Participant> =
+        sqlx::query_as("SELECT * FROM participants WHERE id = ? AND project_id = ?")
+            .bind(path.participant_id)
+            .bind(member.project_id)
+            .fetch_optional(&pool)
+            .await?;
+
+    let existing =
+        existing.ok_or_else(|| AppError::NotFound("Participant not found".to_string()))?;
+
+    if existing.account_type != "pool" {
+        return Err(AppError::BadRequest(
+            "Warning settings can only be configured for pool accounts".to_string(),
+        ));
+    }
+
+    // Validate warning horizon values
+    // Empty string or null means "disable" (set to NULL in DB)
+    // Valid values: end_of_current_month, end_of_next_month, 3_months, 6_months
+    let valid_horizons = [
+        "end_of_current_month",
+        "end_of_next_month",
+        "3_months",
+        "6_months",
+    ];
+
+    // Convert input to Option<Option<String>> where:
+    // - None = field not provided, don't update
+    // - Some(None) = disable (set to NULL)
+    // - Some(Some(value)) = set to value
+    let account_update: Option<Option<String>> = input.warning_horizon_account.map(|v| {
+        if v.is_empty() {
+            None // empty string means disable
+        } else {
+            Some(v)
+        }
+    });
+
+    let users_update: Option<Option<String>> = input.warning_horizon_users.map(|v| {
+        if v.is_empty() {
+            None // empty string means disable
+        } else {
+            Some(v)
+        }
+    });
+
+    // Validate non-empty values
+    if let Some(Some(ref horizon)) = account_update {
+        if !valid_horizons.contains(&horizon.as_str()) {
+            return Err(AppError::BadRequest(format!(
+                "Invalid warning_horizon_account: {}. Must be one of: {}",
+                horizon,
+                valid_horizons.join(", ")
+            )));
+        }
+    }
+
+    if let Some(Some(ref horizon)) = users_update {
+        if !valid_horizons.contains(&horizon.as_str()) {
+            return Err(AppError::BadRequest(format!(
+                "Invalid warning_horizon_users: {}. Must be one of: {}",
+                horizon,
+                valid_horizons.join(", ")
+            )));
+        }
+    }
+
+    // Build dynamic update
+    let mut updates = Vec::new();
+    let mut binds: Vec<Option<String>> = Vec::new();
+
+    if let Some(val) = account_update {
+        updates.push("warning_horizon_account = ?");
+        binds.push(val);
+    }
+    if let Some(val) = users_update {
+        updates.push("warning_horizon_users = ?");
+        binds.push(val);
+    }
+
+    if updates.is_empty() {
+        return Err(AppError::BadRequest("No fields to update".to_string()));
+    }
+
+    let sql = format!(
+        "UPDATE participants SET {} WHERE id = ?",
+        updates.join(", ")
+    );
+    let mut query = sqlx::query(&sql);
+    for bind in binds {
+        query = query.bind(bind);
+    }
+    query = query.bind(path.participant_id);
+    query.execute(&pool).await?;
+
+    // Return updated participant
+    let updated: Participant = sqlx::query_as("SELECT * FROM participants WHERE id = ?")
+        .bind(path.participant_id)
+        .fetch_one(&pool)
+        .await?;
+
+    Ok(Json(updated))
 }

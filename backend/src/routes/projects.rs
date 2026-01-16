@@ -303,14 +303,6 @@ async fn regenerate_invite(
     Ok(Json(project))
 }
 
-// Valid pool warning horizon values
-const VALID_POOL_WARNING_HORIZONS: &[&str] = &[
-    "end_of_current_month",
-    "end_of_next_month",
-    "3_months",
-    "6_months",
-];
-
 async fn update_project_settings(
     admin: AdminMember,
     State(pool): State<SqlitePool>,
@@ -327,7 +319,6 @@ async fn update_project_settings(
     // Build dynamic update
     let mut updates = Vec::new();
     let mut bool_binds: Vec<bool> = Vec::new();
-    let mut string_binds: Vec<String> = Vec::new();
 
     if let Some(invites_enabled) = input.invites_enabled {
         updates.push("invites_enabled = ?");
@@ -337,16 +328,6 @@ async fn update_project_settings(
         updates.push("require_approval = ?");
         bool_binds.push(require_approval);
     }
-    if let Some(ref horizon) = input.pool_warning_horizon {
-        if !VALID_POOL_WARNING_HORIZONS.contains(&horizon.as_str()) {
-            return Err(AppError::BadRequest(format!(
-                "Invalid pool_warning_horizon: {}. Valid values are: {:?}",
-                horizon, VALID_POOL_WARNING_HORIZONS
-            )));
-        }
-        updates.push("pool_warning_horizon = ?");
-        string_binds.push(horizon.clone());
-    }
 
     if updates.is_empty() {
         return Err(AppError::BadRequest("No settings to update".to_string()));
@@ -355,9 +336,6 @@ async fn update_project_settings(
     let sql = format!("UPDATE projects SET {} WHERE id = ?", updates.join(", "));
     let mut query = sqlx::query(&sql);
     for bind in &bool_binds {
-        query = query.bind(bind);
-    }
-    for bind in &string_binds {
         query = query.bind(bind);
     }
     query = query.bind(member.project_id);

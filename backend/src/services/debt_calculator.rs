@@ -2618,4 +2618,95 @@ mod tests {
         // No settlements - external inflow to pool doesn't affect user-to-user settlements
         assert_eq!(settlements.len(), 0);
     }
+
+    #[test]
+    fn test_external_inflow_bank_refund_split_three_ways() {
+        // Scenario: Bank gives back $1000 to user A (external fund to A)
+        // This $1000 must be split equally among 3 contributors: A, B, C
+        // Each contributor has weight=1, so each gets $333.33
+        //
+        // Expected behavior:
+        // - A receives $1000 from outside (external inflow)
+        // - A holds this money for the group
+        // - A is debited $1000 (owed_map: holds money that's not all theirs)
+        // - Each contributor is credited their share (paid_map):
+        //   - A: $333.33 (their share)
+        //   - B: $333.33 (their share)
+        //   - C: $333.33 (their share)
+        //
+        // Net balances:
+        // - A: paid $333.33, owed $1000 → net = -$666.67 (owes money)
+        // - B: paid $333.33, owed $0 → net = +$333.33 (is owed money)
+        // - C: paid $333.33, owed $0 → net = +$333.33 (is owed money)
+        //
+        // Settlements:
+        // - A owes B $333.33
+        // - A owes C $333.33
+
+        let amount_per_person = 1000.0 / 3.0; // 333.33...
+
+        let balances = vec![
+            ParticipantBalance {
+                participant_id: 1,
+                participant_name: "A".to_string(),
+                total_paid: amount_per_person, // A's share (credited)
+                total_owed: 1000.0,            // A holds full amount (debited)
+                net_balance: amount_per_person - 1000.0, // -666.67
+            },
+            ParticipantBalance {
+                participant_id: 2,
+                participant_name: "B".to_string(),
+                total_paid: amount_per_person, // B's share (credited)
+                total_owed: 0.0,
+                net_balance: amount_per_person, // +333.33
+            },
+            ParticipantBalance {
+                participant_id: 3,
+                participant_name: "C".to_string(),
+                total_paid: amount_per_person, // C's share (credited)
+                total_owed: 0.0,
+                net_balance: amount_per_person, // +333.33
+            },
+        ];
+
+        let participant_map: HashMap<i64, String> = vec![
+            (1, "A".to_string()),
+            (2, "B".to_string()),
+            (3, "C".to_string()),
+        ]
+        .into_iter()
+        .collect();
+
+        let pool_participants: std::collections::HashSet<i64> = std::collections::HashSet::new();
+
+        let settlements = calculate_settlements(&balances, &participant_map, &pool_participants);
+
+        // Should have 2 settlements: A→B and A→C
+        assert_eq!(settlements.len(), 2);
+
+        // Total amount should be ~$666.67 (A pays $333.33 to B + $333.33 to C)
+        let total: f64 = settlements.iter().map(|s| s.amount).sum();
+        assert!((total - 2.0 * amount_per_person).abs() < 0.01);
+
+        // All settlements should come FROM A (id=1)
+        for s in &settlements {
+            assert_eq!(s.from_participant_id, 1, "A should be the one paying");
+        }
+
+        // Verify B and C each receive ~$333.33
+        let b_settlement = settlements.iter().find(|s| s.to_participant_id == 2);
+        let c_settlement = settlements.iter().find(|s| s.to_participant_id == 3);
+
+        assert!(b_settlement.is_some(), "B should receive a settlement");
+        assert!(c_settlement.is_some(), "C should receive a settlement");
+
+        assert!(
+            (b_settlement.unwrap().amount - amount_per_person).abs() < 0.01,
+            "B should receive ~$333.33"
+        );
+        assert!(
+            (c_settlement.unwrap().amount - amount_per_person).abs() < 0.01,
+            "C should receive ~$333.33"
+        );
+    }
 }

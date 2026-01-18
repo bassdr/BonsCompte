@@ -76,6 +76,10 @@ The system can use these weights to divide the cost fairly.
   - **User accounts**: Regular participants who pay and owe
   - **Pool accounts**: Shared account per project for tracking collective funds (e.g., house fund, shared bank account)
 - Track contributions by participant across all payments
+- Per-pool warning settings: Configure when to warn about negative balances
+  - Pool total warning: Alert when shared account will go negative
+  - Per-user warning: Alert when individual's pool share will go negative
+  - Configurable horizons: end of month, next month, 3 months, 6 months
 
 ### 6. Transfer System
 BonsCompte supports multiple payment types for flexible debt settlement:
@@ -93,6 +97,11 @@ BonsCompte supports multiple payment types for flexible debt settlement:
   - Deposit: "Pay to pool" via the "Deposit" button
   - Only affects pool ownership, not user-to-user settlements
   - Useful for managing collective funds
+
+- **External funds (income/refunds)**: Money received from outside the system
+  - Example: Bank refund, government grant, interest income
+  - To a user: Receiver holds money for the group, owes contributors their share
+  - To a pool: Contributors' pool ownership increases by their share
 
 ### 7. Smart Payment Interface
 - View all payments (recurring and one-time) with type indicators
@@ -149,12 +158,15 @@ npm run format               # Auto-format with Prettier
 
 ### Key Features
 
-**Transfer Types**: Flexible payment handling via optional receiver account
-- **External expense** (no receiver): Normal shared bills, affects settlements
+**Transfer Types**: Flexible payment handling via payer and receiver
+- **External expense** (payer = user, no receiver): Normal shared bills, affects settlements
 - **User-to-user transfer** (receiver = user): Direct payment to settle debts
 - **Pool transfer** (receiver = pool): Deposits/withdrawals from shared account
   - Only affects pool ownership tracking, not user-to-user settlements
   - Transparent record of who contributed to/withdrew from shared funds
+- **External funds** (no payer, receiver = user or pool): Income/refunds from outside
+  - To user: Receiver holds money, owes contributors their share
+  - To pool: Contributors' ownership increases
 
 **Weight System**: Fairness through proportional distribution
 - Default weight applies to new payments

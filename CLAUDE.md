@@ -190,12 +190,16 @@ frontend/src/lib/
 - **Pool account** (`account_type = 'pool'`): Shared account (max one per project) for tracking collective funds
   - Excluded from settlement calculations
   - Has ownership tracking (who contributed/consumed from pool)
+  - Has per-pool warning settings:
+    - `warning_horizon_account`: When to warn if pool total goes negative (e.g., 'end_of_next_month', '3_months')
+    - `warning_horizon_users`: When to warn if individual user's pool share goes negative
+    - Either can be NULL to disable that warning type
 
 ### Payment Types
 
-Determined by `receiver_account_id`:
+Determined by `payer_id` and `receiver_account_id`:
 
-- **External expense** (`receiver_account_id = NULL`): Normal expense, money leaves the system
+- **External expense** (`payer_id` = user, `receiver_account_id = NULL`): Normal expense, money leaves the system
   - Affects settlements: payer's "paid" increases, contributors' "owed" increases
 
 - **User → User transfer** (`receiver_account_id` = another user): Direct payment between users
@@ -208,6 +212,18 @@ Determined by `receiver_account_id`:
 
 - **Pool → User transfer** (payer = pool): Withdrawal from shared account
   - Only affects pool ownership (receiver's ownership decreases)
+  - Does NOT affect user-to-user settlements
+
+- **External funds to User** (`payer_id = NULL`, `receiver_account_id` = user): Income/refund received by a user
+  - Example: Bank refund of $1000 to User A, split among A, B, C
+  - Receiver is debited full amount (holds money for others)
+  - Contributors are credited their share (owed their portion)
+  - Result: Receiver owes other contributors their share
+  - Test case: `test_external_inflow_bank_refund_split_three_ways`
+
+- **External funds to Pool** (`payer_id = NULL`, `receiver_account_id` = pool): Income/grant to shared account
+  - Example: Government grant or interest deposited to pool
+  - Contributors' pool ownership increases by their share
   - Does NOT affect user-to-user settlements
 
 ### Weight System
@@ -244,7 +260,11 @@ The settlement calculation has subtle interactions between pool accounts and use
 
 3. **User-to-user transfers affect both parties**: Payer's "paid" increases, receiver's "owed" increases. This is how "Pay back" functionality settles debts.
 
-4. **Pairwise tracking excludes pool relationships**: `pairwise_map` only tracks user-to-user relationships for the direct settlements view.
+4. **External funds to user**: When `payer_id` is NULL and `receiver_account_id` is a user, the receiver holds money for the group. The receiver is DEBITED (owed_map += amount) and contributors are CREDITED (paid_map += share). This ensures the receiver owes others their share.
+
+5. **External funds to pool**: When `payer_id` is NULL and `receiver_account_id` is a pool, contributors' pool ownership increases by their share. Does not affect user-to-user settlements.
+
+6. **Pairwise tracking excludes pool relationships**: `pairwise_map` only tracks user-to-user relationships for the direct settlements view.
 
 **Before modifying this file:**
 - Run `cargo test` in the backend directory and ensure all tests pass

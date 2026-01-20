@@ -6,7 +6,7 @@
   import { _ } from '$lib/i18n';
   import { formatDateWithWeekday, getLocalDateString } from '$lib/format';
   import { SvelteMap } from 'svelte/reactivity';
-  import { getDebts, type DebtSummary } from '$lib/api';
+  import { getDebts, type DebtSummary, type PaymentOccurrence } from '$lib/api';
 
   import { participants } from '$lib/stores/project';
 
@@ -43,12 +43,14 @@
   interface UserWarning {
     participantId: number;
     participantName: string;
-    firstNegativeDate: string;
+    firstBelowExpectedDate: string; // when ownership < expected_minimum
   }
 
   interface WarningPoolStats {
-    poolTotalNegative: boolean;
+    poolTotalNegative: boolean; // balance < expected_minimum
     poolFirstNegativeDate: string | null;
+    expectedMinNegative: boolean; // expected_minimum < 0 (configuration error)
+    expectedMinFirstNegativeDate: string | null;
     poolName: string;
     userWarnings: UserWarning[];
   }
@@ -118,123 +120,173 @@
       let runningExpectedMinimum = startPoolData?.expected_minimum ?? 0;
       let poolTotalNegative = false;
       let poolFirstNegativeDate: string | null = null;
+      let expectedMinNegative = false;
+      let expectedMinFirstNegativeDate: string | null = null;
 
       // Only calculate if account warning is enabled
       if (poolParticipant.warning_horizon_account) {
         const accountHorizonEnd = getWarningHorizonEndDate(poolParticipant.warning_horizon_account);
 
+        // Check if expected minimum is already negative today (configuration error)
+        if (runningExpectedMinimum < 0) {
+          expectedMinNegative = true;
+          expectedMinFirstNegativeDate = today;
+        }
+
         // Check if already below expected minimum today
         if (runningBalance < runningExpectedMinimum) {
           poolTotalNegative = true;
           poolFirstNegativeDate = today;
-        } else {
-          const poolOccurrences = warningDebts.occurrences
-            .filter(
-              (occ) =>
-                occ.occurrence_date > today &&
-                occ.occurrence_date <= accountHorizonEnd &&
-                (occ.payer_id === pool.pool_id || occ.receiver_account_id === pool.pool_id)
-            )
-            .sort((a, b) => a.occurrence_date.localeCompare(b.occurrence_date));
+        }
 
-          for (const occ of poolOccurrences) {
-            // Update actual balance (only if affects_balance is true)
-            if (occ.affects_balance) {
-              if (occ.payer_id === pool.pool_id) {
-                runningBalance -= occ.amount;
-              }
-              if (occ.receiver_account_id === pool.pool_id) {
-                runningBalance += occ.amount;
-              }
-            }
+        // Process future occurrences
+        const poolOccurrences = warningDebts.occurrences
+          .filter(
+            (occ) =>
+              occ.occurrence_date > today &&
+              occ.occurrence_date <= accountHorizonEnd &&
+              (occ.payer_id === pool.pool_id || occ.receiver_account_id === pool.pool_id)
+          )
+          .sort((a, b) => a.occurrence_date.localeCompare(b.occurrence_date));
 
-            // Update expected minimum based on separate payer/receiver expectation flags
-            // If payer is this pool and affects_payer_expectation is true → decrease expected minimum
-            if (occ.payer_id === pool.pool_id && occ.affects_payer_expectation) {
-              runningExpectedMinimum -= occ.amount;
+        for (const occ of poolOccurrences) {
+          // Update actual balance (only if affects_balance is true)
+          if (occ.affects_balance) {
+            if (occ.payer_id === pool.pool_id) {
+              runningBalance -= occ.amount;
             }
-            // If receiver is this pool and affects_receiver_expectation is true → increase expected minimum
-            if (occ.receiver_account_id === pool.pool_id && occ.affects_receiver_expectation) {
-              runningExpectedMinimum += occ.amount;
+            if (occ.receiver_account_id === pool.pool_id) {
+              runningBalance += occ.amount;
             }
+          }
 
-            // Warn when balance drops below expected minimum
-            if (runningBalance < runningExpectedMinimum) {
-              poolTotalNegative = true;
-              poolFirstNegativeDate = occ.occurrence_date;
-              break;
-            }
+          // Update expected minimum based on separate payer/receiver expectation flags
+          // If payer is this pool and affects_payer_expectation is true → decrease expected minimum
+          if (occ.payer_id === pool.pool_id && occ.affects_payer_expectation) {
+            runningExpectedMinimum -= occ.amount;
+          }
+          // If receiver is this pool and affects_receiver_expectation is true → increase expected minimum
+          if (occ.receiver_account_id === pool.pool_id && occ.affects_receiver_expectation) {
+            runningExpectedMinimum += occ.amount;
+          }
+
+          // Warn when expected minimum goes negative (configuration error)
+          if (!expectedMinNegative && runningExpectedMinimum < 0) {
+            expectedMinNegative = true;
+            expectedMinFirstNegativeDate = occ.occurrence_date;
+          }
+
+          // Warn when balance drops below expected minimum
+          if (!poolTotalNegative && runningBalance < runningExpectedMinimum) {
+            poolTotalNegative = true;
+            poolFirstNegativeDate = occ.occurrence_date;
           }
         }
       }
 
       // === Per-User Warnings ===
+      // Track when user's ownership drops below their expected minimum (similar to pool logic)
       const userWarnings: UserWarning[] = [];
 
       // Only calculate if user warning is enabled
       if (poolParticipant.warning_horizon_users) {
         const usersHorizonEnd = getWarningHorizonEndDate(poolParticipant.warning_horizon_users);
+        const poolTotalOwnership = startPoolData?.total_balance ?? 0;
+        const poolExpectedMin = startPoolData?.expected_minimum ?? 0;
+
+        // Build a map of occurrences by payment_id for looking up expectation flags
+        const occurrencesByPayment = new SvelteMap<number, PaymentOccurrence[]>();
+        for (const occ of warningDebts!.occurrences) {
+          const existing = occurrencesByPayment.get(occ.payment_id) || [];
+          existing.push(occ);
+          occurrencesByPayment.set(occ.payment_id, existing);
+        }
 
         for (const entry of pool.entries) {
           const startEntry = startPoolData?.entries.find(
             (e) => e.participant_id === entry.participant_id
           );
 
-          let userBalance = startEntry?.ownership ?? 0;
+          let userOwnership = startEntry?.ownership ?? 0;
+          // Compute user's starting expected minimum proportionally to their ownership share
+          // If pool total is 0, use 0 as starting expected minimum
+          let userExpectedMin =
+            poolTotalOwnership !== 0 ? (userOwnership / poolTotalOwnership) * poolExpectedMin : 0;
 
-          // Already negative today
-          if (userBalance < 0) {
+          // Already below expected minimum today
+          if (userOwnership < userExpectedMin) {
             userWarnings.push({
               participantId: entry.participant_id,
               participantName: entry.participant_name,
-              firstNegativeDate: today
+              firstBelowExpectedDate: today
             });
             continue;
           }
 
-          // Track ALL ownership changes using the breakdown data
-          // Contributed breakdown: user deposits to pool (ownership increases)
-          // Consumed breakdown: pool pays expenses (ownership decreases by user's share)
-          const ownershipChanges: { date: string; delta: number }[] = [];
+          // Track ownership and expected minimum changes using breakdown data
+          // Contributed = user deposits to pool (ownership increases)
+          // Consumed = pool pays expenses (user's share decreases)
+          const changes: {
+            date: string;
+            ownershipDelta: number;
+            expectedMinDelta: number;
+          }[] = [];
 
-          // Add contributions (ownership increases)
+          // Process contributions (deposits to pool)
           for (const contrib of entry.contributed_breakdown) {
             if (contrib.occurrence_date > today && contrib.occurrence_date <= usersHorizonEnd) {
-              ownershipChanges.push({
+              // Look up the occurrence to check expectation flags
+              const occs = occurrencesByPayment.get(contrib.payment_id) || [];
+              const occ = occs.find((o) => o.occurrence_date === contrib.occurrence_date);
+
+              const affectsBalance = occ?.affects_balance ?? true;
+              const affectsExpectation = occ?.affects_receiver_expectation ?? false;
+
+              changes.push({
                 date: contrib.occurrence_date,
-                delta: contrib.amount
+                ownershipDelta: affectsBalance ? contrib.amount : 0,
+                expectedMinDelta: affectsExpectation ? contrib.amount : 0
               });
             }
           }
 
-          // Add consumption (ownership decreases)
+          // Process consumption (pool expenses - user's share decreases)
           for (const consumed of entry.consumed_breakdown) {
             if (consumed.occurrence_date > today && consumed.occurrence_date <= usersHorizonEnd) {
-              ownershipChanges.push({
+              // Look up the occurrence to check expectation flags
+              const occs = occurrencesByPayment.get(consumed.payment_id) || [];
+              const occ = occs.find((o) => o.occurrence_date === consumed.occurrence_date);
+
+              const affectsBalance = occ?.affects_balance ?? true;
+              const affectsExpectation = occ?.affects_payer_expectation ?? false;
+
+              changes.push({
                 date: consumed.occurrence_date,
-                delta: -consumed.amount
+                ownershipDelta: affectsBalance ? -consumed.amount : 0,
+                expectedMinDelta: affectsExpectation ? -consumed.amount : 0
               });
             }
           }
 
           // Sort by date to process chronologically
-          ownershipChanges.sort((a, b) => a.date.localeCompare(b.date));
+          changes.sort((a, b) => a.date.localeCompare(b.date));
 
-          // Find first date where ownership goes negative
-          let firstNegativeDate: string | null = null;
-          for (const change of ownershipChanges) {
-            userBalance += change.delta;
-            if (userBalance < 0 && !firstNegativeDate) {
-              firstNegativeDate = change.date;
+          // Find first date where ownership goes below expected minimum
+          let firstBelowExpectedDate: string | null = null;
+          for (const change of changes) {
+            userOwnership += change.ownershipDelta;
+            userExpectedMin += change.expectedMinDelta;
+            if (userOwnership < userExpectedMin && !firstBelowExpectedDate) {
+              firstBelowExpectedDate = change.date;
               break;
             }
           }
 
-          if (firstNegativeDate) {
+          if (firstBelowExpectedDate) {
             userWarnings.push({
               participantId: entry.participant_id,
               participantName: entry.participant_name,
-              firstNegativeDate
+              firstBelowExpectedDate
             });
           }
         }
@@ -242,6 +294,8 @@
       result.set(pool.pool_id, {
         poolTotalNegative,
         poolFirstNegativeDate,
+        expectedMinNegative,
+        expectedMinFirstNegativeDate,
         poolName: pool.pool_name,
         userWarnings
       });
@@ -315,17 +369,36 @@
         </div>
       {:else}
         {#each [...warningPoolStats.entries()] as [poolId, warnStats] (poolId)}
-          {@const hasAnyWarning = warnStats.poolTotalNegative || warnStats.userWarnings.length > 0}
+          {@const hasAnyWarning =
+            warnStats.poolTotalNegative ||
+            warnStats.expectedMinNegative ||
+            warnStats.userWarnings.length > 0}
           {#if hasAnyWarning}
             <div class="pool-warning-banner" title={$_('overview.warningPeriod')}>
               <span class="warning-icon">⚠️</span>
               <div class="warning-content">
+                {#if warnStats.expectedMinNegative && warnStats.expectedMinFirstNegativeDate}
+                  <span class="warning-text">
+                    {#if warnStats.expectedMinFirstNegativeDate <= getLocalDateString()}
+                      {$_('overview.expectedMinIsNegative', {
+                        values: { pool: warnStats.poolName }
+                      })}
+                    {:else}
+                      {$_('overview.expectedMinWillGoNegative', {
+                        values: {
+                          pool: warnStats.poolName,
+                          date: formatDateWithWeekday(warnStats.expectedMinFirstNegativeDate)
+                        }
+                      })}
+                    {/if}
+                  </span>
+                {/if}
                 {#if warnStats.poolTotalNegative && warnStats.poolFirstNegativeDate}
                   <span class="warning-text">
                     {#if warnStats.poolFirstNegativeDate <= getLocalDateString()}
-                      {$_('overview.poolIsNegative', { values: { pool: warnStats.poolName } })}
+                      {$_('overview.poolIsBelow', { values: { pool: warnStats.poolName } })}
                     {:else}
-                      {$_('overview.poolWillGoNegative', {
+                      {$_('overview.poolWillGoBelow', {
                         values: {
                           pool: warnStats.poolName,
                           date: formatDateWithWeekday(warnStats.poolFirstNegativeDate)
@@ -336,19 +409,19 @@
                 {/if}
                 {#each warnStats.userWarnings as userWarn (userWarn.participantId)}
                   <span class="warning-text">
-                    {#if userWarn.firstNegativeDate <= getLocalDateString()}
-                      {$_('overview.userIsNegative', {
+                    {#if userWarn.firstBelowExpectedDate <= getLocalDateString()}
+                      {$_('overview.userIsBelowExpected', {
                         values: {
                           user: userWarn.participantName,
                           pool: warnStats.poolName
                         }
                       })}
                     {:else}
-                      {$_('overview.userWillGoNegative', {
+                      {$_('overview.userWillGoBelowExpected', {
                         values: {
                           user: userWarn.participantName,
                           pool: warnStats.poolName,
-                          date: formatDateWithWeekday(userWarn.firstNegativeDate)
+                          date: formatDateWithWeekday(userWarn.firstBelowExpectedDate)
                         }
                       })}
                     {/if}

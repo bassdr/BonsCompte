@@ -191,10 +191,12 @@
   "overview.projectedTotal": "Projected Total",
   "overview.minimumTotal": "Minimum",
   "overview.poolNegativeWarning": "Pool balance goes negative in this period!",
-  "overview.poolWillGoNegative": "{pool} will go negative on {date} if you don't add funds",
-  "overview.poolIsNegative": "{pool} is negative, add funds",
-  "overview.userWillGoNegative": "{user}'s share in {pool} will go negative on {date}",
-  "overview.userIsNegative": "{user}'s share in {pool} is negative",
+  "overview.poolWillGoBelow": "{pool} will go below expected minimum on {date}",
+  "overview.poolIsBelow": "{pool} is below expected minimum",
+  "overview.expectedMinWillGoNegative": "{pool} expected minimum will go negative on {date} (check rules)",
+  "overview.expectedMinIsNegative": "{pool} expected minimum is negative (check rules)",
+  "overview.userWillGoBelowExpected": "{user}'s share in {pool} will go below expected minimum on {date}",
+  "overview.userIsBelowExpected": "{user}'s share in {pool} is below expected minimum",
   "overview.warningPeriod": "Warning Period",
 
   "cashflow.title": "Cashflow Planning",
@@ -254,7 +256,7 @@
   "transactions.title": "Transaction List",
   "transactions.addPayment": "Add Payment",
   "transactions.editPayment": "Edit Payment",
-  "transactions.updatePayment": "Update Payment",
+  "transactions.updateTransaction": "Update",
   "transactions.addParticipantsFirst": "Add participants before creating payments.",
   "transactions.paidBy": "Paid by",
   "transactions.appliesTo": "Applies to",
@@ -322,6 +324,7 @@
   "transactions.typeExpense": "External expense",
   "transactions.typeTransfer": "Internal transfer",
   "transactions.typeInflow": "External funds",
+  "transactions.typeRule": "Rule",
   "transactions.filterByRecurring": "Recurrence",
   "transactions.allRecurrence": "All",
   "transactions.recurringOnly": "Recurring only",
@@ -546,6 +549,9 @@
   "months.dec": "Dec",
 
   "overview.expectedMinimum": "Expected minimum",
+  "overview.currentExpectedMin": "Current exp. min.",
+  "overview.projectedExpectedMin": "Projected exp. min.",
+  "overview.minimumExpectedMin": "Min. exp. min.",
   "overview.shortfall": "Shortfall",
   "overview.belowExpected": "Below expected minimum"
 }

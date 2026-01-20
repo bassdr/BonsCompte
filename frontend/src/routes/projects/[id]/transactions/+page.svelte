@@ -73,13 +73,25 @@
     }
 
     // Filter by transaction type
+    // Note: Rule check comes first since rules can look like inflows (payer_id=null, receiver_account_id!=null)
     if (filterTransactionType) {
-      if (filterTransactionType === 'expense') {
-        result = result.filter((p) => p.payer_id !== null && p.receiver_account_id === null);
+      if (filterTransactionType === 'rule') {
+        result = result.filter((p) => p.affects_balance === false);
+      } else if (filterTransactionType === 'expense') {
+        result = result.filter(
+          (p) =>
+            p.affects_balance !== false && p.payer_id !== null && p.receiver_account_id === null
+        );
       } else if (filterTransactionType === 'transfer') {
-        result = result.filter((p) => p.payer_id !== null && p.receiver_account_id !== null);
+        result = result.filter(
+          (p) =>
+            p.affects_balance !== false && p.payer_id !== null && p.receiver_account_id !== null
+        );
       } else if (filterTransactionType === 'inflow') {
-        result = result.filter((p) => p.payer_id === null && p.receiver_account_id !== null);
+        result = result.filter(
+          (p) =>
+            p.affects_balance !== false && p.payer_id === null && p.receiver_account_id !== null
+        );
       }
     }
 
@@ -148,6 +160,8 @@
 
   // Get transaction mode for routing to edit page
   function getTransactionMode(p: PaymentWithContributions): string {
+    // Rules are identified by affects_balance = false
+    if (p.affects_balance === false) return 'rule';
     if (p.payer_id === null && p.receiver_account_id !== null) return 'incoming';
     if (p.receiver_account_id !== null) return 'internal';
     return 'outgoing';
@@ -270,6 +284,7 @@
         <option value="expense">{$_('transactions.typeExpense')}</option>
         <option value="transfer">{$_('transactions.typeTransfer')}</option>
         <option value="inflow">{$_('transactions.typeInflow')}</option>
+        <option value="rule">{$_('transactions.typeRule')}</option>
       </select>
     </div>
 
@@ -371,7 +386,12 @@
             </span>
           </div>
           <div class="transaction-meta">
-            {#if p.payer_id === null && p.receiver_account_id !== null}
+            {#if p.affects_balance === false}
+              <!-- Rule (expected minimum, doesn't affect balance) -->
+              {@const appliesTo = $participants.find((pr) => pr.id === p.receiver_account_id)}
+              <span class="rule-badge">{$_('transactions.typeRule')}</span>
+              {appliesTo?.name ?? $_('common.unknown')}
+            {:else if p.payer_id === null && p.receiver_account_id !== null}
               <!-- External inflow -->
               {@const receiver = $participants.find((pr) => pr.id === p.receiver_account_id)}
               <span class="inflow-badge">{$_('transactions.externalInflow')}</span>
@@ -672,6 +692,15 @@
 
   .inflow-badge {
     background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
+    color: white;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .rule-badge {
+    background: linear-gradient(135deg, #7b61ff 0%, #5a45c9 100%);
     color: white;
     padding: 0.15rem 0.5rem;
     border-radius: 4px;

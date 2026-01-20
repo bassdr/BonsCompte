@@ -205,7 +205,7 @@
             ? $_('transactions.editIncoming')
             : $_('transactions.addIncoming'),
           submitLabel: editingPaymentId
-            ? $_('transactions.updatePayment')
+            ? $_('transactions.updateTransaction')
             : $_('transactions.addIncoming'),
           isExternalInflow: true,
           requiresReceiver: true,
@@ -219,7 +219,7 @@
             ? $_('transactions.editTransfer')
             : $_('transactions.addTransfer'),
           submitLabel: editingPaymentId
-            ? $_('transactions.updatePayment')
+            ? $_('transactions.updateTransaction')
             : $_('transactions.addTransfer'),
           isExternalInflow: false,
           requiresReceiver: true,
@@ -231,7 +231,7 @@
         return {
           title: editingPaymentId ? $_('transactions.editRule') : $_('transactions.addRule'),
           submitLabel: editingPaymentId
-            ? $_('transactions.updatePayment')
+            ? $_('transactions.updateTransaction')
             : $_('transactions.addRule'),
           isExternalInflow: true, // No payer (like incoming)
           requiresReceiver: true, // Goes to pool
@@ -244,7 +244,7 @@
         return {
           title: editingPaymentId ? $_('transactions.editPayment') : $_('transactions.addPayment'),
           submitLabel: editingPaymentId
-            ? $_('transactions.updatePayment')
+            ? $_('transactions.updateTransaction')
             : $_('transactions.addPayment'),
           isExternalInflow: false,
           requiresReceiver: false,
@@ -1627,7 +1627,7 @@
                 : editingPaymentId !== null
                   ? useSplitDate
                     ? $_('transactions.splitAndUpdate')
-                    : $_('transactions.updatePayment')
+                    : $_('transactions.updateTransaction')
                   : modeConfig.submitLabel}
             </button>
             <button type="button" class="cancel-btn" onclick={cancelEditing}>

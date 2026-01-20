@@ -300,8 +300,15 @@ export interface Payment {
   // null = external expense (money leaves system, affects settlements)
   // number = internal transfer to this account (only affects pool ownership)
   receiver_account_id: number | null;
-  // Payment status: 'final' (default) or 'draft'
-  status: 'final' | 'draft';
+  // Payment finalization status: true (default) = final, false = draft
+  is_final: boolean;
+  // Dual ledger flags for pool expected minimum
+  // affects_balance: Transaction affects actual pool balance (default: true)
+  affects_balance: boolean;
+  // affects_payer_expectation: When payer is a pool and true, reduces payer's expected minimum
+  affects_payer_expectation: boolean;
+  // affects_receiver_expectation: When receiver is a pool and true, increases receiver's expected minimum
+  affects_receiver_expectation: boolean;
 }
 
 export interface Contribution {
@@ -343,8 +350,12 @@ export interface PaymentOccurrence {
   is_recurring: boolean;
   // Internal transfer support
   receiver_account_id: number | null;
-  // Payment status: 'final' or 'draft'
-  status: 'final' | 'draft';
+  // Payment finalization status: true = final, false = draft
+  is_final: boolean;
+  // Dual ledger flags for pool expected minimum
+  affects_balance: boolean;
+  affects_payer_expectation: boolean;
+  affects_receiver_expectation: boolean;
 }
 
 export interface PairwisePaymentBreakdown {
@@ -381,6 +392,10 @@ export interface PoolOwnership {
   pool_name: string;
   entries: PoolOwnershipEntry[];
   total_balance: number;
+  // Dual ledger: expected minimum from affects_expectation=true transactions
+  expected_minimum: number;
+  is_below_expected: boolean; // total_balance < expected_minimum
+  shortfall: number | null; // expected_minimum - total_balance (if positive)
 }
 
 export interface DebtSummary {
@@ -650,8 +665,15 @@ export interface CreatePaymentInput {
   recurrence_months?: string;
   // Internal transfer: recipient account (null = external expense)
   receiver_account_id?: number | null;
-  // Payment status: 'final' (default) or 'draft'
-  status?: 'final' | 'draft';
+  // Payment finalization status: true (default) = final, false = draft
+  is_final?: boolean;
+  // Dual ledger flags for pool expected minimum
+  // affects_balance: Transaction affects actual pool balance (default: true)
+  affects_balance?: boolean;
+  // affects_payer_expectation: When payer is a pool and true, reduces payer's expected minimum
+  affects_payer_expectation?: boolean;
+  // affects_receiver_expectation: When receiver is a pool and true, increases receiver's expected minimum
+  affects_receiver_expectation?: boolean;
 }
 
 export const getPayments = (projectId: number): Promise<PaymentWithContributions[]> =>

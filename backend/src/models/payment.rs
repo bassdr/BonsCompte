@@ -26,9 +26,18 @@ pub struct Payment {
     // NULL = external expense (money leaves system)
     // NOT NULL = internal transfer (money moves between accounts, e.g., user → pool)
     pub receiver_account_id: Option<i64>,
-    // Payment status: 'final' (default) or 'draft'
+    // Payment finalization status: true (default) = final, false = draft
     // Draft payments are excluded from balance calculations by default
-    pub status: String,
+    pub is_final: bool,
+    // Dual ledger flags for pool expected minimum
+    // affects_balance: Transaction affects actual pool balance (default: true)
+    pub affects_balance: bool,
+    // affects_payer_expectation: When payer is a pool and true, reduces payer's expected minimum
+    // (Used for "Approved" withdrawals from pools)
+    pub affects_payer_expectation: bool,
+    // affects_receiver_expectation: When receiver is a pool and true, increases receiver's expected minimum
+    // (Used for "Earmarked" deposits to pools, and "Rules" that set expected minimums)
+    pub affects_receiver_expectation: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,8 +61,15 @@ pub struct CreatePayment {
     pub recurrence_months: Option<String>,    // JSON array
     // Internal transfer: recipient account (NULL = external expense)
     pub receiver_account_id: Option<i64>,
-    // Payment status: 'final' (default) or 'draft'
-    pub status: Option<String>,
+    // Payment finalization status: true (default) = final, false = draft
+    pub is_final: Option<bool>,
+    // Dual ledger flags for pool expected minimum
+    // affects_balance: Transaction affects actual pool balance (default: true)
+    pub affects_balance: Option<bool>,
+    // affects_payer_expectation: When payer is a pool and true, reduces payer's expected minimum
+    pub affects_payer_expectation: Option<bool>,
+    // affects_receiver_expectation: When receiver is a pool and true, increases receiver's expected minimum
+    pub affects_receiver_expectation: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

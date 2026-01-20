@@ -553,6 +553,89 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         .await
         .ok();
 
+    // =====================
+    // Migration 016: Dual Ledger Flags for Pool Expected Minimum
+    // =====================
+    // Two independent flags to control which ledger a transaction affects:
+    // - affects_balance (default 1): Transaction affects actual pool balance
+    // - affects_expectation (default 0): Transaction affects expected minimum
+    //
+    // Combinations:
+    // - (1, 0): Normal transaction - affects balance only (default, current behavior)
+    // - (0, 1): Rule only - sets expected minimum without moving money
+    // - (1, 1): Protected - affects both balance and expected minimum
+    // - (0, 0): No effect (not useful)
+
+    sqlx::query("ALTER TABLE payments ADD COLUMN affects_balance INTEGER NOT NULL DEFAULT 1")
+        .execute(pool)
+        .await
+        .ok(); // Ignore error if column already exists
+
+    sqlx::query("ALTER TABLE payments ADD COLUMN affects_expectation INTEGER NOT NULL DEFAULT 0")
+        .execute(pool)
+        .await
+        .ok(); // Ignore error if column already exists
+
+    // =====================
+    // Migration 017: Convert status to is_final boolean
+    // =====================
+    // Convert 'status' TEXT field ('final'/'draft') to 'is_final' INTEGER (1/0)
+    // Also add CHECK constraints for all boolean fields
+
+    // Step 1: Add is_final column
+    sqlx::query("ALTER TABLE payments ADD COLUMN is_final INTEGER NOT NULL DEFAULT 1")
+        .execute(pool)
+        .await
+        .ok(); // Ignore error if column already exists
+
+    // Step 2: Migrate data from status to is_final
+    // 'final' -> 1, 'draft' -> 0
+    sqlx::query("UPDATE payments SET is_final = CASE WHEN status = 'final' THEN 1 ELSE 0 END WHERE is_final = 1 AND status = 'draft'")
+        .execute(pool)
+        .await
+        .ok();
+
+    // Note: SQLite doesn't support adding CHECK constraints to existing tables via ALTER TABLE.
+    // The CHECK constraints would need to be added when creating the table.
+    // For existing databases, the application layer enforces the boolean constraints.
+    // New databases created from scratch could have these constraints in the initial CREATE TABLE.
+
+    // =====================
+    // Migration 018: Separate payer and receiver expectation flags
+    // =====================
+    // Split the single 'affects_expectation' flag into two independent flags:
+    // - affects_payer_expectation: When payer is a pool and this is true, reduces payer's expected minimum
+    //   (Used for "Approved" withdrawals from pools)
+    // - affects_receiver_expectation: When receiver is a pool and this is true, increases receiver's expected minimum
+    //   (Used for "Earmarked" deposits to pools)
+    //
+    // This allows pool-to-pool transfers to independently affect each pool's expected minimum.
+
+    // Add affects_payer_expectation column (for approved pool withdrawals)
+    sqlx::query(
+        "ALTER TABLE payments ADD COLUMN affects_payer_expectation INTEGER NOT NULL DEFAULT 0",
+    )
+    .execute(pool)
+    .await
+    .ok(); // Ignore error if column already exists
+
+    // Add affects_receiver_expectation column (for earmarked pool deposits)
+    sqlx::query(
+        "ALTER TABLE payments ADD COLUMN affects_receiver_expectation INTEGER NOT NULL DEFAULT 0",
+    )
+    .execute(pool)
+    .await
+    .ok(); // Ignore error if column already exists
+
+    // Migrate data from old affects_expectation to new affects_receiver_expectation
+    // The old affects_expectation was used for deposits to pools (earmarking)
+    sqlx::query(
+        "UPDATE payments SET affects_receiver_expectation = affects_expectation WHERE affects_expectation = 1",
+    )
+    .execute(pool)
+    .await
+    .ok();
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

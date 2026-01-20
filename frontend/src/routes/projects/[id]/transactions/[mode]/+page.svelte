@@ -15,8 +15,8 @@
   import { SvelteDate } from 'svelte/reactivity';
 
   // Mode from URL params
-  let mode = $derived($page.params.mode as 'outgoing' | 'incoming' | 'internal');
-  let isValidMode = $derived(['outgoing', 'incoming', 'internal'].includes(mode));
+  let mode = $derived($page.params.mode as 'outgoing' | 'incoming' | 'internal' | 'rule');
+  let isValidMode = $derived(['outgoing', 'incoming', 'internal', 'rule'].includes(mode));
 
   // Edit ID from URL params
   let editId = $derived.by(() => {
@@ -61,8 +61,14 @@
   let recurrenceMonthdays = $state<number[]>([]);
   let recurrenceMonths = $state<number[]>([]);
 
-  // Payment status (final or draft)
-  let paymentStatus = $state<'final' | 'draft'>('final');
+  // Payment finalization status: true = final (default), false = draft
+  let isFinal = $state(true);
+
+  // Pool expectation toggles (UI-friendly names)
+  // isPayerApproved: When payer is a pool, "Approved" withdrawals reduce expected minimum
+  let isPayerApproved = $state(false);
+  // isReceiverEarmarked: When receiver is a pool, "Earmarked" deposits increase expected minimum
+  let isReceiverEarmarked = $state(false);
 
   // Track if user has manually modified recurrence selections
   let userModifiedWeekdays = $state(false);
@@ -70,7 +76,7 @@
   let userModifiedMonths = $state(false);
 
   // Pre-computed i18n labels
-  let weekLabel = $derived($_('payments.week'));
+  let weekLabel = $derived($_('transactions.week'));
 
   // Day and month names for display
   let WEEKDAY_NAMES = $derived([
@@ -144,6 +150,15 @@
   // External inflow mode: money entering from outside (no payer)
   let isExternalInflow = $state(false);
 
+  // Derived: Check if payer or receiver is a pool account
+  let payerIsPool = $derived(
+    payerId !== null && $participants.find((p) => p.id === payerId)?.account_type === 'pool'
+  );
+  let receiverIsPool = $derived(
+    receiverAccountId !== null &&
+      $participants.find((p) => p.id === receiverAccountId)?.account_type === 'pool'
+  );
+
   // Contribution weights per participant
   let weights: Record<number, number> = $state({});
   let included: Record<number, boolean> = $state({});
@@ -190,12 +205,13 @@
             ? $_('transactions.editIncoming')
             : $_('transactions.addIncoming'),
           submitLabel: editingPaymentId
-            ? $_('payments.updatePayment')
+            ? $_('transactions.updatePayment')
             : $_('transactions.addIncoming'),
           isExternalInflow: true,
           requiresReceiver: true,
           hidePayerField: true,
-          showContributorsTable: true
+          showContributorsTable: true,
+          isRule: false
         };
       case 'internal':
         return {
@@ -203,24 +219,38 @@
             ? $_('transactions.editTransfer')
             : $_('transactions.addTransfer'),
           submitLabel: editingPaymentId
-            ? $_('payments.updatePayment')
+            ? $_('transactions.updatePayment')
             : $_('transactions.addTransfer'),
           isExternalInflow: false,
           requiresReceiver: true,
           hidePayerField: false,
-          showContributorsTable: false
+          showContributorsTable: false,
+          isRule: false
+        };
+      case 'rule':
+        return {
+          title: editingPaymentId ? $_('transactions.editRule') : $_('transactions.addRule'),
+          submitLabel: editingPaymentId
+            ? $_('transactions.updatePayment')
+            : $_('transactions.addRule'),
+          isExternalInflow: true, // No payer (like incoming)
+          requiresReceiver: true, // Goes to pool
+          hidePayerField: true,
+          showContributorsTable: true, // Show split between
+          isRule: true // Special flag for rule mode
         };
       case 'outgoing':
       default:
         return {
           title: editingPaymentId ? $_('transactions.editPayment') : $_('transactions.addPayment'),
           submitLabel: editingPaymentId
-            ? $_('payments.updatePayment')
+            ? $_('transactions.updatePayment')
             : $_('transactions.addPayment'),
           isExternalInflow: false,
           requiresReceiver: false,
           hidePayerField: false,
-          showContributorsTable: true
+          showContributorsTable: true,
+          isRule: false
         };
     }
   });
@@ -245,6 +275,15 @@
       // Set default receiver if not set
       if (!receiverAccountId && $participants.length > 0) {
         receiverAccountId = $participants[0].id;
+      }
+    } else if (mode === 'rule') {
+      isExternalInflow = true; // No payer for rules
+      // Rules must go to a pool - set receiver to pool
+      if (!receiverAccountId && $participants.length > 0) {
+        const pool = $participants.find((p) => p.account_type === 'pool');
+        if (pool) {
+          receiverAccountId = pool.id;
+        }
       }
     } else {
       // outgoing
@@ -518,7 +557,10 @@
     isRecurring = payment.is_recurring;
     receiverAccountId = payment.receiver_account_id;
     isExternalInflow = payment.payer_id === null && payment.receiver_account_id !== null;
-    paymentStatus = payment.status;
+    isFinal = payment.is_final;
+    // Convert API flags to UI toggles
+    isPayerApproved = payment.affects_payer_expectation;
+    isReceiverEarmarked = payment.affects_receiver_expectation;
 
     useSplitDate = false;
     splitFromDate = getLocalDateString();
@@ -900,6 +942,16 @@
           }));
       }
 
+      // Compute API flags from UI state
+      // Rules: affects_balance=false, affects_receiver_expectation=true (set expected minimum)
+      // Normal transactions: affects_balance=true
+      // Pool withdrawals can be "Approved" (affects_payer_expectation=true)
+      // Pool deposits can be "Earmarked" (affects_receiver_expectation=true)
+      const isRuleMode = modeConfig.isRule;
+      const affectsBalance = !isRuleMode; // Rules don't move money
+      const affectsPayerExpectation = !isRuleMode && isPayerApproved;
+      const affectsReceiverExpectation = isRuleMode || isReceiverEarmarked;
+
       const payload: CreatePaymentInput = {
         payer_id: isExternalInflow ? null : payerId,
         amount: parseFloat(amount),
@@ -909,7 +961,10 @@
         receipt_image: receiptImage ?? undefined,
         is_recurring: isRecurring,
         receiver_account_id: receiverAccountId,
-        status: paymentStatus
+        is_final: isRuleMode ? true : isFinal, // Rules are always final
+        affects_balance: affectsBalance,
+        affects_payer_expectation: affectsPayerExpectation,
+        affects_receiver_expectation: affectsReceiverExpectation
       };
 
       if (isRecurring) {
@@ -1015,7 +1070,10 @@
           receipt_image: editingPaymentOriginal.receipt_image ?? undefined,
           is_recurring: originalShouldRecur,
           receiver_account_id: editingPaymentOriginal.receiver_account_id,
-          status: editingPaymentOriginal.status
+          is_final: editingPaymentOriginal.is_final,
+          affects_balance: editingPaymentOriginal.affects_balance,
+          affects_payer_expectation: editingPaymentOriginal.affects_payer_expectation,
+          affects_receiver_expectation: editingPaymentOriginal.affects_receiver_expectation
         };
 
         if (originalShouldRecur) {
@@ -1083,7 +1141,7 @@
       <h3>{modeConfig.title}</h3>
 
       {#if $participants.length === 0}
-        <p class="warning">{$_('payments.addParticipantsFirst')}</p>
+        <p class="warning">{$_('transactions.addParticipantsFirst')}</p>
       {:else}
         <form onsubmit={handleSubmit}>
           <div class="form-row">
@@ -1119,10 +1177,22 @@
                   {/each}
                 </select>
               </div>
+            {:else if mode === 'rule'}
+              <!-- Rule: show applies-to field -->
+              <div class="field">
+                <label for="payer">{$_('transactions.appliesTo')}</label>
+                <select id="payer" bind:value={receiverAccountId}>
+                  {#each $participants as p (p.id)}
+                    {#if p.account_type === 'pool'}
+                      <option value={p.id}>{p.name}</option>
+                    {/if}
+                  {/each}
+                </select>
+              </div>
             {:else}
               <!-- Outgoing: show payer field -->
               <div class="field">
-                <label for="payer">{$_('payments.paidBy')}</label>
+                <label for="payer">{$_('transactions.paidBy')}</label>
                 <select id="payer" bind:value={payerId}>
                   {#each $participants as p (p.id)}
                     <option value={p.id}>{p.name}</option>
@@ -1132,7 +1202,7 @@
             {/if}
 
             <div class="field">
-              <label for="amount">{$_('payments.amount')}</label>
+              <label for="amount">{$_('transactions.amount')}</label>
               <input
                 id="amount"
                 type="number"
@@ -1144,18 +1214,18 @@
             </div>
 
             <div class="field">
-              <label for="payment-date">{$_('payments.date')}</label>
+              <label for="payment-date">{$_('transactions.date')}</label>
               <input id="payment-date" type="date" bind:value={paymentDate} required />
             </div>
           </div>
 
           <div class="field">
-            <label for="description">{$_('payments.description')}</label>
+            <label for="description">{$_('transactions.description')}</label>
             <input
               id="description"
               type="text"
               bind:value={description}
-              placeholder={$_('payments.descriptionPlaceholder')}
+              placeholder={$_('transactions.descriptionPlaceholder')}
               required
             />
           </div>
@@ -1163,8 +1233,8 @@
           <!-- Receipt Image -->
           <div class="field">
             <label for="receipt-input">
-              {$_('payments.receiptImage')}
-              <span class="hint">{$_('payments.imageFormatsHint')}</span>
+              {$_('transactions.receiptImage')}
+              <span class="hint">{$_('transactions.imageFormatsHint')}</span>
             </label>
             <div class="receipt-upload">
               <input
@@ -1175,7 +1245,7 @@
               />
               {#if receiptPreview}
                 <div class="receipt-preview">
-                  <img src={receiptPreview} alt={$_('payments.receiptPreview')} />
+                  <img src={receiptPreview} alt={$_('transactions.receiptPreview')} />
                   <button type="button" class="clear-btn" onclick={clearReceipt}>&times;</button>
                 </div>
               {/if}
@@ -1188,7 +1258,7 @@
             <div class="external-inflow-banner">
               <span class="inflow-icon">↙</span>
               <span class="inflow-text">
-                {$_('payments.externalInflowTo')}
+                {$_('transactions.externalInflowTo')}
                 {receiver?.name ?? $_('common.unknown')}
                 {receiver?.account_type === 'pool' ? `(${$_('participants.pool')})` : ''}
               </span>
@@ -1198,7 +1268,7 @@
             <div class="internal-transfer-banner">
               <span class="transfer-icon">↗</span>
               <span class="transfer-text">
-                {$_('payments.internalTransferTo')}
+                {$_('transactions.internalTransferTo')}
                 {receiver?.name ?? $_('common.unknown')}
               </span>
             </div>
@@ -1207,18 +1277,18 @@
           <!-- Contributors table - only for outgoing and incoming -->
           {#if modeConfig.showContributorsTable}
             <div class="split-header">
-              <h4>{$_('payments.splitBetween')}</h4>
+              <h4>{$_('transactions.splitBetween')}</h4>
               <button type="button" class="small-btn" onclick={includeAll}>
-                {$_('payments.includeAll')}
+                {$_('transactions.includeAll')}
               </button>
             </div>
             <table class="split-table">
               <thead>
                 <tr>
-                  <th>{$_('payments.participant')}</th>
-                  <th>{$_('payments.include')}</th>
-                  <th>{$_('payments.weight')}</th>
-                  <th>{$_('payments.share')}</th>
+                  <th>{$_('transactions.participant')}</th>
+                  <th>{$_('transactions.include')}</th>
+                  <th>{$_('transactions.weight')}</th>
+                  <th>{$_('transactions.share')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1250,41 +1320,103 @@
             </table>
           {/if}
 
-          <!-- Status Section -->
-          <div class="status-section">
-            <label for="payment-status">{$_('payments.status')}</label>
-            <div class="status-toggle">
-              <button
-                type="button"
-                class="status-btn"
-                class:active={paymentStatus === 'final'}
-                onclick={() => (paymentStatus = 'final')}
-              >
-                {$_('payments.statusFinal')}
-              </button>
-              <button
-                type="button"
-                class="status-btn"
-                class:active={paymentStatus === 'draft'}
-                onclick={() => (paymentStatus = 'draft')}
-              >
-                {$_('payments.statusDraft')}
-              </button>
+          <!-- Status Section - Only show if NOT in rule mode -->
+          {#if !modeConfig.isRule}
+            <div class="status-section">
+              <label for="payment-status">{$_('transactions.status')}</label>
+              <div class="status-toggle">
+                <button
+                  type="button"
+                  class="status-btn"
+                  class:active={isFinal}
+                  onclick={() => (isFinal = true)}
+                >
+                  {$_('transactions.statusFinal')}
+                </button>
+                <button
+                  type="button"
+                  class="status-btn"
+                  class:active={!isFinal}
+                  onclick={() => (isFinal = false)}
+                >
+                  {$_('transactions.statusDraft')}
+                </button>
+              </div>
             </div>
-          </div>
+          {/if}
+
+          <!-- Pool Approval Section - For pool withdrawals (payer is pool) -->
+          {#if payerIsPool && !modeConfig.isRule}
+            <div class="status-section">
+              <label for="pool-approval">{$_('transactions.withdrawalType')}</label>
+              <div class="status-toggle">
+                <button
+                  type="button"
+                  class="status-btn"
+                  class:active={!isPayerApproved}
+                  onclick={() => (isPayerApproved = false)}
+                >
+                  {$_('transactions.standard')}
+                </button>
+                <button
+                  type="button"
+                  class="status-btn"
+                  class:active={isPayerApproved}
+                  onclick={() => (isPayerApproved = true)}
+                >
+                  {$_('transactions.approved')}
+                </button>
+              </div>
+              <p class="hint-text">
+                {isPayerApproved
+                  ? $_('transactions.approvedHint')
+                  : $_('transactions.standardWithdrawalHint')}
+              </p>
+            </div>
+          {/if}
+
+          <!-- Pool Earmark Section - For pool deposits (receiver is pool) -->
+          {#if receiverIsPool && !modeConfig.isRule}
+            <div class="status-section">
+              <label for="pool-earmark">{$_('transactions.depositType')}</label>
+              <div class="status-toggle">
+                <button
+                  type="button"
+                  class="status-btn"
+                  class:active={!isReceiverEarmarked}
+                  onclick={() => (isReceiverEarmarked = false)}
+                >
+                  {$_('transactions.free')}
+                </button>
+                <button
+                  type="button"
+                  class="status-btn"
+                  class:active={isReceiverEarmarked}
+                  onclick={() => (isReceiverEarmarked = true)}
+                >
+                  {$_('transactions.earmarked')}
+                </button>
+              </div>
+              <p class="hint-text">
+                {isReceiverEarmarked
+                  ? $_('transactions.earmarkedHint')
+                  : $_('transactions.freeHint')}
+              </p>
+            </div>
+          {/if}
 
           <!-- Recurrence Section -->
           <div class="recurrence-section">
             <label class="checkbox-label">
               <input type="checkbox" bind:checked={isRecurring} />
-              {$_('payments.recurringPayment')}
+              {$_('transactions.recurringTransaction')}
             </label>
 
             {#if isRecurring}
               <div class="recurrence-options">
                 <div class="form-row">
                   <div class="field small">
-                    <label for="recurrence-interval">{$_('payments.every')}</label>
+                    <label for="recurrence-interval">{$_('transactions.every')}</label>
                     <input
                       id="recurrence-interval"
                       type="number"
@@ -1294,27 +1426,27 @@
                   </div>
 
                   <div class="field">
-                    <label for="recurrence-type">{$_('payments.period')}</label>
+                    <label for="recurrence-type">{$_('transactions.period')}</label>
                     <select id="recurrence-type" bind:value={recurrenceType}>
                       <option value="daily"
                         >{recurrenceInterval === 1
-                          ? $_('payments.day')
-                          : $_('payments.days')}</option
+                          ? $_('transactions.day')
+                          : $_('transactions.days')}</option
                       >
                       <option value="weekly"
                         >{recurrenceInterval === 1
-                          ? $_('payments.week')
-                          : $_('payments.weeks')}</option
+                          ? $_('transactions.week')
+                          : $_('transactions.weeks')}</option
                       >
                       <option value="monthly"
                         >{recurrenceInterval === 1
-                          ? $_('payments.month')
-                          : $_('payments.months')}</option
+                          ? $_('transactions.month')
+                          : $_('transactions.months')}</option
                       >
                       <option value="yearly"
                         >{recurrenceInterval === 1
-                          ? $_('payments.year')
-                          : $_('payments.years')}</option
+                          ? $_('transactions.year')
+                          : $_('transactions.years')}</option
                       >
                     </select>
                   </div>
@@ -1327,7 +1459,7 @@
                     aria-labelledby="weekday-selector-label"
                   >
                     <span id="weekday-selector-label" class="selector-label"
-                      >{$_('payments.selectDaysOfWeek')}</span
+                      >{$_('transactions.selectDaysOfWeek')}</span
                     >
                     {#each Array(recurrenceInterval) as _, weekIdx (weekIdx)}
                       {#if recurrenceInterval > 1}
@@ -1356,7 +1488,7 @@
                     aria-labelledby="monthday-selector-label"
                   >
                     <span id="monthday-selector-label" class="selector-label"
-                      >{$_('payments.selectDaysOfMonth')}</span
+                      >{$_('transactions.selectDaysOfMonth')}</span
                     >
                     <div class="monthday-grid">
                       {#each Array(31) as _, idx (idx)}
@@ -1372,7 +1504,7 @@
                       {/each}
                     </div>
                     {#if showMonthdayWarning}
-                      <p class="warning-hint">{$_('payments.monthdayWarning')}</p>
+                      <p class="warning-hint">{$_('transactions.monthdayWarning')}</p>
                     {/if}
                   </div>
                 {/if}
@@ -1380,7 +1512,7 @@
                 {#if showMonthSelector}
                   <div class="month-selector" role="group" aria-labelledby="month-selector-label">
                     <span id="month-selector-label" class="selector-label"
-                      >{$_('payments.selectMonths')}</span
+                      >{$_('transactions.selectMonths')}</span
                     >
                     <div class="month-grid">
                       {#each MONTH_NAMES as monthName, idx (idx)}
@@ -1400,7 +1532,7 @@
 
                 <div class="recurrence-limits">
                   <div class="field">
-                    <label for="end-date">{$_('payments.endDateOptional')}</label>
+                    <label for="end-date">{$_('transactions.endDateOptional')}</label>
                     <input
                       id="end-date"
                       type="date"
@@ -1410,17 +1542,17 @@
                   </div>
 
                   <div class="field">
-                    <label for="recurrence-count">{$_('payments.occurrencesOptional')}</label>
+                    <label for="recurrence-count">{$_('transactions.occurrencesOptional')}</label>
                     <input
                       id="recurrence-count"
                       type="number"
                       bind:value={recurrenceCount}
                       min="1"
-                      placeholder={$_('payments.occurrencesPlaceholder')}
+                      placeholder={$_('transactions.occurrencesPlaceholder')}
                     />
                     {#if endDateFromCount}
                       <span class="count-hint"
-                        >{$_('payments.lastOccurrence')}: {formatDate(endDateFromCount)}</span
+                        >{$_('transactions.lastOccurrence')}: {formatDate(endDateFromCount)}</span
                       >
                     {/if}
                   </div>
@@ -1494,8 +1626,8 @@
                 ? $_('common.saving')
                 : editingPaymentId !== null
                   ? useSplitDate
-                    ? $_('payments.splitAndUpdate')
-                    : $_('payments.updatePayment')
+                    ? $_('transactions.splitAndUpdate')
+                    : $_('transactions.updatePayment')
                   : modeConfig.submitLabel}
             </button>
             <button type="button" class="cancel-btn" onclick={cancelEditing}>
@@ -1506,7 +1638,7 @@
       {/if}
     </section>
   {:else}
-    <p class="warning">{$_('payments.noEditPermission')}</p>
+    <p class="warning">{$_('transactions.noEditPermission')}</p>
   {/if}
 {/if}
 
@@ -1690,6 +1822,14 @@
   .status-btn.active:last-child {
     background: #f0ad4e;
     color: white;
+  }
+
+  /* Hint text for pool toggles */
+  .hint-text {
+    margin: 0.5rem 0 0 0;
+    color: #666;
+    font-size: 0.85rem;
+    font-style: italic;
   }
 
   /* Recurrence section */

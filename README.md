@@ -6,6 +6,7 @@ BonsCompte is a lightweight financial coordination tool designed for shared livi
 It helps groups track recurring shared bills, future expenses, and fairness over time through a simple weighting system.
 
 The project includes:
+
 - Rust backend (Axum + SQLite + JWT authentication)
 - SvelteKit frontend (Svelte 5 with runes)
 - SQLite database with automatic migrations
@@ -33,6 +34,7 @@ The goal of BonsCompte is to make it easy for a group of people to fairly manage
 ## Core Features
 
 ### 1. User Authentication & Project Management
+
 - Secure user registration and login with JWT tokens
 - Password hashing with Argon2
 - Human-approved password recovery (no email required) - see [Password Recovery](docs/PASSWORD_RECOVERY.md)
@@ -40,28 +42,34 @@ The goal of BonsCompte is to make it easy for a group of people to fairly manage
 - Invite system for adding members to projects
 - Rate limiting on auth endpoints (prevents brute-force attacks)
 
-### 2. Recurring Shared Payments
+### 2. Recurring Shared Transactions
+
 The system keeps track of expenses that repeat:
-- One-time or recurring payments (daily, weekly, monthly, yearly)
+
+- One-time or recurring transactions (daily, weekly, monthly, yearly)
 - Flexible recurrence: "every X periods" or "X times per period"
 - Payment date picker with calendar support
 - Receipt image storage (Base64 encoded)
 - Optional notes/descriptions
 - Per-payment participant weights for fine-grained control
-- Edit existing payments with automatic recalculation
+- Edit existing transactions with automatic recalculation
 
 ### 3. Debt Calculation with Future Projection
+
 BonsCompte generates a projection of upcoming and past shared expenses:
+
 - View debts as of any date (past, present, or future)
-- See all recurring payments and their future occurrences
+- See all recurring transactions and their future occurrences
 - Smart date navigation that jumps to actual payment dates
 - Relative date labels ("Today", "Tomorrow", "in X days", "X days ago")
 - Settlement calculations to determine who owes whom
 
 ### 4. Weight System (Fairness Calculation)
+
 Every payment has a **default weight**, representing how much each person participates in that expense.
 
 Examples:
+
 - Weight `1.0` → normal shared participation
 - Weight `0.5` → someone benefits less (e.g., part-time presence)
 - Weight `2.0` → someone occupies more space and pays a higher share
@@ -70,18 +78,20 @@ Examples:
 The system can use these weights to divide the cost fairly.
 
 ### 5. Participant Management
+
 - Create participants with default weights
 - Participants may or may not have associated user accounts
 - Two account types:
   - **User accounts**: Regular participants who pay and owe
   - **Pool accounts**: Shared account per project for tracking collective funds (e.g., house fund, shared bank account)
-- Track contributions by participant across all payments
+- Track contributions by participant across all transactions
 - Per-pool warning settings: Configure when to warn about negative balances
   - Pool total warning: Alert when shared account will go negative
   - Per-user warning: Alert when individual's pool share will go negative
   - Configurable horizons: end of month, next month, 3 months, 6 months
 
 ### 6. Transfer System
+
 BonsCompte supports multiple payment types for flexible debt settlement:
 
 - **External expenses**: Regular shared bills (groceries, rent, utilities)
@@ -104,8 +114,9 @@ BonsCompte supports multiple payment types for flexible debt settlement:
   - To a pool: Contributors' pool ownership increases by their share
 
 ### 7. Smart Payment Interface
-- View all payments (recurring and one-time) with type indicators
-- Edit recent payments with full recalculation
+
+- View all transactions (recurring and one-time) with type indicators
+- Edit recent transactions with full recalculation
 - Quick action buttons: "Pay back" (direct transfer to person) or "Deposit" (transfer to pool)
 - Include all default participants or customize per-payment weights
 - Future date indication with "from" vs "on" preposition
@@ -113,7 +124,9 @@ BonsCompte supports multiple payment types for flexible debt settlement:
 - Receipt image storage and viewing
 
 ### 8. Security Hardening
+
 The backend includes multiple security layers for production deployment:
+
 - **Rate limiting**: Stricter limits on auth routes (5 req/sec) vs general API (100 req/sec)
 - **Scan path blocking**: Silently rejects common scanner probes (/.git, /wp-admin, .php files, etc.)
 - **Error sanitization**: Internal errors logged server-side, generic messages returned to clients
@@ -121,17 +134,18 @@ The backend includes multiple security layers for production deployment:
 
 ## Tech Stack
 
-| Component  | Technology |
-|-----------|------------|
-| Backend   | Rust (Axum 0.8, Tokio, SQLx, JWT) |
-| Frontend  | Svelte 5 + SvelteKit 2.48 + Vite 7 + TypeScript |
-| Database  | SQLite with automatic migrations |
-| Auth      | JWT tokens + Argon2 password hashing |
-| Deployment | Docker / Docker Compose |
+| Component  | Technology                                      |
+|------------|-------------------------------------------------|
+| Backend    | Rust (Axum 0.8, Tokio, SQLx, JWT)               |
+| Frontend   | Svelte 5 + SvelteKit 2.48 + Vite 7 + TypeScript |
+| Database   | SQLite with automatic migrations                |
+| Auth       | JWT tokens + Argon2 password hashing            |
+| Deployment | Docker / Docker Compose                         |
 
 ## Getting Started
 
 ### Backend (from `/backend`)
+
 ```sh
 cargo run                    # Start server on localhost:8000
 cargo check                  # Type check without building
@@ -139,6 +153,7 @@ cargo build --release        # Production build
 ```
 
 ### Frontend (from `/frontend`)
+
 ```sh
 npm run dev                  # Start dev server on localhost:5173
 npm run build                # Production build
@@ -150,6 +165,7 @@ npm run format               # Auto-format with Prettier
 ## Architecture
 
 ### Data Model
+
 - **Project**: Owned by a user, contains participants and members
 - **Participant**: Entity that pays/owes (may or may not be a user); has account type (user/pool)
 - **Member**: User's membership in a project with role (owner/editor/viewer)
@@ -159,6 +175,7 @@ npm run format               # Auto-format with Prettier
 ### Key Features
 
 **Transfer Types**: Flexible payment handling via payer and receiver
+
 - **External expense** (payer = user, no receiver): Normal shared bills, affects settlements
 - **User-to-user transfer** (receiver = user): Direct payment to settle debts
 - **Pool transfer** (receiver = pool): Deposits/withdrawals from shared account
@@ -169,23 +186,27 @@ npm run format               # Auto-format with Prettier
   - To pool: Contributors' ownership increases
 
 **Weight System**: Fairness through proportional distribution
-- Default weight applies to new payments
+
+- Default weight applies to new transactions
 - Per-payment overrides for specific scenarios
 - Zero weight excludes from calculations
 
 **Recurring Payments**: Automatic future projection
+
 - Types: daily, weekly, monthly, yearly
 - Either "every X periods" OR "X times per period"
 - Optional end date
 - Debt calculator expands occurrences for future date queries
 
 **Settlement Calculation**: Smart matching for debt resolution
+
 - Pool accounts excluded from user-to-user settlements
 - Greedy algorithm matches debtors with creditors
 - Direct mode available for settlements involving only direct transactors
 - Automatic recalculation on all changes
 
 **Date Handling**: Timezone-safe with local dates
+
 - Avoids UTC offset issues with ISO strings
 - Smart navigation jumps to actual payment dates
 - Relative date labels for context
@@ -194,23 +215,25 @@ npm run format               # Auto-format with Prettier
 
 BonsCompte supports three deployment scenarios:
 
-| Scenario | Frontend | Backend | API Base |
-|----------|----------|---------|----------|
-| **Development** | `localhost:5173` | `localhost:8000` | `http://localhost:8000` |
-| **Docker Local** | `localhost:3000` | `localhost:8000` | `http://localhost:8000` |
-| **Production** | Behind NGINX | Behind NGINX | `/api` (via reverse proxy) |
+| Scenario         | Frontend         | Backend          | API Base                   |
+|------------------|------------------|------------------|----------------------------|
+| **Development**  | `localhost:5173` | `localhost:8000` | `http://localhost:8000`    |
+| **Docker Local** | `localhost:3000` | `localhost:8000` | `http://localhost:8000`    |
+| **Production**   | Behind NGINX     | Behind NGINX     | `/api` (via reverse proxy) |
 
 ### 1. Development Mode (without Docker)
 
 Run the backend and frontend separately for rapid development:
 
 **Terminal 1 - Backend:**
+
 ```sh
 cd backend
 cargo run  # Starts on localhost:8000
 ```
 
 **Terminal 2 - Frontend:**
+
 ```sh
 cd frontend
 npm run dev  # Starts on localhost:5173
@@ -229,6 +252,7 @@ docker compose up --build -d
 ```
 
 Access the application at:
+
 - Frontend: `http://localhost:3000`
 - Backend API: `http://localhost:8000`
 
@@ -241,20 +265,23 @@ For production, use the pre-built Docker images behind an NGINX reverse proxy.
 #### Quick Start
 
 1. Create a directory and download config:
+
 ```sh
 mkdir -p /srv/bonscompte
 cd /srv/bonscompte
 wget https://raw.githubusercontent.com/bassdr/BonsCompte/main/docker-compose.yml
 ```
 
-2. Create a `.env` file:
+1. Create a `.env` file:
+
 ```sh
 cat > .env << EOF
 JWT_SECRET=your-very-secret-key-change-this-in-production
 EOF
 ```
 
-3. Update ports to only bind locally (add to docker-compose.yml or create override):
+1. Update ports to only bind locally (add to docker-compose.yml or create override):
+
 ```yaml
 services:
   backend:
@@ -265,12 +292,14 @@ services:
       - "127.0.0.1:3000:3000"
 ```
 
-4. Start the services:
+1. Start the services:
+
 ```sh
 docker compose up -d
 ```
 
-5. Configure NGINX (see [docs/NGINX_CONFIGURATION.md](docs/NGINX_CONFIGURATION.md) for full details):
+1. Configure NGINX (see [docs/NGINX_CONFIGURATION.md](docs/NGINX_CONFIGURATION.md) for full details):
+
 ```nginx
 server {
     server_name example.com;
@@ -314,7 +343,8 @@ Tags include: `latest`, branch name, commit SHA, semantic versions (e.g., `v1.0.
 ### Environment Variables
 
 **Backend** (`.env` or environment):
-```
+
+``` dotenv
 DATABASE_URL=sqlite:///data/bonscompte.db
 JWT_SECRET=your-secret-key
 RUST_LOG=info,bonscompte_backend=debug
@@ -323,6 +353,7 @@ PORT=8000
 ```
 
 **Frontend** (build-time via `VITE_API_BASE`):
+
 - Unset: Defaults to `http://localhost:8000` (development)
 - `/api`: Relative path for NGINX reverse proxy (production)
 
@@ -341,20 +372,21 @@ services:
 
 Both BonsCompte containers follow Docker security best practices by running as **non-root users**.
 
-**Default Setup:**
+#### Default Setup
 
 - **Backend**: UID 1000:GID 1000 (standard app user ID)
 - **Frontend**: UID 1001:GID 1001 (Alpine-safe alternative, avoids GID conflicts)
 
 Both run as `appuser`, which is the standard unprivileged user ID for containers.
 
-**Benefits:**
+#### Benefits
+
 - Limits damage if the application is compromised
 - Prevents container escape attacks from escalating to root
 - Follows principle of least privilege
 - Works out-of-the-box on most systems
 
-**Customizing User for Your Environment:**
+#### Customizing User for Your Environment
 
 You can override the user in `docker-compose.yml` if you need different UIDs:
 
@@ -377,13 +409,14 @@ services:
     user: ""                 # Reset to image default
 ```
 
-**Volume Permissions:**
+#### Volume Permissions
 
 When mounting host directories, ensure the container user can access them. Adjust the UID/GID in commands below to match your container's UID.
 
-**Option 1: Adjust host directory to match container user (recommended)**
+##### Option 1: Adjust host directory to match container user (recommended)
 
 For backend (UID 1000):
+
 ```sh
 mkdir -p /path/to/data
 chown 1000:1000 /path/to/data
@@ -391,6 +424,7 @@ chmod 755 /path/to/data
 ```
 
 For frontend or custom UID:
+
 ```sh
 # Replace CONTAINER_UID with your container's actual UID (e.g., 1001 for frontend)
 mkdir -p /path/to/data
@@ -398,15 +432,18 @@ chown $CONTAINER_UID:$CONTAINER_UID /path/to/data
 chmod 755 /path/to/data
 ```
 
-**Option 2: Use Docker named volumes (simplest)**
+##### Option 2: Use Docker named volumes (simplest)
+
 ```yaml
 volumes:
   sqlite_data:
     driver: local
 ```
+
 No permission setup needed - Docker manages ownership automatically.
 
-**Option 3: Run as current user (development only)**
+##### Option 3: Run as current user (development only)
+
 ```yaml
 services:
   backend:
@@ -415,12 +452,14 @@ services:
       - ./data:/data  # Works with current user's ownership
 ```
 
-**Option 4: Make directory world-writable (least secure)**
+##### Option 4: Make directory world-writable (least secure)
+
 ```sh
 chmod 777 /path/to/data
 ```
 
-**Finding Your UID:GID:**
+#### Finding Your UID:GID
+
 ```sh
 id
 # Output: uid=1000(username) gid=1000(username) ...

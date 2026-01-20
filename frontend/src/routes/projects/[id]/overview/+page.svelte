@@ -799,7 +799,8 @@
           const occ = sortedOccurrences[occIdx];
           const payment = paymentMap.get(occ.payment_id);
 
-          if (payment) {
+          // Only update actual balance if affects_balance is true
+          if (payment && occ.affects_balance) {
             // User -> Pool transfer (deposit)
             if (occ.receiver_account_id === pool.pool_id && occ.payer_id !== null) {
               const current = runningOwnership.get(occ.payer_id) ?? 0;
@@ -1019,7 +1020,9 @@
       if (!poolParticipant) continue;
 
       // === Pool Total Warning ===
+      // Track both actual balance and expected minimum (dual ledger)
       let runningBalance = startPoolData?.total_balance ?? 0;
+      let runningExpectedMinimum = startPoolData?.expected_minimum ?? 0;
       let poolTotalNegative = false;
       let poolFirstNegativeDate: string | null = null;
 
@@ -1027,7 +1030,8 @@
       if (poolParticipant.warning_horizon_account) {
         const accountHorizonEnd = getWarningHorizonEndDate(poolParticipant.warning_horizon_account);
 
-        if (runningBalance < 0) {
+        // Check if already below expected minimum today
+        if (runningBalance < runningExpectedMinimum) {
           poolTotalNegative = true;
           poolFirstNegativeDate = today;
         } else {
@@ -1041,14 +1045,28 @@
             .sort((a, b) => a.occurrence_date.localeCompare(b.occurrence_date));
 
           for (const occ of poolOccurrences) {
-            if (occ.payer_id === pool.pool_id) {
-              runningBalance -= occ.amount;
-            }
-            if (occ.receiver_account_id === pool.pool_id) {
-              runningBalance += occ.amount;
+            // Update actual balance (only if affects_balance is true)
+            if (occ.affects_balance) {
+              if (occ.payer_id === pool.pool_id) {
+                runningBalance -= occ.amount;
+              }
+              if (occ.receiver_account_id === pool.pool_id) {
+                runningBalance += occ.amount;
+              }
             }
 
-            if (runningBalance < 0) {
+            // Update expected minimum based on separate payer/receiver expectation flags
+            // If payer is this pool and affects_payer_expectation is true → decrease expected minimum
+            if (occ.payer_id === pool.pool_id && occ.affects_payer_expectation) {
+              runningExpectedMinimum -= occ.amount;
+            }
+            // If receiver is this pool and affects_receiver_expectation is true → increase expected minimum
+            if (occ.receiver_account_id === pool.pool_id && occ.affects_receiver_expectation) {
+              runningExpectedMinimum += occ.amount;
+            }
+
+            // Warn when balance drops below expected minimum
+            if (runningBalance < runningExpectedMinimum) {
               poolTotalNegative = true;
               poolFirstNegativeDate = occ.occurrence_date;
               break;
@@ -1933,7 +1951,7 @@
     const timesPer = payment.recurrence_times_per;
 
     // Get translated recurrence type (adjective form for single interval)
-    const typeKey = `payments.recurrence.${type}`;
+    const typeKey = `transactions.recurrence.${type}`;
     const translatedType = $_(typeKey);
 
     if (timesPer) {
@@ -1944,12 +1962,12 @@
       // Use proper noun form with correct gender agreement
       const everyKey =
         type === 'daily'
-          ? 'payments.recurrence.everyNDays'
+          ? 'transactions.recurrence.everyNDays'
           : type === 'weekly'
-            ? 'payments.recurrence.everyNWeeks'
+            ? 'transactions.recurrence.everyNWeeks'
             : type === 'monthly'
-              ? 'payments.recurrence.everyNMonths'
-              : 'payments.recurrence.everyNYears';
+              ? 'transactions.recurrence.everyNMonths'
+              : 'transactions.recurrence.everyNYears';
       return $_(everyKey, { values: { n: interval } });
     }
   }
@@ -3067,8 +3085,9 @@
                                   <span class="trans-desc">
                                     {occ.description}
                                     <span class="trans-badges">
-                                      {#if occ.status === 'draft'}
-                                        <span class="badge draft">{$_('payments.statusDraft')}</span
+                                      {#if !occ.is_final}
+                                        <span class="badge draft"
+                                          >{$_('transactions.statusDraft')}</span
                                         >
                                       {/if}
                                     </span>
@@ -3083,13 +3102,15 @@
                                 <div class="trans-meta">
                                   {#if occ.payer_id === null && occ.receiver_account_id !== null}
                                     <!-- External inflow -->
-                                    <span class="inflow-badge">{$_('payments.externalInflow')}</span
+                                    <span class="inflow-badge"
+                                      >{$_('transactions.externalInflow')}</span
                                     >
-                                    {$_('payments.externalIndicator')} → {receiver?.name ??
+                                    {$_('transactions.externalIndicator')} → {receiver?.name ??
                                       $_('common.unknown')}
                                   {:else if occ.receiver_account_id !== null && payment}
                                     <!-- Internal transfer -->
-                                    <span class="transfer-badge">{$_('payments.transfer')}</span>
+                                    <span class="transfer-badge">{$_('transactions.transfer')}</span
+                                    >
                                     {payment.payer_name ?? $_('common.unknown')} → {receiver?.name ??
                                       $_('common.unknown')}
                                   {:else if payment}

@@ -3,8 +3,12 @@
   import { resolve } from '$app/paths';
   import type { Snippet } from 'svelte';
   import { _ } from '$lib/i18n';
+  import { participants } from '$lib/stores/project';
 
   let { children }: { children: Snippet } = $props();
+
+  // Check if any pool exists in the project (for rule mode availability)
+  let hasPool = $derived($participants.some((p) => p.account_type === 'pool'));
 </script>
 
 <div class="transactions-layout">
@@ -27,6 +31,14 @@
     >
       {$_('transactions.incoming')}
     </a>
+    {#if hasPool}
+      <a
+        href={resolve(`/projects/${$page.params.id}/transactions/rule`)}
+        class:active={$page.url.pathname.includes('/rule')}
+      >
+        {$_('transactions.rule')}
+      </a>
+    {/if}
   </nav>
 
   <div class="transactions-content">

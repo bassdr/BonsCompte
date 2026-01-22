@@ -1,6 +1,7 @@
 {
   "name": "bonscompte",
   "version": "1.0.0",
+  "type": "module",
   "description": "BonsCompte is a lightweight financial coordination tool designed for shared living situations such as housemates, cooperatives, or small collectives. It helps groups track recurring shared bills, future expenses, and fairness over time through a simple weighting system.",
   "main": "index.js",
   "directories": {
@@ -10,7 +11,11 @@
     "test": "npm run test:backend && npm run test:frontend",
     "test:backend": "cd backend && cargo test",
     "test:frontend": "cd frontend && npm test",
+    "format:staged": "lint-staged",
     "prepare": "husky"
+  },
+  "devDependencies": {
+    "lint-staged": "^16.2.7"
   },
   "repository": {
     "type": "git",

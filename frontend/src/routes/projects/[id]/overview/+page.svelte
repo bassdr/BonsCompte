@@ -435,13 +435,6 @@
       case '12months':
         endDate = horizon12Months;
         break;
-      case 'custom':
-        // If switching to custom from none, set a default (e.g., 1 month ahead)
-        if (endDate === null) {
-          endDate = getHorizonEndDate(targetDate, 1);
-        }
-        // Otherwise keep the current endDate
-        break;
     }
   }
 
@@ -472,49 +465,6 @@
 
   // Range mode is active when endDate is set and > targetDate
   let isRangeMode = $derived(endDate !== null && endDate > targetDate);
-
-  // Warning horizon: compute end date based on project settings
-  function getWarningHorizonEndDate(setting: string): string {
-    const now = new Date();
-    switch (setting) {
-      case 'end_of_current_month':
-        // Last day of current month
-        return getLocalDateString(new Date(now.getFullYear(), now.getMonth() + 1, 0));
-      case 'end_of_next_month':
-        // Last day of next month
-        return getLocalDateString(new Date(now.getFullYear(), now.getMonth() + 2, 0));
-      case '3_months':
-        return getHorizonEndDate(getLocalDateString(), 3);
-      case '6_months':
-        return getHorizonEndDate(getLocalDateString(), 6);
-      default:
-        // Default to end of next month
-        return getLocalDateString(new Date(now.getFullYear(), now.getMonth() + 2, 0));
-    }
-  }
-
-  // Warning horizons: compute the maximum horizon needed across all pools
-  let maxWarningHorizonEndDate = $derived.by(() => {
-    const poolParticipants = $participants.filter((p) => p.account_type === 'pool');
-    if (poolParticipants.length === 0) return null;
-
-    const horizons: string[] = [];
-    for (const pool of poolParticipants) {
-      if (pool.warning_horizon_account) horizons.push(pool.warning_horizon_account);
-      if (pool.warning_horizon_users) horizons.push(pool.warning_horizon_users);
-    }
-
-    if (horizons.length === 0) return null;
-
-    // Convert all horizons to dates and find the maximum
-    const dates = horizons.map((h) => getWarningHorizonEndDate(h));
-    return dates.reduce((max, date) => (date > max ? date : max));
-  });
-
-  // Warning debts: loaded separately for the warning period (today to warning horizon)
-  let warningDebts: DebtSummary | null = $state(null);
-  let warningStartDebts: DebtSummary | null = $state(null); // Debts at today for starting balance
-  let loadingWarningDebts = $state(false);
 
   let projectId = $derived(parseInt($page.params.id ?? ''));
 
@@ -799,7 +749,8 @@
           const occ = sortedOccurrences[occIdx];
           const payment = paymentMap.get(occ.payment_id);
 
-          if (payment) {
+          // Only update actual balance if affects_balance is true
+          if (payment && occ.affects_balance) {
             // User -> Pool transfer (deposit)
             if (occ.receiver_account_id === pool.pool_id && occ.payer_id !== null) {
               const current = runningOwnership.get(occ.payer_id) ?? 0;
@@ -883,13 +834,213 @@
     return result;
   });
 
+  // Compute running pool expected minimum at each date (total and per-participant)
+  // Returns SvelteMap<poolId, { total: SvelteMap<date, expectedMinimum>, perParticipant: SvelteMap<date, SvelteMap<participantId, expectedMinimum>> }>
+  let poolExpectedMinimumTimeSeries = $derived.by(() => {
+    if (!isRangeMode || !debts || rangeDates.length === 0 || !debts.pool_ownerships) {
+      return new SvelteMap<
+        number,
+        {
+          total: Map<string, number>;
+          perParticipant: Map<string, Map<number, number>>;
+        }
+      >();
+    }
+
+    const result = new SvelteMap<
+      number,
+      {
+        total: Map<string, number>;
+        perParticipant: Map<string, Map<number, number>>;
+      }
+    >();
+
+    for (const pool of debts.pool_ownerships) {
+      const totalTimeSeries = new SvelteMap<string, number>();
+      const perParticipantTimeSeries = new SvelteMap<string, Map<number, number>>();
+
+      let runningExpectedMin = 0;
+      // Track per-participant expected minimum
+      const participantExpectedMin = new SvelteMap<number, number>();
+      for (const entry of pool.entries) {
+        participantExpectedMin.set(entry.participant_id, 0);
+      }
+
+      // Sort occurrences by date
+      const sortedOccurrences = [...debts.occurrences].sort((a, b) =>
+        a.occurrence_date.localeCompare(b.occurrence_date)
+      );
+
+      let occIdx = 0;
+
+      for (const date of rangeDates) {
+        while (
+          occIdx < sortedOccurrences.length &&
+          sortedOccurrences[occIdx].occurrence_date <= date
+        ) {
+          const occ = sortedOccurrences[occIdx];
+
+          // User -> Pool transfer (deposit) with affects_receiver_expectation=true
+          if (
+            occ.receiver_account_id === pool.pool_id &&
+            occ.payer_id !== null &&
+            occ.affects_receiver_expectation
+          ) {
+            runningExpectedMin += occ.amount;
+            // The depositing user's expected min increases
+            const current = participantExpectedMin.get(occ.payer_id) ?? 0;
+            participantExpectedMin.set(occ.payer_id, current + occ.amount);
+          }
+
+          // Pool -> User transfer (withdrawal) with affects_payer_expectation=true
+          if (
+            occ.payer_id === pool.pool_id &&
+            occ.receiver_account_id !== null &&
+            occ.affects_payer_expectation
+          ) {
+            runningExpectedMin -= occ.amount;
+            // The receiving user's expected min decreases
+            const current = participantExpectedMin.get(occ.receiver_account_id) ?? 0;
+            participantExpectedMin.set(occ.receiver_account_id, current - occ.amount);
+          }
+
+          // External funds to pool (including rules) with affects_receiver_expectation=true
+          if (
+            occ.receiver_account_id === pool.pool_id &&
+            occ.payer_id === null &&
+            occ.affects_receiver_expectation
+          ) {
+            runningExpectedMin += occ.amount;
+            // Distribute among contributors based on their weights (look up payment)
+            const payment = paymentMap.get(occ.payment_id);
+            if (payment) {
+              for (const contrib of payment.contributions) {
+                const current = participantExpectedMin.get(contrib.participant_id) ?? 0;
+                participantExpectedMin.set(contrib.participant_id, current + contrib.amount);
+              }
+            }
+          }
+
+          // Pool pays external expense with affects_payer_expectation=true
+          if (
+            occ.payer_id === pool.pool_id &&
+            occ.receiver_account_id === null &&
+            occ.affects_payer_expectation
+          ) {
+            runningExpectedMin -= occ.amount;
+            // Each contributor's share decreases their expected min (look up payment)
+            const payment = paymentMap.get(occ.payment_id);
+            if (payment) {
+              for (const contrib of payment.contributions) {
+                const current = participantExpectedMin.get(contrib.participant_id) ?? 0;
+                participantExpectedMin.set(contrib.participant_id, current - contrib.amount);
+              }
+            }
+          }
+
+          occIdx++;
+        }
+
+        totalTimeSeries.set(date, runningExpectedMin);
+        // Store a snapshot of per-participant values for this date
+        const participantSnapshot = new SvelteMap<number, number>();
+        for (const [pid, value] of participantExpectedMin) {
+          participantSnapshot.set(pid, value);
+        }
+        perParticipantTimeSeries.set(date, participantSnapshot);
+      }
+
+      result.set(pool.pool_id, {
+        total: totalTimeSeries,
+        perParticipant: perParticipantTimeSeries
+      });
+    }
+
+    return result;
+  });
+
+  // Compute per-participant expected minimum for non-range mode (from occurrences)
+  // Returns SvelteMap<poolId, SvelteMap<participantId, expectedMinimum>>
+  let poolParticipantExpectedMinimum = $derived.by(() => {
+    const result = new SvelteMap<number, Map<number, number>>();
+
+    if (!debts?.pool_ownerships || !debts.occurrences) return result;
+
+    for (const pool of debts.pool_ownerships) {
+      const participantExpectedMin = new SvelteMap<number, number>();
+      for (const entry of pool.entries) {
+        participantExpectedMin.set(entry.participant_id, 0);
+      }
+
+      for (const occ of debts.occurrences) {
+        // User -> Pool transfer (deposit) with affects_receiver_expectation=true
+        if (
+          occ.receiver_account_id === pool.pool_id &&
+          occ.payer_id !== null &&
+          occ.affects_receiver_expectation
+        ) {
+          const current = participantExpectedMin.get(occ.payer_id) ?? 0;
+          participantExpectedMin.set(occ.payer_id, current + occ.amount);
+        }
+
+        // Pool -> User transfer (withdrawal) with affects_payer_expectation=true
+        if (
+          occ.payer_id === pool.pool_id &&
+          occ.receiver_account_id !== null &&
+          occ.affects_payer_expectation
+        ) {
+          const current = participantExpectedMin.get(occ.receiver_account_id) ?? 0;
+          participantExpectedMin.set(occ.receiver_account_id, current - occ.amount);
+        }
+
+        // External funds to pool (including rules) with affects_receiver_expectation=true
+        if (
+          occ.receiver_account_id === pool.pool_id &&
+          occ.payer_id === null &&
+          occ.affects_receiver_expectation
+        ) {
+          const payment = paymentMap.get(occ.payment_id);
+          if (payment) {
+            for (const contrib of payment.contributions) {
+              const current = participantExpectedMin.get(contrib.participant_id) ?? 0;
+              participantExpectedMin.set(contrib.participant_id, current + contrib.amount);
+            }
+          }
+        }
+
+        // Pool pays external expense with affects_payer_expectation=true
+        if (
+          occ.payer_id === pool.pool_id &&
+          occ.receiver_account_id === null &&
+          occ.affects_payer_expectation
+        ) {
+          const payment = paymentMap.get(occ.payment_id);
+          if (payment) {
+            for (const contrib of payment.contributions) {
+              const current = participantExpectedMin.get(contrib.participant_id) ?? 0;
+              participantExpectedMin.set(contrib.participant_id, current - contrib.amount);
+            }
+          }
+        }
+      }
+
+      result.set(pool.pool_id, participantExpectedMin);
+    }
+
+    return result;
+  });
+
   // Compute pool total stats (current, projected, min) for each pool
   interface PoolTotalStats {
     currentTotal: number;
     projectedTotal: number;
     minTotal: number;
-    minTotalDate: string;
     hasNegative: boolean;
+    // Expected minimum fields
+    currentExpectedMinimum: number;
+    projectedExpectedMinimum: number; // value at end of period
+    maxExpectedMinimum: number; // maximum expected minimum during period (the threshold to maintain)
+    isBelowExpected: boolean; // true if balance < expectedMinimum at any point in range
   }
 
   let poolTotalStats = $derived.by(() => {
@@ -901,30 +1052,49 @@
       if (!isRangeMode) {
         // Non-range mode: use focused participant's ownership or total
         let currentValue: number;
+        let currentExpectedMin: number;
+        let isBelowExpected: boolean;
+
         if (focusParticipantId !== null) {
+          // Focus mode: use focused participant's values
           const entry = pool.entries.find((e) => e.participant_id === focusParticipantId);
           currentValue = entry?.ownership ?? 0;
+          // Get focused participant's expected minimum
+          const participantExpMin = poolParticipantExpectedMinimum.get(pool.pool_id);
+          currentExpectedMin = participantExpMin?.get(focusParticipantId) ?? 0;
+          isBelowExpected = currentValue < currentExpectedMin;
         } else {
+          // Normal mode: use pool totals
           currentValue = pool.total_balance;
+          currentExpectedMin = pool.expected_minimum;
+          isBelowExpected = pool.is_below_expected;
         }
 
         result.set(pool.pool_id, {
           currentTotal: currentValue,
           projectedTotal: currentValue,
           minTotal: currentValue,
-          minTotalDate: targetDate,
-          hasNegative: currentValue < 0
+          hasNegative: currentValue < 0,
+          currentExpectedMinimum: currentExpectedMin,
+          projectedExpectedMinimum: currentExpectedMin,
+          maxExpectedMinimum: currentExpectedMin,
+          isBelowExpected
         });
       } else {
         // Range mode: compute from time series
         const poolData = poolOwnershipTimeSeries.get(pool.pool_id);
+        const expectedMinData = poolExpectedMinimumTimeSeries.get(pool.pool_id);
+
         if (!poolData || poolData.size === 0) {
           result.set(pool.pool_id, {
             currentTotal: 0,
             projectedTotal: 0,
             minTotal: 0,
-            minTotalDate: targetDate,
-            hasNegative: false
+            hasNegative: false,
+            currentExpectedMinimum: 0,
+            projectedExpectedMinimum: 0,
+            maxExpectedMinimum: 0,
+            isBelowExpected: false
           });
           continue;
         }
@@ -932,208 +1102,85 @@
         let currentTotal = 0;
         let projectedTotal = 0;
         let minTotal = Infinity;
-        let minTotalDate = targetDate;
         let hasNegative = false;
+        let isBelowExpected = false;
+        let maxExpectedMin = -Infinity;
 
         const dates = [...poolData.keys()];
-        if (dates.length > 0) {
-          // Get value for first and last date
-          const getValueForDate = (date: string): number => {
-            const participantOwnerships = poolData.get(date);
-            if (!participantOwnerships) return 0;
 
-            if (focusParticipantId !== null) {
-              // Focus mode: use focused participant's ownership
-              return participantOwnerships.get(focusParticipantId) ?? 0;
-            } else {
-              // Normal mode: sum all ownerships
-              let sum = 0;
-              for (const ownership of participantOwnerships.values()) {
-                sum += ownership;
-              }
-              return sum;
+        // Get ownership value for a date (total or focused participant)
+        const getValueForDate = (date: string): number => {
+          const participantOwnerships = poolData.get(date);
+          if (!participantOwnerships) return 0;
+
+          if (focusParticipantId !== null) {
+            // Focus mode: use focused participant's ownership
+            return participantOwnerships.get(focusParticipantId) ?? 0;
+          } else {
+            // Normal mode: sum all ownerships
+            let sum = 0;
+            for (const ownership of participantOwnerships.values()) {
+              sum += ownership;
             }
-          };
+            return sum;
+          }
+        };
 
+        // Get expected minimum for a date (total or focused participant)
+        const getExpectedMinForDate = (date: string): number => {
+          if (!expectedMinData) return 0;
+          if (focusParticipantId !== null) {
+            // Focus mode: use focused participant's expected minimum
+            return expectedMinData.perParticipant.get(date)?.get(focusParticipantId) ?? 0;
+          } else {
+            // Normal mode: use pool total expected minimum
+            return expectedMinData.total.get(date) ?? 0;
+          }
+        };
+
+        if (dates.length > 0) {
           currentTotal = getValueForDate(dates[0]);
           projectedTotal = getValueForDate(dates[dates.length - 1]);
 
           for (const date of dates) {
             const value = getValueForDate(date);
+            const expectedMin = getExpectedMinForDate(date);
+
+            // Track minimum balance
             if (value < minTotal) {
               minTotal = value;
-              minTotalDate = date;
             }
             if (value < 0) {
               hasNegative = true;
+            }
+            // Check if balance goes below expected minimum at any point
+            if (value < expectedMin) {
+              isBelowExpected = true;
+            }
+            // Track maximum expected minimum (the threshold to maintain)
+            if (expectedMin > maxExpectedMin) {
+              maxExpectedMin = expectedMin;
             }
           }
         }
 
         if (minTotal === Infinity) minTotal = 0;
+        if (maxExpectedMin === -Infinity) maxExpectedMin = 0;
+
+        const currentExpectedMin = getExpectedMinForDate(dates[0]);
+        const projectedExpectedMin = getExpectedMinForDate(dates[dates.length - 1]);
 
         result.set(pool.pool_id, {
           currentTotal,
           projectedTotal,
           minTotal,
-          minTotalDate,
-          hasNegative
+          hasNegative,
+          currentExpectedMinimum: currentExpectedMin,
+          projectedExpectedMinimum: projectedExpectedMin,
+          maxExpectedMinimum: maxExpectedMin,
+          isBelowExpected
         });
       }
-    }
-
-    return result;
-  });
-
-  // Warning pool stats: compute when each pool or user will go negative within the warning horizon
-  // This is independent of the current view and always computed from today to warning horizon
-  interface UserWarning {
-    participantId: number;
-    participantName: string;
-    firstNegativeDate: string;
-  }
-
-  interface WarningPoolStats {
-    poolTotalNegative: boolean;
-    poolFirstNegativeDate: string | null;
-    poolName: string;
-    userWarnings: UserWarning[];
-  }
-
-  let warningPoolStats = $derived.by(() => {
-    const result = new SvelteMap<number, WarningPoolStats>();
-
-    if (!warningDebts?.pool_ownerships || !warningStartDebts?.pool_ownerships) {
-      return result;
-    }
-
-    const today = getLocalDateString();
-
-    for (const pool of warningDebts.pool_ownerships) {
-      const startPoolData = warningStartDebts.pool_ownerships.find(
-        (p) => p.pool_id === pool.pool_id
-      );
-
-      // Get pool participant settings
-      const poolParticipant = $participants.find((p) => p.id === pool.pool_id);
-      if (!poolParticipant) continue;
-
-      // === Pool Total Warning ===
-      let runningBalance = startPoolData?.total_balance ?? 0;
-      let poolTotalNegative = false;
-      let poolFirstNegativeDate: string | null = null;
-
-      // Only calculate if account warning is enabled
-      if (poolParticipant.warning_horizon_account) {
-        const accountHorizonEnd = getWarningHorizonEndDate(poolParticipant.warning_horizon_account);
-
-        if (runningBalance < 0) {
-          poolTotalNegative = true;
-          poolFirstNegativeDate = today;
-        } else {
-          const poolOccurrences = warningDebts.occurrences
-            .filter(
-              (occ) =>
-                occ.occurrence_date > today &&
-                occ.occurrence_date <= accountHorizonEnd &&
-                (occ.payer_id === pool.pool_id || occ.receiver_account_id === pool.pool_id)
-            )
-            .sort((a, b) => a.occurrence_date.localeCompare(b.occurrence_date));
-
-          for (const occ of poolOccurrences) {
-            if (occ.payer_id === pool.pool_id) {
-              runningBalance -= occ.amount;
-            }
-            if (occ.receiver_account_id === pool.pool_id) {
-              runningBalance += occ.amount;
-            }
-
-            if (runningBalance < 0) {
-              poolTotalNegative = true;
-              poolFirstNegativeDate = occ.occurrence_date;
-              break;
-            }
-          }
-        }
-      }
-
-      // === Per-User Warnings ===
-      const userWarnings: UserWarning[] = [];
-
-      // Only calculate if user warning is enabled
-      if (poolParticipant.warning_horizon_users) {
-        const usersHorizonEnd = getWarningHorizonEndDate(poolParticipant.warning_horizon_users);
-
-        for (const entry of pool.entries) {
-          const startEntry = startPoolData?.entries.find(
-            (e) => e.participant_id === entry.participant_id
-          );
-
-          let userBalance = startEntry?.ownership ?? 0;
-
-          // Already negative today
-          if (userBalance < 0) {
-            userWarnings.push({
-              participantId: entry.participant_id,
-              participantName: entry.participant_name,
-              firstNegativeDate: today
-            });
-            continue;
-          }
-
-          // Track ALL ownership changes using the breakdown data
-          // Contributed breakdown: user deposits to pool (ownership increases)
-          // Consumed breakdown: pool pays expenses (ownership decreases by user's share)
-          const ownershipChanges: { date: string; delta: number }[] = [];
-
-          // Add contributions (ownership increases)
-          for (const contrib of entry.contributed_breakdown) {
-            if (contrib.occurrence_date > today && contrib.occurrence_date <= usersHorizonEnd) {
-              ownershipChanges.push({
-                date: contrib.occurrence_date,
-                delta: contrib.amount
-              });
-            }
-          }
-
-          // Add consumption (ownership decreases)
-          for (const consumed of entry.consumed_breakdown) {
-            if (consumed.occurrence_date > today && consumed.occurrence_date <= usersHorizonEnd) {
-              ownershipChanges.push({
-                date: consumed.occurrence_date,
-                delta: -consumed.amount
-              });
-            }
-          }
-
-          // Sort by date to process chronologically
-          ownershipChanges.sort((a, b) => a.date.localeCompare(b.date));
-
-          // Find first date where ownership goes negative
-          let firstNegativeDate: string | null = null;
-          for (const change of ownershipChanges) {
-            userBalance += change.delta;
-            if (userBalance < 0 && !firstNegativeDate) {
-              firstNegativeDate = change.date;
-              break;
-            }
-          }
-
-          if (firstNegativeDate) {
-            userWarnings.push({
-              participantId: entry.participant_id,
-              participantName: entry.participant_name,
-              firstNegativeDate
-            });
-          }
-        }
-      }
-      result.set(pool.pool_id, {
-        poolTotalNegative,
-        poolFirstNegativeDate,
-        poolName: pool.pool_name,
-        userWarnings
-      });
     }
 
     return result;
@@ -1310,7 +1357,7 @@
       borderColor: string;
       backgroundColor: string;
       stepped: 'before' | 'after' | 'middle' | boolean;
-      fill: boolean;
+      fill: boolean | { target: number; above: string; below: string };
       pointRadius: number;
       pointHoverRadius: number;
       borderWidth?: number;
@@ -1325,6 +1372,11 @@
       focusParticipantId !== null
         ? pool.entries.filter((e) => e.participant_id === focusParticipantId)
         : pool.entries;
+
+    // Track the index of the "balance" dataset for fill reference
+    // In focus mode: it's the focused participant (index 0)
+    // In normal mode: it's the Total line (added after participants)
+    let balanceDatasetIndex = 0;
 
     entriesToShow.forEach((entry, idx) => {
       datasets.push({
@@ -1345,6 +1397,7 @@
 
     // Add Total line (distinct styling: thick, dashed, dark)
     if (totalData && focusParticipantId === null) {
+      balanceDatasetIndex = datasets.length; // Total line will be the balance reference
       datasets.push({
         label: $_('common.total'),
         data: rangeDates.map((date) => ({
@@ -1363,72 +1416,51 @@
       });
     }
 
-    // Build annotations: today line + red zones for negative periods
-    const baseAnnotations = getTodayAnnotation();
+    // Add Expected Minimum line (only if there's expectation data)
+    const expectedMinData = poolExpectedMinimumTimeSeries.get(poolId);
 
-    // Find negative periods based on total or focused participant's ownership
-    interface NegativePeriod {
-      startDate: string;
-      endDate: string;
-    }
-    const negativePeriods: NegativePeriod[] = [];
-
-    if (poolData && annotationPlugin) {
-      let inNegativePeriod = false;
-      let periodStart = '';
-
-      // Helper to get the value for a date (total or focused participant)
-      const getValueForDate = (date: string): number => {
-        const participantOwnerships = poolData.get(date);
-        if (!participantOwnerships) return 0;
-
-        if (focusParticipantId !== null) {
-          // Focus mode: use focused participant's ownership
-          return participantOwnerships.get(focusParticipantId) ?? 0;
-        } else {
-          // Normal mode: sum all ownerships (use totalData)
-          return totalData?.get(date) ?? 0;
-        }
-      };
-
-      for (const date of rangeDates) {
-        const value = getValueForDate(date);
-
-        if (value < 0 && !inNegativePeriod) {
-          // Entering negative period
-          inNegativePeriod = true;
-          periodStart = date;
-        } else if (value >= 0 && inNegativePeriod) {
-          // Exiting negative period
-          negativePeriods.push({ startDate: periodStart, endDate: date });
-          inNegativePeriod = false;
-        }
+    // Helper to get expected minimum for a date (total or focused participant)
+    const getExpectedMinForDate = (date: string): number => {
+      if (!expectedMinData) return 0;
+      if (focusParticipantId !== null) {
+        // Focus mode: use focused participant's expected minimum
+        return expectedMinData.perParticipant.get(date)?.get(focusParticipantId) ?? 0;
+      } else {
+        // Normal mode: use pool total expected minimum
+        return expectedMinData.total.get(date) ?? 0;
       }
+    };
 
-      // If still in negative period at end, close it with the last date
-      if (inNegativePeriod && rangeDates.length > 0) {
-        negativePeriods.push({
-          startDate: periodStart,
-          endDate: rangeDates[rangeDates.length - 1]
-        });
-      }
-    }
+    // Check if there's any expected min data (total or for focused participant)
+    // Always show the line if there's expected minimum data, even if values are 0
+    const hasExpectedMinData = expectedMinData !== undefined;
 
-    // Create box annotations for each negative period
-    const negativeZoneAnnotations: Record<string, unknown> = {};
-    negativePeriods.forEach((period, idx) => {
-      negativeZoneAnnotations[`negativeZone${idx}`] = {
-        type: 'box' as const,
-        xMin: period.startDate,
-        xMax: period.endDate,
+    if (hasExpectedMinData) {
+      datasets.push({
+        label: $_('overview.expectedMinimum'),
+        data: rangeDates.map((date) => ({
+          x: date,
+          y: getExpectedMinForDate(date)
+        })),
+        borderColor: '#dc3545',
         backgroundColor: 'rgba(220, 53, 69, 0.15)',
-        borderColor: 'rgba(220, 53, 69, 0.4)',
-        borderWidth: 1,
-        drawTime: 'beforeDatasetsDraw' as const
-      };
-    });
+        stepped: 'before',
+        // Fill to balance dataset: show red area when expected min > balance
+        fill: {
+          target: balanceDatasetIndex,
+          above: 'rgba(220, 53, 69, 0.15)', // When expected min is above balance (warning zone)
+          below: 'transparent' // When expected min is below balance (no fill)
+        },
+        pointRadius: 2,
+        pointHoverRadius: 4,
+        borderWidth: 2,
+        borderDash: [4, 4],
+        order: 0
+      });
+    }
 
-    const annotations = { ...baseAnnotations, ...negativeZoneAnnotations };
+    // Build annotations: today line only (warning zones handled by dataset fill)
+    const annotations = getTodayAnnotation();
 
     const chart = new Chart(canvas, {
       type: 'line',
@@ -1814,44 +1846,6 @@
     }
   });
 
-  // Load warning debts separately (from today to warning horizon)
-  async function loadWarningDebts() {
-    if (!projectId || !maxWarningHorizonEndDate) return;
-
-    const today = getLocalDateString();
-    // Don't load if warning horizon is in the past
-    if (maxWarningHorizonEndDate <= today) {
-      warningDebts = null;
-      warningStartDebts = null;
-      return;
-    }
-
-    loadingWarningDebts = true;
-    try {
-      // Load debts at today (for starting balance) and at max warning horizon end date
-      // Both exclude drafts for warning calculation
-      const [startDebts, endDebts] = await Promise.all([
-        getDebts(projectId, today, false),
-        getDebts(projectId, maxWarningHorizonEndDate, false)
-      ]);
-      warningStartDebts = startDebts;
-      warningDebts = endDebts;
-    } catch (e) {
-      console.error('Failed to load warning debts:', e);
-      warningDebts = null;
-      warningStartDebts = null;
-    } finally {
-      loadingWarningDebts = false;
-    }
-  }
-
-  // Effect to load warning debts when project or warning horizon changes
-  $effect(() => {
-    if (projectId && maxWarningHorizonEndDate) {
-      loadWarningDebts();
-    }
-  });
-
   // Track if we've already auto-expanded on initial load
   let autoExpandedOnce = $state(false);
 
@@ -1933,7 +1927,7 @@
     const timesPer = payment.recurrence_times_per;
 
     // Get translated recurrence type (adjective form for single interval)
-    const typeKey = `payments.recurrence.${type}`;
+    const typeKey = `transactions.recurrence.${type}`;
     const translatedType = $_(typeKey);
 
     if (timesPer) {
@@ -1944,12 +1938,12 @@
       // Use proper noun form with correct gender agreement
       const everyKey =
         type === 'daily'
-          ? 'payments.recurrence.everyNDays'
+          ? 'transactions.recurrence.everyNDays'
           : type === 'weekly'
-            ? 'payments.recurrence.everyNWeeks'
+            ? 'transactions.recurrence.everyNWeeks'
             : type === 'monthly'
-              ? 'payments.recurrence.everyNMonths'
-              : 'payments.recurrence.everyNYears';
+              ? 'transactions.recurrence.everyNMonths'
+              : 'transactions.recurrence.everyNYears';
       return $_(everyKey, { values: { n: interval } });
     }
   }
@@ -2171,59 +2165,6 @@
 
 <h2>{$_('overview.title')}</h2>
 
-<!-- Pool Warning Banners (always visible, independent of range mode) -->
-{#if loadingWarningDebts}
-  <div class="pool-warning-banner loading">
-    <span class="warning-icon">⏳</span>
-    <span class="warning-text">{$_('common.loading')}</span>
-  </div>
-{:else}
-  {#each [...warningPoolStats.entries()] as [poolId, warnStats] (poolId)}
-    {@const hasAnyWarning = warnStats.poolTotalNegative || warnStats.userWarnings.length > 0}
-    {#if hasAnyWarning}
-      <div class="pool-warning-banner" title={$_('overview.warningPeriod')}>
-        <span class="warning-icon">⚠️</span>
-        <div class="warning-content">
-          {#if warnStats.poolTotalNegative && warnStats.poolFirstNegativeDate}
-            <span class="warning-text">
-              {#if warnStats.poolFirstNegativeDate <= todayStr}
-                {$_('overview.poolIsNegative', { values: { pool: warnStats.poolName } })}
-              {:else}
-                {$_('overview.poolWillGoNegative', {
-                  values: {
-                    pool: warnStats.poolName,
-                    date: formatDate(warnStats.poolFirstNegativeDate)
-                  }
-                })}
-              {/if}
-            </span>
-          {/if}
-          {#each warnStats.userWarnings as userWarn (userWarn.participantId)}
-            <span class="warning-text">
-              {#if userWarn.firstNegativeDate <= todayStr}
-                {$_('overview.userIsNegative', {
-                  values: {
-                    user: userWarn.participantName,
-                    pool: warnStats.poolName
-                  }
-                })}
-              {:else}
-                {$_('overview.userWillGoNegative', {
-                  values: {
-                    user: userWarn.participantName,
-                    pool: warnStats.poolName,
-                    date: formatDate(userWarn.firstNegativeDate)
-                  }
-                })}
-              {/if}
-            </span>
-          {/each}
-        </div>
-      </div>
-    {/if}
-  {/each}
-{/if}
-
 <!-- Date selector -->
 <div class="date-selector card" class:range-mode={isRangeMode}>
   <!-- Start Date Row -->
@@ -2376,16 +2317,34 @@
 
       <!-- Pool Total Summary Banner -->
       {#if stats && poolOwnership.entries.length > 0}
-        <div class="pool-total-banner" class:has-warning={isRangeMode && stats.hasNegative}>
-          {#if isRangeMode && stats.hasNegative}
+        {@const hasExpectedMin =
+          stats.currentExpectedMinimum > 0 ||
+          stats.projectedExpectedMinimum > 0 ||
+          stats.maxExpectedMinimum > 0}
+        {@const hasWarning = isRangeMode
+          ? stats.isBelowExpected
+          : hasExpectedMin && stats.isBelowExpected}
+        <div class="pool-total-banner" class:has-warning={hasWarning}>
+          {#if isRangeMode && stats.isBelowExpected}
             <div class="pool-warning-badge">
               <span class="warning-icon">⚠️</span>
-              <span class="warning-text">{$_('overview.poolNegativeWarning')}</span>
+              <span class="warning-text">
+                {hasExpectedMin ? $_('overview.belowExpected') : $_('overview.poolNegativeWarning')}
+              </span>
+            </div>
+          {:else if !isRangeMode && hasExpectedMin && stats.isBelowExpected}
+            <div class="pool-warning-badge">
+              <span class="warning-icon">⚠️</span>
+              <span class="warning-text">{$_('overview.belowExpected')}</span>
             </div>
           {/if}
           <div class="pool-total-stats">
             <div class="pool-stat">
-              <span class="stat-label">{$_('overview.currentTotal')}</span>
+              {#if isRangeMode}
+                <span class="stat-label">{$_('overview.balanceStart')}</span>
+              {:else}
+                <span class="stat-label">{$_('overview.balance')}</span>
+              {/if}
               <span
                 class="stat-value"
                 class:positive={stats.currentTotal > 0}
@@ -2396,7 +2355,7 @@
             </div>
             {#if isRangeMode}
               <div class="pool-stat">
-                <span class="stat-label">{$_('overview.projectedTotal')}</span>
+                <span class="stat-label">{$_('overview.balanceEnd')}</span>
                 <span
                   class="stat-value"
                   class:positive={stats.projectedTotal > 0}
@@ -2406,16 +2365,41 @@
                 </span>
               </div>
               <div class="pool-stat">
-                <span class="stat-label">{$_('overview.minimumTotal')}</span>
+                <span class="stat-label">{$_('overview.balanceLowest')}</span>
                 <span
                   class="stat-value"
                   class:positive={stats.minTotal > 0}
                   class:negative={stats.minTotal < 0}
                 >
                   {stats.minTotal >= 0 ? '+' : ''}{formatCurrency(stats.minTotal)}
-                  <span class="stat-date">({formatDate(stats.minTotalDate)})</span>
                 </span>
               </div>
+            {/if}
+            {#if hasExpectedMin}
+              <div class="pool-stat">
+                <span class="stat-label"
+                  >{isRangeMode
+                    ? $_('overview.expectedStart')
+                    : $_('overview.expectedMinimum')}</span
+                >
+                <span class="stat-value">
+                  {formatCurrency(stats.currentExpectedMinimum)}
+                </span>
+              </div>
+              {#if isRangeMode}
+                <div class="pool-stat">
+                  <span class="stat-label">{$_('overview.expectedEnd')}</span>
+                  <span class="stat-value">
+                    {formatCurrency(stats.projectedExpectedMinimum)}
+                  </span>
+                </div>
+                <div class="pool-stat">
+                  <span class="stat-label">{$_('overview.expectedHighest')}</span>
+                  <span class="stat-value">
+                    {formatCurrency(stats.maxExpectedMinimum)}
+                  </span>
+                </div>
+              {/if}
             {/if}
           </div>
         </div>
@@ -2977,7 +2961,7 @@
     <section class="card occurrences-card">
       <button class="expand-header" onclick={() => (showOccurrences = !showOccurrences)}>
         <span class="expand-icon">{showOccurrences ? '▼' : '▶'}</span>
-        <h3>{$_('overview.paymentsIncluded')} ({totalCount})</h3>
+        <h3>{$_('overview.transactionsIncluded')} ({totalCount})</h3>
       </button>
 
       {#if showOccurrences}
@@ -3067,8 +3051,24 @@
                                   <span class="trans-desc">
                                     {occ.description}
                                     <span class="trans-badges">
-                                      {#if occ.status === 'draft'}
-                                        <span class="badge draft">{$_('payments.statusDraft')}</span
+                                      {#if occ.affects_balance === false}
+                                        <span class="badge rule">{$_('transactions.typeRule')}</span
+                                        >
+                                      {:else}
+                                        {#if occ.affects_payer_expectation}
+                                          <span class="badge approved"
+                                            >{$_('transactions.statusApproved')}</span
+                                          >
+                                        {/if}
+                                        {#if occ.affects_receiver_expectation}
+                                          <span class="badge earmarked"
+                                            >{$_('transactions.statusEarmarked')}</span
+                                          >
+                                        {/if}
+                                      {/if}
+                                      {#if !occ.is_final}
+                                        <span class="badge draft"
+                                          >{$_('transactions.statusDraft')}</span
                                         >
                                       {/if}
                                     </span>
@@ -3083,13 +3083,15 @@
                                 <div class="trans-meta">
                                   {#if occ.payer_id === null && occ.receiver_account_id !== null}
                                     <!-- External inflow -->
-                                    <span class="inflow-badge">{$_('payments.externalInflow')}</span
+                                    <span class="inflow-badge"
+                                      >{$_('transactions.externalInflow')}</span
                                     >
-                                    {$_('payments.externalIndicator')} → {receiver?.name ??
+                                    {$_('transactions.externalIndicator')} → {receiver?.name ??
                                       $_('common.unknown')}
                                   {:else if occ.receiver_account_id !== null && payment}
                                     <!-- Internal transfer -->
-                                    <span class="transfer-badge">{$_('payments.transfer')}</span>
+                                    <span class="transfer-badge">{$_('transactions.transfer')}</span
+                                    >
                                     {payment.payer_name ?? $_('common.unknown')} → {receiver?.name ??
                                       $_('common.unknown')}
                                   {:else if payment}
@@ -3195,53 +3197,6 @@
     font-weight: 500;
   }
 
-  /* Always-visible warning banner (clickable) */
-  .pool-warning-banner {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    width: 100%;
-    background: linear-gradient(135deg, rgba(220, 53, 69, 0.12), rgba(220, 53, 69, 0.06));
-    color: #dc3545;
-    padding: 0.75rem 1rem;
-    border: 1px solid rgba(220, 53, 69, 0.3);
-    border-radius: 8px;
-    margin-bottom: 1rem;
-    font-weight: 500;
-  }
-
-  .pool-warning-banner:active {
-    transform: translateY(0);
-  }
-
-  .pool-warning-banner.loading {
-    background: linear-gradient(135deg, rgba(108, 117, 125, 0.12), rgba(108, 117, 125, 0.06));
-    border-color: rgba(108, 117, 125, 0.3);
-    color: #6c757d;
-    cursor: default;
-  }
-
-  .pool-warning-banner.loading:hover {
-    background: linear-gradient(135deg, rgba(108, 117, 125, 0.12), rgba(108, 117, 125, 0.06));
-    transform: none;
-  }
-
-  .pool-warning-banner .warning-icon {
-    flex-shrink: 0;
-  }
-
-  .pool-warning-banner .warning-content {
-    flex-grow: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    text-align: left;
-  }
-
-  .pool-warning-banner .warning-text {
-    display: block;
-  }
-
   .warning-icon {
     font-size: 1.1rem;
   }
@@ -3282,12 +3237,6 @@
 
   .stat-value.negative {
     color: #dc3545;
-  }
-
-  .stat-date {
-    font-size: 0.85rem;
-    font-weight: 400;
-    color: #666;
   }
 
   h3 {
@@ -4216,6 +4165,36 @@
 
   .badge.draft {
     background: #f0ad4e;
+    color: white;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .badge.approved {
+    background: #28a745;
+    color: white;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .badge.rule {
+    background: #7b61ff;
+    color: white;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .badge.earmarked {
+    background: #17a2b8;
     color: white;
     padding: 0.15rem 0.4rem;
     border-radius: 4px;

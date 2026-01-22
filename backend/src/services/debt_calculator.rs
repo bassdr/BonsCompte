@@ -62,6 +62,10 @@ pub struct PoolOwnership {
     pub pool_name: String,
     pub entries: Vec<PoolOwnershipEntry>,
     pub total_balance: f64,
+    // Dual ledger: expected minimum from affects_payer/receiver_expectation flags
+    pub expected_minimum: f64,
+    pub is_below_expected: bool, // total_balance < expected_minimum
+    pub shortfall: Option<f64>,  // expected_minimum - total_balance (if positive)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -76,8 +80,15 @@ pub struct PaymentOccurrence {
     // None = external expense (money leaves system, affects settlements)
     // Some = internal transfer (money moves between accounts, only affects pool ownership)
     pub receiver_account_id: Option<i64>,
-    // Payment status: 'final' or 'draft'
-    pub status: String,
+    // Payment finalization status: true = final, false = draft
+    pub is_final: bool,
+    // Dual ledger flags for pool expected minimum
+    // affects_balance: Transaction affects actual pool balance (default: true)
+    pub affects_balance: bool,
+    // affects_payer_expectation: When payer is a pool and true, reduces payer's expected minimum
+    pub affects_payer_expectation: bool,
+    // affects_receiver_expectation: When receiver is a pool and true, increases receiver's expected minimum
+    pub affects_receiver_expectation: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -473,8 +484,13 @@ pub async fn calculate_debts_at_date(
         // 2. EXTERNAL expenses where pool is contributor: increases payer's ownership
         // 3. INTERNAL transfers TO pool: increases sender's ownership (deposit)
         // 4. INTERNAL transfers FROM pool: decreases receiver's ownership (withdrawal)
+        //
+        // Dual ledger tracking:
+        // - affects_balance=true transactions affect actual pool balance (ownership_map)
+        // - affects_payer_expectation=true: when payer is a pool, reduces payer pool's expected minimum
+        // - affects_receiver_expectation=true: when receiver is a pool, increases receiver pool's expected minimum
 
-        // Track ownership amounts and transaction breakdowns
+        // Track ownership amounts and transaction breakdowns for ACTUAL balance
         // HashMap<participant_id, (contributed_total, consumed_total, contributed_breakdown, consumed_breakdown)>
         let mut ownership_map: HashMap<
             i64,
@@ -486,7 +502,53 @@ pub async fn calculate_debts_at_date(
             ),
         > = HashMap::new();
 
+        // Track expected minimum separately
+        let mut expected_minimum: f64 = 0.0;
+
         for occurrence in &all_occurrences {
+            // Determine which ledger(s) this occurrence affects
+            let affects_balance = occurrence.affects_balance;
+
+            // Calculate expected minimum delta based on separate payer/receiver flags
+            // For withdrawals from this pool (payer = pool_id): affects_payer_expectation reduces expected minimum
+            // For deposits to this pool (receiver = pool_id): affects_receiver_expectation increases expected minimum
+            if let Some(receiver_id) = occurrence.receiver_account_id {
+                // Internal transfer
+                if let Some(payer_id) = occurrence.payer_id {
+                    if receiver_id == pool_id && payer_id != pool_id {
+                        // Transfer TO this pool: receiver_expectation affects expected min
+                        if occurrence.affects_receiver_expectation {
+                            expected_minimum += occurrence.amount;
+                        }
+                    } else if payer_id == pool_id && receiver_id != pool_id {
+                        // Transfer FROM this pool: payer_expectation affects expected min
+                        if occurrence.affects_payer_expectation {
+                            expected_minimum -= occurrence.amount;
+                        }
+                    }
+                } else if occurrence.payer_id.is_none() && receiver_id == pool_id {
+                    // External inflow to this pool: receiver_expectation affects expected min
+                    if occurrence.affects_receiver_expectation {
+                        expected_minimum += occurrence.amount;
+                    }
+                }
+            } else {
+                // External expense
+                if let Some(payer_id) = occurrence.payer_id {
+                    if payer_id == pool_id {
+                        // Pool paying external expense: payer_expectation affects expected min
+                        if occurrence.affects_payer_expectation {
+                            expected_minimum -= occurrence.amount;
+                        }
+                    }
+                }
+            }
+
+            // Skip actual balance tracking if doesn't affect balance
+            if !affects_balance {
+                continue;
+            }
+
             // Handle internal transfers (receiver_account_id IS NOT NULL)
             if let Some(receiver_id) = occurrence.receiver_account_id {
                 if let Some(payer_id) = occurrence.payer_id {
@@ -625,12 +687,21 @@ pub async fn calculate_debts_at_date(
         });
 
         let total_balance: f64 = entries.iter().map(|e| e.ownership).sum();
+        let is_below_expected = total_balance < expected_minimum;
+        let shortfall = if is_below_expected {
+            Some(expected_minimum - total_balance)
+        } else {
+            None
+        };
 
         pool_ownerships.push(PoolOwnership {
             pool_id,
             pool_name,
             entries,
             total_balance,
+            expected_minimum,
+            is_below_expected,
+            shortfall,
         });
     }
 
@@ -677,7 +748,10 @@ fn generate_payment_occurrences(
             payer_id: payment.payer_id,
             is_recurring: false,
             receiver_account_id: payment.receiver_account_id,
-            status: payment.status.clone(),
+            is_final: payment.is_final,
+            affects_balance: payment.affects_balance,
+            affects_payer_expectation: payment.affects_payer_expectation,
+            affects_receiver_expectation: payment.affects_receiver_expectation,
         });
         return occurrences;
     }
@@ -754,7 +828,10 @@ fn generate_payment_occurrences(
             payer_id: payment.payer_id,
             is_recurring: true,
             receiver_account_id: payment.receiver_account_id,
-            status: payment.status.clone(),
+            is_final: payment.is_final,
+            affects_balance: payment.affects_balance,
+            affects_payer_expectation: payment.affects_payer_expectation,
+            affects_receiver_expectation: payment.affects_receiver_expectation,
         });
 
         current = match add_interval(current, &effective_type, effective_interval) {
@@ -824,7 +901,10 @@ fn generate_weekly_with_weekdays(
                     payer_id: payment.payer_id,
                     is_recurring: true,
                     receiver_account_id: payment.receiver_account_id,
-                    status: payment.status.clone(),
+                    is_final: payment.is_final,
+                    affects_balance: payment.affects_balance,
+                    affects_payer_expectation: payment.affects_payer_expectation,
+                    affects_receiver_expectation: payment.affects_receiver_expectation,
                 });
             }
         }
@@ -898,7 +978,10 @@ fn generate_monthly_with_monthdays(
                         payer_id: payment.payer_id,
                         is_recurring: true,
                         receiver_account_id: payment.receiver_account_id,
-                        status: payment.status.clone(),
+                        is_final: payment.is_final,
+                        affects_balance: payment.affects_balance,
+                        affects_payer_expectation: payment.affects_payer_expectation,
+                        affects_receiver_expectation: payment.affects_receiver_expectation,
                     });
                 }
             }
@@ -978,7 +1061,10 @@ fn generate_yearly_with_months(
                         payer_id: payment.payer_id,
                         is_recurring: true,
                         receiver_account_id: payment.receiver_account_id,
-                        status: payment.status.clone(),
+                        is_final: payment.is_final,
+                        affects_balance: payment.affects_balance,
+                        affects_payer_expectation: payment.affects_payer_expectation,
+                        affects_receiver_expectation: payment.affects_receiver_expectation,
                     });
                 }
             }
@@ -1683,7 +1769,10 @@ fn generate_synthetic_contribution_events(
             payer_id: Some(payer_id),
             is_recurring: true,
             receiver_account_id: Some(receiver_id),
-            status: "final".to_string(), // Synthetic events are always final
+            is_final: true,                      // Synthetic events are always final
+            affects_balance: true,               // Synthetic contributions affect balance
+            affects_payer_expectation: false,    // Not an expectation rule
+            affects_receiver_expectation: false, // Not an expectation rule
         });
 
         // Advance date based on frequency
@@ -2457,7 +2546,10 @@ mod tests {
             payer_id: Some(1),
             is_recurring: false,
             receiver_account_id: Some(2), // Internal transfer to pool
-            status: "final".to_string(),
+            is_final: true,
+            affects_balance: true,
+            affects_payer_expectation: false,
+            affects_receiver_expectation: false,
         };
 
         assert!(occurrence.receiver_account_id.is_some());
@@ -2474,7 +2566,10 @@ mod tests {
             payer_id: Some(1),
             is_recurring: false,
             receiver_account_id: None, // External expense
-            status: "final".to_string(),
+            is_final: true,
+            affects_balance: true,
+            affects_payer_expectation: false,
+            affects_receiver_expectation: false,
         };
 
         assert!(occurrence.receiver_account_id.is_none());
@@ -2492,7 +2587,10 @@ mod tests {
             payer_id: None, // External inflow - no payer
             is_recurring: false,
             receiver_account_id: Some(4), // Goes to pool account
-            status: "final".to_string(),
+            is_final: true,
+            affects_balance: true,
+            affects_payer_expectation: false,
+            affects_receiver_expectation: false,
         };
 
         assert!(occurrence.payer_id.is_none());
@@ -2708,5 +2806,183 @@ mod tests {
             (c_settlement.unwrap().amount - amount_per_person).abs() < 0.01,
             "C should receive ~$333.33"
         );
+    }
+
+    #[test]
+    fn test_pool_ownership_dual_ledger_fields() {
+        // Test that PoolOwnership struct correctly tracks expected_minimum and related fields
+        let entries = vec![
+            PoolOwnershipEntry {
+                participant_id: 1,
+                participant_name: "Alice".to_string(),
+                contributed: 3000.0,
+                consumed: 500.0,
+                ownership: 2500.0,
+                contributed_breakdown: vec![],
+                consumed_breakdown: vec![],
+            },
+            PoolOwnershipEntry {
+                participant_id: 2,
+                participant_name: "Bob".to_string(),
+                contributed: 2000.0,
+                consumed: 1000.0,
+                ownership: 1000.0,
+                contributed_breakdown: vec![],
+                consumed_breakdown: vec![],
+            },
+        ];
+
+        let total_balance = entries.iter().map(|e| e.ownership).sum::<f64>();
+        let expected_minimum = 5000.0; // Set a $5000 reserve requirement
+
+        let is_below_expected = total_balance < expected_minimum;
+        let shortfall = if is_below_expected {
+            Some(expected_minimum - total_balance)
+        } else {
+            None
+        };
+
+        let pool_ownership = PoolOwnership {
+            pool_id: 1,
+            pool_name: "Shared Account".to_string(),
+            entries,
+            total_balance,
+            expected_minimum,
+            is_below_expected,
+            shortfall,
+        };
+
+        // total_balance = 2500 + 1000 = 3500
+        // expected_minimum = 5000
+        // shortfall = 5000 - 3500 = 1500
+        assert_eq!(pool_ownership.total_balance, 3500.0);
+        assert_eq!(pool_ownership.expected_minimum, 5000.0);
+        assert!(pool_ownership.is_below_expected);
+        assert_eq!(pool_ownership.shortfall, Some(1500.0));
+    }
+
+    #[test]
+    fn test_pool_ownership_no_shortfall_when_above_expected() {
+        // Test when balance is above expected minimum
+        let entries = vec![PoolOwnershipEntry {
+            participant_id: 1,
+            participant_name: "Alice".to_string(),
+            contributed: 6000.0,
+            consumed: 500.0,
+            ownership: 5500.0,
+            contributed_breakdown: vec![],
+            consumed_breakdown: vec![],
+        }];
+
+        let total_balance = 5500.0;
+        let expected_minimum = 5000.0;
+
+        let is_below_expected = total_balance < expected_minimum;
+        let shortfall = if is_below_expected {
+            Some(expected_minimum - total_balance)
+        } else {
+            None
+        };
+
+        let pool_ownership = PoolOwnership {
+            pool_id: 1,
+            pool_name: "Shared Account".to_string(),
+            entries,
+            total_balance,
+            expected_minimum,
+            is_below_expected,
+            shortfall,
+        };
+
+        // Balance $5500 > expected $5000, no shortfall
+        assert!(!pool_ownership.is_below_expected);
+        assert!(pool_ownership.shortfall.is_none());
+    }
+
+    #[test]
+    fn test_occurrence_affects_balance_only() {
+        // Test occurrence that only affects balance (normal transaction)
+        let occurrence = PaymentOccurrence {
+            payment_id: 1,
+            description: "Regular deposit".to_string(),
+            amount: 1000.0,
+            occurrence_date: "2024-01-01".to_string(),
+            payer_id: Some(1),
+            is_recurring: false,
+            receiver_account_id: Some(2),
+            is_final: true,
+            affects_balance: true,
+            affects_payer_expectation: false,
+            affects_receiver_expectation: false,
+        };
+
+        assert!(occurrence.affects_balance);
+        assert!(!occurrence.affects_payer_expectation);
+        assert!(!occurrence.affects_receiver_expectation);
+    }
+
+    #[test]
+    fn test_occurrence_affects_receiver_expectation_only() {
+        // Test occurrence that only affects receiver expectation (rule-only transaction)
+        // This is a "Rule" - sets expected minimum on pool without moving money
+        let occurrence = PaymentOccurrence {
+            payment_id: 2,
+            description: "Set $5000 reserve".to_string(),
+            amount: 5000.0,
+            occurrence_date: "2024-01-01".to_string(),
+            payer_id: None,
+            is_recurring: false,
+            receiver_account_id: Some(2), // Pool receives the rule
+            is_final: true,
+            affects_balance: false,
+            affects_payer_expectation: false,
+            affects_receiver_expectation: true, // Increases pool's expected minimum
+        };
+
+        assert!(!occurrence.affects_balance);
+        assert!(occurrence.affects_receiver_expectation);
+    }
+
+    #[test]
+    fn test_occurrence_earmarked_deposit() {
+        // Test earmarked deposit - affects both balance and receiver expectation
+        let occurrence = PaymentOccurrence {
+            payment_id: 3,
+            description: "Earmarked deposit".to_string(),
+            amount: 2000.0,
+            occurrence_date: "2024-01-01".to_string(),
+            payer_id: Some(1),
+            is_recurring: false,
+            receiver_account_id: Some(2), // Pool receives the deposit
+            is_final: true,
+            affects_balance: true,
+            affects_payer_expectation: false,
+            affects_receiver_expectation: true, // Earmarked: increases pool's expected minimum
+        };
+
+        assert!(occurrence.affects_balance);
+        assert!(occurrence.affects_receiver_expectation);
+    }
+
+    #[test]
+    fn test_occurrence_approved_withdrawal() {
+        // Test approved withdrawal - affects both balance and payer expectation
+        let occurrence = PaymentOccurrence {
+            payment_id: 4,
+            description: "Approved renovation expense".to_string(),
+            amount: 3000.0,
+            occurrence_date: "2024-01-01".to_string(),
+            payer_id: Some(2), // Pool pays
+            is_recurring: false,
+            receiver_account_id: Some(1), // User receives (internal transfer)
+            is_final: true,
+            affects_balance: true,
+            affects_payer_expectation: true, // Approved: reduces pool's expected minimum
+            affects_receiver_expectation: false,
+        };
+
+        assert!(occurrence.affects_balance);
+        assert!(occurrence.affects_payer_expectation);
+        assert!(!occurrence.affects_receiver_expectation);
     }
 }

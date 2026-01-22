@@ -191,9 +191,66 @@ frontend/src/lib/
   - Excluded from settlement calculations
   - Has ownership tracking (who contributed/consumed from pool)
   - Has per-pool warning settings:
-    - `warning_horizon_account`: When to warn if pool total goes negative (e.g., 'end_of_next_month', '3_months')
-    - `warning_horizon_users`: When to warn if individual user's pool share goes negative
+    - `warning_horizon_account`: When to warn if pool balance drops below expected minimum
+    - `warning_horizon_users`: When to warn if individual user's pool share drops below their expected minimum
     - Either can be NULL to disable that warning type
+
+### Dual Ledger System (Pool Expected Minimum)
+
+Pools support a "dual ledger" system that tracks both actual balance AND expected minimum separately. This enables features like:
+- Setting contribution rules that define expected deposits without moving money
+- Tracking when users are behind on their expected contributions
+- Visualizing the gap between actual balance and expected minimum
+
+**Payment Flags:**
+
+Each payment has three boolean flags controlling how it affects the ledgers:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `affects_balance` | `true` | Transaction moves actual money (affects pool balance) |
+| `affects_payer_expectation` | `false` | When payer is a pool, reduces pool's expected minimum |
+| `affects_receiver_expectation` | `false` | When receiver is a pool, increases pool's expected minimum |
+
+**Transaction Labels (UI):**
+
+Based on these flags, transactions show badges in the UI:
+
+| Label | Condition | Description |
+|-------|-----------|-------------|
+| **Rule** | `affects_balance === false` | Sets expected minimum without moving money |
+| **Approved** | `affects_payer_expectation === true` | Approved expense from pool (reduces expected min) |
+| **Earmarked** | `affects_receiver_expectation === true` | Earmarked deposit to pool (increases expected min) |
+| **Draft** | `is_final === false` | Not yet finalized (can show with other labels) |
+
+**Common Scenarios:**
+
+1. **Monthly contribution rule** (affects_balance=false, affects_receiver_expectation=true):
+   - Creates recurring expected deposits without moving money
+   - Shows as "Rule" badge
+   - Increases pool's expected minimum each month
+
+2. **Earmarked deposit** (affects_balance=true, affects_receiver_expectation=true):
+   - User deposits money AND it counts toward their expected contribution
+   - Shows as "Earmarked" badge
+   - Increases both balance and expected minimum
+
+3. **Approved pool expense** (affects_balance=true, affects_payer_expectation=true):
+   - Pool pays expense AND reduces expected minimum proportionally
+   - Shows as "Approved" badge
+   - Decreases both balance and expected minimum
+
+4. **Regular pool expense** (affects_balance=true, affects_payer_expectation=false):
+   - Pool pays but expected minimum unchanged (e.g., unexpected expense)
+   - No special badge
+   - Only decreases balance
+
+**Overview Page Features:**
+
+In horizon mode, the overview page shows:
+- **Expected minimum stats**: Current, Projected, Max, and Min (with date) expected minimum
+- **Chart visualization**: Red dashed line for expected minimum, with red shaded area filling between expected minimum and balance when balance drops below
+- **Warnings**: Triggered when balance goes below expected minimum (not just negative)
 
 ### Payment Types
 

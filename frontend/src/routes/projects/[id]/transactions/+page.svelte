@@ -8,7 +8,7 @@
   import { formatDate } from '$lib/format/date';
   import { SvelteDate } from 'svelte/reactivity';
 
-  let payments: PaymentWithContributions[] = $state([]);
+  let transactions: PaymentWithContributions[] = $state([]);
   let loading = $state(true);
   let error = $state('');
 
@@ -16,43 +16,43 @@
   let searchText = $state('');
   let filterPayerId = $state<number | null>(null);
   let filterContributorId = $state<number | null>(null);
-  let filterPaymentType = $state<string>('');
+  let filterTransactionType = $state<string>('');
   let filterRecurring = $state<string>('');
   let filterStatus = $state<string>('');
   let filterDateFrom = $state('');
   let filterDateTo = $state('');
 
   // Pagination state
-  let paymentsToShow = $state(30);
+  let transactionsToShow = $state(30);
   const PAYMENTS_PER_PAGE = 30;
 
   // Image modal state
   let showImageModal = $state(false);
   let modalImage = $state<string | null>(null);
 
-  // Load payments
+  // Load transactions
   $effect(() => {
     const projectId = parseInt($page.params.id ?? '');
     if (!isNaN(projectId)) {
-      loadPayments(projectId);
+      loadTransactions(projectId);
     }
   });
 
-  async function loadPayments(projectId: number) {
+  async function loadTransactions(projectId: number) {
     loading = true;
     error = '';
     try {
-      payments = await getPayments(projectId);
+      transactions = await getPayments(projectId);
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to load payments';
+      error = e instanceof Error ? e.message : 'Failed to load transactions';
     } finally {
       loading = false;
     }
   }
 
   // Apply all filters
-  let filteredPayments = $derived.by(() => {
-    let result = payments;
+  let filteredTransactions = $derived.by(() => {
+    let result = transactions;
 
     // Text search
     if (searchText.trim()) {
@@ -72,14 +72,26 @@
       );
     }
 
-    // Filter by payment type
-    if (filterPaymentType) {
-      if (filterPaymentType === 'expense') {
-        result = result.filter((p) => p.payer_id !== null && p.receiver_account_id === null);
-      } else if (filterPaymentType === 'transfer') {
-        result = result.filter((p) => p.payer_id !== null && p.receiver_account_id !== null);
-      } else if (filterPaymentType === 'inflow') {
-        result = result.filter((p) => p.payer_id === null && p.receiver_account_id !== null);
+    // Filter by transaction type
+    // Note: Rule check comes first since rules can look like inflows (payer_id=null, receiver_account_id!=null)
+    if (filterTransactionType) {
+      if (filterTransactionType === 'rule') {
+        result = result.filter((p) => p.affects_balance === false);
+      } else if (filterTransactionType === 'expense') {
+        result = result.filter(
+          (p) =>
+            p.affects_balance !== false && p.payer_id !== null && p.receiver_account_id === null
+        );
+      } else if (filterTransactionType === 'transfer') {
+        result = result.filter(
+          (p) =>
+            p.affects_balance !== false && p.payer_id !== null && p.receiver_account_id !== null
+        );
+      } else if (filterTransactionType === 'inflow') {
+        result = result.filter(
+          (p) =>
+            p.affects_balance !== false && p.payer_id === null && p.receiver_account_id !== null
+        );
       }
     }
 
@@ -92,22 +104,23 @@
       }
     }
 
-    // Filter by status
+    // Filter by status (is_final boolean)
     if (filterStatus) {
-      result = result.filter((p) => p.status === filterStatus);
+      const isFinal = filterStatus === 'final';
+      result = result.filter((p) => p.is_final === isFinal);
     }
 
     // Filter by date range
     if (filterDateFrom) {
       result = result.filter((p) => {
-        const paymentDate = p.payment_date.split('T')[0];
-        return paymentDate >= filterDateFrom;
+        const transactionDate = p.payment_date.split('T')[0];
+        return transactionDate >= filterDateFrom;
       });
     }
     if (filterDateTo) {
       result = result.filter((p) => {
-        const paymentDate = p.payment_date.split('T')[0];
-        return paymentDate <= filterDateTo;
+        const transactionDate = p.payment_date.split('T')[0];
+        return transactionDate <= filterDateTo;
       });
     }
 
@@ -119,7 +132,7 @@
     (searchText.trim() ? 1 : 0) +
       (filterPayerId !== null ? 1 : 0) +
       (filterContributorId !== null ? 1 : 0) +
-      (filterPaymentType !== '' ? 1 : 0) +
+      (filterTransactionType !== '' ? 1 : 0) +
       (filterRecurring !== '' ? 1 : 0) +
       (filterStatus !== '' ? 1 : 0) +
       (filterDateFrom !== '' ? 1 : 0) +
@@ -127,45 +140,47 @@
   );
 
   // Pagination
-  let visiblePayments = $derived(filteredPayments.slice(0, paymentsToShow));
-  let hasMorePayments = $derived(filteredPayments.length > paymentsToShow);
+  let visibleTransactions = $derived(filteredTransactions.slice(0, transactionsToShow));
+  let hasMoreTransactions = $derived(filteredTransactions.length > transactionsToShow);
 
   function clearFilters() {
     searchText = '';
     filterPayerId = null;
     filterContributorId = null;
-    filterPaymentType = '';
+    filterTransactionType = '';
     filterRecurring = '';
     filterStatus = '';
     filterDateFrom = '';
     filterDateTo = '';
   }
 
-  function loadMorePayments() {
-    paymentsToShow += PAYMENTS_PER_PAGE;
+  function loadMoreTransactions() {
+    transactionsToShow += PAYMENTS_PER_PAGE;
   }
 
   // Get transaction mode for routing to edit page
   function getTransactionMode(p: PaymentWithContributions): string {
+    // Rules are identified by affects_balance = false
+    if (p.affects_balance === false) return 'rule';
     if (p.payer_id === null && p.receiver_account_id !== null) return 'incoming';
     if (p.receiver_account_id !== null) return 'internal';
     return 'outgoing';
   }
 
-  function editPayment(payment: PaymentWithContributions) {
-    const mode = getTransactionMode(payment);
-    goto(`/projects/${$page.params.id}/transactions/${mode}?edit=${payment.id}`);
+  function editTransaction(transaction: PaymentWithContributions) {
+    const mode = getTransactionMode(transaction);
+    goto(`/projects/${$page.params.id}/transactions/${mode}?edit=${transaction.id}`);
   }
 
-  async function handleDelete(paymentId: number) {
-    if (!confirm($_('payments.deletePayment') + '?')) return;
+  async function handleDelete(transactionId: number) {
+    if (!confirm($_('transactions.deleteTransaction') + '?')) return;
 
     const projectId = parseInt($page.params.id ?? '');
     try {
-      await deletePayment(projectId, paymentId);
-      payments = payments.filter((p) => p.id !== paymentId);
+      await deletePayment(projectId, transactionId);
+      transactions = transactions.filter((p) => p.id !== transactionId);
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to delete payment';
+      error = e instanceof Error ? e.message : 'Failed to delete transaction';
     }
   }
 
@@ -183,7 +198,7 @@
     const type = p.recurrence_type;
 
     if (interval === 1) {
-      return $_(`payments.recurrence.${type}`);
+      return $_(`transactions.recurrence.${type}`);
     }
 
     // Map recurrence type to plural noun form for translation key
@@ -194,7 +209,7 @@
       yearly: 'Years'
     };
 
-    return $_(`payments.recurrence.everyN${typeToNoun[type] ?? type}`, {
+    return $_(`transactions.recurrence.everyN${typeToNoun[type] ?? type}`, {
       values: { n: interval }
     });
   }
@@ -214,10 +229,12 @@
   <div class="error">{error}</div>
 {/if}
 
+<h2>{$_('transactions.title')}</h2>
+
 <!-- Filters Section -->
 <section class="card filters">
   <div class="filters-header">
-    <h3>{$_('payments.filters')}</h3>
+    <h3>{$_('transactions.filters')}</h3>
     {#if activeFilterCount > 0}
       <button type="button" class="clear-filters-btn" onclick={clearFilters}>
         {$_('common.clear')} ({activeFilterCount})
@@ -228,20 +245,20 @@
   <div class="filters-grid">
     <!-- Text Search -->
     <div class="filter-field">
-      <label for="search-text">{$_('payments.searchDescription')}</label>
+      <label for="search-text">{$_('transactions.searchDescription')}</label>
       <input
         id="search-text"
         type="text"
         bind:value={searchText}
-        placeholder={$_('payments.searchPlaceholder')}
+        placeholder={$_('transactions.searchPlaceholder')}
       />
     </div>
 
     <!-- Payer Filter -->
     <div class="filter-field">
-      <label for="filter-payer">{$_('payments.filterByPayer')}</label>
+      <label for="filter-payer">{$_('transactions.filterByPayer')}</label>
       <select id="filter-payer" bind:value={filterPayerId}>
-        <option value={null}>{$_('payments.allPayers')}</option>
+        <option value={null}>{$_('transactions.allPayers')}</option>
         {#each $participants as p (p.id)}
           <option value={p.id}>{p.name}</option>
         {/each}
@@ -250,92 +267,103 @@
 
     <!-- Contributor Filter -->
     <div class="filter-field">
-      <label for="filter-contributor">{$_('payments.filterByContributor')}</label>
+      <label for="filter-contributor">{$_('transactions.filterByContributor')}</label>
       <select id="filter-contributor" bind:value={filterContributorId}>
-        <option value={null}>{$_('payments.allContributors')}</option>
+        <option value={null}>{$_('transactions.allContributors')}</option>
         {#each $participants as p (p.id)}
           <option value={p.id}>{p.name}</option>
         {/each}
       </select>
     </div>
 
-    <!-- Payment Type Filter -->
+    <!-- Transaction Type Filter -->
     <div class="filter-field">
-      <label for="filter-type">{$_('payments.filterByType')}</label>
-      <select id="filter-type" bind:value={filterPaymentType}>
-        <option value="">{$_('payments.allTypes')}</option>
-        <option value="expense">{$_('payments.typeExpense')}</option>
-        <option value="transfer">{$_('payments.typeTransfer')}</option>
-        <option value="inflow">{$_('payments.typeInflow')}</option>
+      <label for="filter-type">{$_('transactions.filterByType')}</label>
+      <select id="filter-type" bind:value={filterTransactionType}>
+        <option value="">{$_('transactions.allTypes')}</option>
+        <option value="expense">{$_('transactions.typeExpense')}</option>
+        <option value="transfer">{$_('transactions.typeTransfer')}</option>
+        <option value="inflow">{$_('transactions.typeInflow')}</option>
+        <option value="rule">{$_('transactions.typeRule')}</option>
       </select>
     </div>
 
     <!-- Recurring Filter -->
     <div class="filter-field">
-      <label for="filter-recurring">{$_('payments.filterByRecurring')}</label>
+      <label for="filter-recurring">{$_('transactions.filterByRecurring')}</label>
       <select id="filter-recurring" bind:value={filterRecurring}>
-        <option value="">{$_('payments.allRecurrence')}</option>
-        <option value="yes">{$_('payments.recurringOnly')}</option>
-        <option value="no">{$_('payments.oneTimeOnly')}</option>
+        <option value="">{$_('transactions.allRecurrence')}</option>
+        <option value="yes">{$_('transactions.recurringOnly')}</option>
+        <option value="no">{$_('transactions.oneTimeOnly')}</option>
       </select>
     </div>
 
     <!-- Status Filter -->
     <div class="filter-field">
-      <label for="filter-status">{$_('payments.filterByStatus')}</label>
+      <label for="filter-status">{$_('transactions.filterByStatus')}</label>
       <select id="filter-status" bind:value={filterStatus}>
-        <option value="">{$_('payments.allStatuses')}</option>
-        <option value="final">{$_('payments.statusFinal')}</option>
-        <option value="draft">{$_('payments.statusDraft')}</option>
+        <option value="">{$_('transactions.allStatuses')}</option>
+        <option value="final">{$_('transactions.statusFinal')}</option>
+        <option value="draft">{$_('transactions.statusDraft')}</option>
       </select>
     </div>
 
     <!-- Date From -->
     <div class="filter-field">
-      <label for="filter-date-from">{$_('payments.dateFrom')}</label>
+      <label for="filter-date-from">{$_('transactions.dateFrom')}</label>
       <input id="filter-date-from" type="date" bind:value={filterDateFrom} />
     </div>
 
     <!-- Date To -->
     <div class="filter-field">
-      <label for="filter-date-to">{$_('payments.dateTo')}</label>
+      <label for="filter-date-to">{$_('transactions.dateTo')}</label>
       <input id="filter-date-to" type="date" bind:value={filterDateTo} />
     </div>
   </div>
 
   {#if activeFilterCount > 0}
     <div class="filter-summary">
-      {$_('payments.showingFiltered')}
-      {filteredPayments.length} / {payments.length}
+      {$_('transactions.showingFiltered')}
+      {filteredTransactions.length} / {transactions.length}
     </div>
   {/if}
 </section>
 
-<!-- Payments List -->
+<!-- Transactions List -->
 <section class="card">
-  <h3>{$_('payments.recentPayments')}</h3>
+  <h3>{$_('transactions.recentTransactions')}</h3>
 
   {#if loading}
     <p>{$_('common.loading')}</p>
-  {:else if payments.length === 0}
-    <p class="empty">{$_('payments.noPaymentsYet')}</p>
-  {:else if filteredPayments.length === 0}
+  {:else if transactions.length === 0}
+    <p class="empty">{$_('transactions.noTransactionsYet')}</p>
+  {:else if filteredTransactions.length === 0}
     <div class="empty-state">
-      <p class="empty">{$_('payments.noMatchingPayments')}</p>
+      <p class="empty">{$_('transactions.noMatchingTransactions')}</p>
       <button type="button" class="clear-filters-btn" onclick={clearFilters}>
         {$_('common.clear')}
       </button>
     </div>
   {:else}
-    <ul class="payments-list">
-      {#each visiblePayments as p (p.id)}
+    <ul class="transactions-list">
+      {#each visibleTransactions as p (p.id)}
         <li>
-          <div class="payment-header">
-            <div class="payment-title">
+          <div class="transaction-header">
+            <div class="transaction-title">
               <strong>{p.description}</strong>
-              <div class="payment-icons">
-                {#if p.status === 'draft'}
-                  <span class="badge draft">{$_('payments.statusDraft')}</span>
+              <div class="transaction-icons">
+                {#if p.affects_balance === false}
+                  <span class="badge rule">{$_('transactions.typeRule')}</span>
+                {:else}
+                  {#if p.affects_payer_expectation}
+                    <span class="badge approved">{$_('transactions.statusApproved')}</span>
+                  {/if}
+                  {#if p.affects_receiver_expectation}
+                    <span class="badge earmarked">{$_('transactions.statusEarmarked')}</span>
+                  {/if}
+                {/if}
+                {#if !p.is_final}
+                  <span class="badge draft">{$_('transactions.statusDraft')}</span>
                 {/if}
                 {#if p.is_recurring}
                   <span class="icon recurring" title={formatRecurrence(p)}>&#x27F3;</span>
@@ -343,7 +371,7 @@
                 {#if p.receipt_image}
                   <button
                     class="icon-btn"
-                    title={$_('payments.viewReceipt')}
+                    title={$_('transactions.viewReceipt')}
                     onclick={() => openImageModal(p.receipt_image!)}>&#x1F9FE;</button
                   >
                 {/if}
@@ -354,52 +382,57 @@
               {#if $canEdit}
                 <button
                   class="edit-btn"
-                  onclick={() => editPayment(p)}
-                  title={$_('payments.editPayment')}>&#x2699;</button
+                  onclick={() => editTransaction(p)}
+                  title={$_('transactions.editTransaction')}>&#x2699;</button
                 >
                 <button
                   class="delete-btn"
                   onclick={() => handleDelete(p.id)}
-                  title={$_('payments.deletePayment')}
+                  title={$_('transactions.deleteTransaction')}
                 >
                   &times;
                 </button>
               {/if}
             </span>
           </div>
-          <div class="payment-meta">
-            {#if p.payer_id === null && p.receiver_account_id !== null}
+          <div class="transaction-meta">
+            {#if p.affects_balance === false}
+              <!-- Rule (expected minimum, doesn't affect balance) -->
+              {@const appliesTo = $participants.find((pr) => pr.id === p.receiver_account_id)}
+              <span class="rule-badge">{$_('transactions.typeRule')}</span>
+              {appliesTo?.name ?? $_('common.unknown')}
+            {:else if p.payer_id === null && p.receiver_account_id !== null}
               <!-- External inflow -->
               {@const receiver = $participants.find((pr) => pr.id === p.receiver_account_id)}
-              <span class="inflow-badge">{$_('payments.externalInflow')}</span>
-              {$_('payments.externalIndicator')} → {receiver?.name ?? $_('common.unknown')}
+              <span class="inflow-badge">{$_('transactions.externalInflow')}</span>
+              {$_('transactions.externalIndicator')} → {receiver?.name ?? $_('common.unknown')}
             {:else if p.receiver_account_id !== null}
               <!-- Internal transfer -->
               {@const receiver = $participants.find((pr) => pr.id === p.receiver_account_id)}
-              <span class="transfer-badge">{$_('payments.transfer')}</span>
+              <span class="transfer-badge">{$_('transactions.transfer')}</span>
               {p.payer_name ?? $_('common.unknown')} → {receiver?.name ?? $_('common.unknown')}
             {:else}
               <!-- External expense -->
-              {$_('payments.paidBy')}
+              {$_('transactions.paidBy')}
               {p.payer_name ?? $_('common.unknown')}
             {/if}
             {#if p.is_recurring && p.recurrence_end_date}
-              {$_('payments.dateRangeFromTo', {
+              {$_('transactions.dateRangeFromTo', {
                 values: {
                   startDate: formatDate(p.payment_date),
                   endDate: formatDate(p.recurrence_end_date)
                 }
               })}
             {:else if isFutureDate(p.payment_date)}
-              {$_('payments.startingFrom', { values: { date: formatDate(p.payment_date) } })}
+              {$_('transactions.startingFrom', { values: { date: formatDate(p.payment_date) } })}
             {:else}
-              {$_('payments.occurringOn', { values: { date: formatDate(p.payment_date) } })}
+              {$_('transactions.occurringOn', { values: { date: formatDate(p.payment_date) } })}
             {/if}
             {#if p.is_recurring}
               <span class="recurrence-badge">{formatRecurrence(p)}</span>
             {/if}
           </div>
-          <div class="payment-splits">
+          <div class="transaction-splits">
             {#each p.contributions as c (c.participant_id)}
               <span class="chip">
                 {c.participant_name}: {formatCurrency(c.amount)}
@@ -411,11 +444,11 @@
     </ul>
 
     <!-- Load More Button -->
-    {#if hasMorePayments}
+    {#if hasMoreTransactions}
       <div class="load-more-section">
-        <button type="button" class="load-more-btn" onclick={loadMorePayments}>
-          {$_('payments.loadMore')}
-          ({paymentsToShow} / {filteredPayments.length})
+        <button type="button" class="load-more-btn" onclick={loadMoreTransactions}>
+          {$_('transactions.loadMore')}
+          ({transactionsToShow} / {filteredTransactions.length})
         </button>
       </div>
     {/if}
@@ -530,7 +563,7 @@
     color: #666;
   }
 
-  /* Payments List */
+  /* Transactions List */
   .empty {
     color: #666;
     font-style: italic;
@@ -543,36 +576,36 @@
     gap: 1rem;
   }
 
-  .payments-list {
+  .transactions-list {
     list-style: none;
     padding: 0;
     margin: 0;
   }
 
-  .payments-list li {
+  .transactions-list li {
     padding: 1rem;
     border-bottom: 1px solid #eee;
   }
 
-  .payments-list li:last-child {
+  .transactions-list li:last-child {
     border-bottom: none;
   }
 
-  .payment-header {
+  .transaction-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     margin-bottom: 0.5rem;
   }
 
-  .payment-title {
+  .transaction-title {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     flex-wrap: wrap;
   }
 
-  .payment-icons {
+  .transaction-icons {
     display: flex;
     gap: 0.25rem;
   }
@@ -588,6 +621,36 @@
 
   .badge.draft {
     background: #f0ad4e;
+    color: white;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .badge.approved {
+    background: #28a745;
+    color: white;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .badge.rule {
+    background: #7b61ff;
+    color: white;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .badge.earmarked {
+    background: #17a2b8;
     color: white;
     padding: 0.15rem 0.4rem;
     border-radius: 4px;
@@ -648,7 +711,7 @@
     background: #fee;
   }
 
-  .payment-meta {
+  .transaction-meta {
     font-size: 0.85rem;
     color: #666;
     margin-bottom: 0.5rem;
@@ -676,6 +739,15 @@
     font-weight: 600;
   }
 
+  .rule-badge {
+    background: linear-gradient(135deg, #7b61ff 0%, #5a45c9 100%);
+    color: white;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
   .recurrence-badge {
     background: linear-gradient(135deg, #7b61ff 0%, #5a45cc 100%);
     color: white;
@@ -685,7 +757,7 @@
     font-weight: 600;
   }
 
-  .payment-splits {
+  .transaction-splits {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
@@ -766,7 +838,7 @@
       grid-template-columns: 1fr;
     }
 
-    .payment-header {
+    .transaction-header {
       flex-direction: column;
       gap: 0.5rem;
     }

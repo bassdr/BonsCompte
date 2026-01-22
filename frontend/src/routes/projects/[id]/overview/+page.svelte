@@ -1035,13 +1035,11 @@
     currentTotal: number;
     projectedTotal: number;
     minTotal: number;
-    minTotalDate: string;
     hasNegative: boolean;
-    // Expected minimum fields (parallel to balance fields)
+    // Expected minimum fields
     currentExpectedMinimum: number;
-    projectedExpectedMinimum: number;
-    minExpectedMinimum: number;
-    minExpectedMinimumDate: string;
+    projectedExpectedMinimum: number; // value at end of period
+    maxExpectedMinimum: number; // maximum expected minimum during period (the threshold to maintain)
     isBelowExpected: boolean; // true if balance < expectedMinimum at any point in range
   }
 
@@ -1076,12 +1074,10 @@
           currentTotal: currentValue,
           projectedTotal: currentValue,
           minTotal: currentValue,
-          minTotalDate: targetDate,
           hasNegative: currentValue < 0,
           currentExpectedMinimum: currentExpectedMin,
           projectedExpectedMinimum: currentExpectedMin,
-          minExpectedMinimum: currentExpectedMin,
-          minExpectedMinimumDate: targetDate,
+          maxExpectedMinimum: currentExpectedMin,
           isBelowExpected
         });
       } else {
@@ -1094,12 +1090,10 @@
             currentTotal: 0,
             projectedTotal: 0,
             minTotal: 0,
-            minTotalDate: targetDate,
             hasNegative: false,
             currentExpectedMinimum: 0,
             projectedExpectedMinimum: 0,
-            minExpectedMinimum: 0,
-            minExpectedMinimumDate: targetDate,
+            maxExpectedMinimum: 0,
             isBelowExpected: false
           });
           continue;
@@ -1108,11 +1102,9 @@
         let currentTotal = 0;
         let projectedTotal = 0;
         let minTotal = Infinity;
-        let minTotalDate = targetDate;
         let hasNegative = false;
         let isBelowExpected = false;
-        let minExpectedMin = Infinity;
-        let minExpectedMinDate = targetDate;
+        let maxExpectedMin = -Infinity;
 
         const dates = [...poolData.keys()];
 
@@ -1157,7 +1149,6 @@
             // Track minimum balance
             if (value < minTotal) {
               minTotal = value;
-              minTotalDate = date;
             }
             if (value < 0) {
               hasNegative = true;
@@ -1166,16 +1157,15 @@
             if (value < expectedMin) {
               isBelowExpected = true;
             }
-            // Track minimum expected minimum
-            if (expectedMin < minExpectedMin) {
-              minExpectedMin = expectedMin;
-              minExpectedMinDate = date;
+            // Track maximum expected minimum (the threshold to maintain)
+            if (expectedMin > maxExpectedMin) {
+              maxExpectedMin = expectedMin;
             }
           }
         }
 
         if (minTotal === Infinity) minTotal = 0;
-        if (minExpectedMin === Infinity) minExpectedMin = 0;
+        if (maxExpectedMin === -Infinity) maxExpectedMin = 0;
 
         const currentExpectedMin = getExpectedMinForDate(dates[0]);
         const projectedExpectedMin = getExpectedMinForDate(dates[dates.length - 1]);
@@ -1184,12 +1174,10 @@
           currentTotal,
           projectedTotal,
           minTotal,
-          minTotalDate,
           hasNegative,
           currentExpectedMinimum: currentExpectedMin,
           projectedExpectedMinimum: projectedExpectedMin,
-          minExpectedMinimum: minExpectedMin,
-          minExpectedMinimumDate: minExpectedMinDate,
+          maxExpectedMinimum: maxExpectedMin,
           isBelowExpected
         });
       }
@@ -1369,7 +1357,7 @@
       borderColor: string;
       backgroundColor: string;
       stepped: 'before' | 'after' | 'middle' | boolean;
-      fill: boolean;
+      fill: boolean | { target: number; above: string; below: string };
       pointRadius: number;
       pointHoverRadius: number;
       borderWidth?: number;
@@ -1384,6 +1372,11 @@
       focusParticipantId !== null
         ? pool.entries.filter((e) => e.participant_id === focusParticipantId)
         : pool.entries;
+
+    // Track the index of the "balance" dataset for fill reference
+    // In focus mode: it's the focused participant (index 0)
+    // In normal mode: it's the Total line (added after participants)
+    let balanceDatasetIndex = 0;
 
     entriesToShow.forEach((entry, idx) => {
       datasets.push({
@@ -1404,6 +1397,7 @@
 
     // Add Total line (distinct styling: thick, dashed, dark)
     if (totalData && focusParticipantId === null) {
+      balanceDatasetIndex = datasets.length; // Total line will be the balance reference
       datasets.push({
         label: $_('common.total'),
         data: rangeDates.map((date) => ({
@@ -1438,8 +1432,8 @@
     };
 
     // Check if there's any expected min data (total or for focused participant)
-    const hasExpectedMinData =
-      expectedMinData && rangeDates.some((date) => getExpectedMinForDate(date) > 0);
+    // Always show the line if there's expected minimum data, even if values are 0
+    const hasExpectedMinData = expectedMinData !== undefined;
 
     if (hasExpectedMinData) {
       datasets.push({
@@ -1448,10 +1442,15 @@
           x: date,
           y: getExpectedMinForDate(date)
         })),
-        borderColor: '#7b61ff',
-        backgroundColor: '#7b61ff20',
+        borderColor: '#dc3545',
+        backgroundColor: 'rgba(220, 53, 69, 0.15)',
         stepped: 'before',
-        fill: false,
+        // Fill to balance dataset: show red area when expected min > balance
+        fill: {
+          target: balanceDatasetIndex,
+          above: 'rgba(220, 53, 69, 0.15)', // When expected min is above balance (warning zone)
+          below: 'transparent' // When expected min is below balance (no fill)
+        },
         pointRadius: 2,
         pointHoverRadius: 4,
         borderWidth: 2,
@@ -1460,76 +1459,8 @@
       });
     }
 
-    // Build annotations: today line + warning zones for periods below expected minimum
-    const baseAnnotations = getTodayAnnotation();
-
-    // Find periods where balance drops below expected minimum (or below zero if no expected min)
-    interface WarningPeriod {
-      startDate: string;
-      endDate: string;
-    }
-    const warningPeriods: WarningPeriod[] = [];
-
-    if (poolData && annotationPlugin) {
-      let inWarningPeriod = false;
-      let periodStart = '';
-
-      // Helper to get the balance value for a date (total or focused participant)
-      const getValueForDate = (date: string): number => {
-        const participantOwnerships = poolData.get(date);
-        if (!participantOwnerships) return 0;
-
-        if (focusParticipantId !== null) {
-          // Focus mode: use focused participant's ownership
-          return participantOwnerships.get(focusParticipantId) ?? 0;
-        } else {
-          // Normal mode: sum all ownerships (use totalData)
-          return totalData?.get(date) ?? 0;
-        }
-      };
-
-      for (const date of rangeDates) {
-        const balance = getValueForDate(date);
-        const expectedMin = getExpectedMinForDate(date);
-        // Warning if balance is below expected minimum (or below 0 if no expected min set)
-        const threshold = expectedMin > 0 ? expectedMin : 0;
-        const isWarning = balance < threshold;
-
-        if (isWarning && !inWarningPeriod) {
-          // Entering warning period
-          inWarningPeriod = true;
-          periodStart = date;
-        } else if (!isWarning && inWarningPeriod) {
-          // Exiting warning period
-          warningPeriods.push({ startDate: periodStart, endDate: date });
-          inWarningPeriod = false;
-        }
-      }
-
-      // If still in warning period at end, close it with the last date
-      if (inWarningPeriod && rangeDates.length > 0) {
-        warningPeriods.push({
-          startDate: periodStart,
-          endDate: rangeDates[rangeDates.length - 1]
-        });
-      }
-    }
-
-    // Create box annotations for each warning period
-    const warningZoneAnnotations: Record<string, unknown> = {};
-    warningPeriods.forEach((period, idx) => {
-      warningZoneAnnotations[`warningZone${idx}`] = {
-        type: 'box' as const,
-        xMin: period.startDate,
-        xMax: period.endDate,
-        backgroundColor: 'rgba(220, 53, 69, 0.15)',
-        borderColor: 'rgba(220, 53, 69, 0.4)',
-        borderWidth: 1,
-        drawTime: 'beforeDatasetsDraw' as const
-      };
-    });
-
-    const annotations = { ...baseAnnotations, ...warningZoneAnnotations };
+    // Build annotations: today line only (warning zones handled by dataset fill)
+    const annotations = getTodayAnnotation();
 
     const chart = new Chart(canvas, {
       type: 'line',
@@ -2387,7 +2318,9 @@
       <!-- Pool Total Summary Banner -->
       {#if stats && poolOwnership.entries.length > 0}
         {@const hasExpectedMin =
-          stats.currentExpectedMinimum > 0 || stats.projectedExpectedMinimum > 0}
+          stats.currentExpectedMinimum > 0 ||
+          stats.projectedExpectedMinimum > 0 ||
+          stats.maxExpectedMinimum > 0}
         {@const hasWarning = isRangeMode
           ? stats.isBelowExpected
           : hasExpectedMin && stats.isBelowExpected}
@@ -2407,7 +2340,11 @@
           {/if}
           <div class="pool-total-stats">
             <div class="pool-stat">
-              <span class="stat-label">{$_('overview.currentTotal')}</span>
+              {#if isRangeMode}
+                <span class="stat-label">{$_('overview.balanceStart')}</span>
+              {:else}
+                <span class="stat-label">{$_('overview.balance')}</span>
+              {/if}
               <span
                 class="stat-value"
                 class:positive={stats.currentTotal > 0}
@@ -2418,7 +2355,7 @@
             </div>
             {#if isRangeMode}
               <div class="pool-stat">
-                <span class="stat-label">{$_('overview.projectedTotal')}</span>
+                <span class="stat-label">{$_('overview.balanceEnd')}</span>
                 <span
                   class="stat-value"
                   class:positive={stats.projectedTotal > 0}
@@ -2428,14 +2365,13 @@
                 </span>
               </div>
               <div class="pool-stat">
-                <span class="stat-label">{$_('overview.minimumTotal')}</span>
+                <span class="stat-label">{$_('overview.balanceLowest')}</span>
                 <span
                   class="stat-value"
                   class:positive={stats.minTotal > 0}
                   class:negative={stats.minTotal < 0}
                 >
                   {stats.minTotal >= 0 ? '+' : ''}{formatCurrency(stats.minTotal)}
-                  <span class="stat-date">({formatDate(stats.minTotalDate)})</span>
                 </span>
               </div>
             {/if}
@@ -2443,7 +2379,7 @@
               <div class="pool-stat">
                 <span class="stat-label"
                   >{isRangeMode
-                    ? $_('overview.currentExpectedMin')
+                    ? $_('overview.expectedStart')
                     : $_('overview.expectedMinimum')}</span
                 >
                 <span class="stat-value">
@@ -2452,16 +2388,15 @@
               </div>
               {#if isRangeMode}
                 <div class="pool-stat">
-                  <span class="stat-label">{$_('overview.projectedExpectedMin')}</span>
+                  <span class="stat-label">{$_('overview.expectedEnd')}</span>
                   <span class="stat-value">
                     {formatCurrency(stats.projectedExpectedMinimum)}
                   </span>
                 </div>
                 <div class="pool-stat">
-                  <span class="stat-label">{$_('overview.minimumExpectedMin')}</span>
+                  <span class="stat-label">{$_('overview.expectedHighest')}</span>
                   <span class="stat-value">
-                    {formatCurrency(stats.minExpectedMinimum)}
-                    <span class="stat-date">({formatDate(stats.minExpectedMinimumDate)})</span>
+                    {formatCurrency(stats.maxExpectedMinimum)}
                   </span>
                 </div>
               {/if}
@@ -3026,7 +2961,7 @@
     <section class="card occurrences-card">
       <button class="expand-header" onclick={() => (showOccurrences = !showOccurrences)}>
         <span class="expand-icon">{showOccurrences ? '▼' : '▶'}</span>
-        <h3>{$_('overview.paymentsIncluded')} ({totalCount})</h3>
+        <h3>{$_('overview.transactionsIncluded')} ({totalCount})</h3>
       </button>
 
       {#if showOccurrences}
@@ -3116,6 +3051,21 @@
                                   <span class="trans-desc">
                                     {occ.description}
                                     <span class="trans-badges">
+                                      {#if occ.affects_balance === false}
+                                        <span class="badge rule">{$_('transactions.typeRule')}</span
+                                        >
+                                      {:else}
+                                        {#if occ.affects_payer_expectation}
+                                          <span class="badge approved"
+                                            >{$_('transactions.statusApproved')}</span
+                                          >
+                                        {/if}
+                                        {#if occ.affects_receiver_expectation}
+                                          <span class="badge earmarked"
+                                            >{$_('transactions.statusEarmarked')}</span
+                                          >
+                                        {/if}
+                                      {/if}
                                       {#if !occ.is_final}
                                         <span class="badge draft"
                                           >{$_('transactions.statusDraft')}</span
@@ -3287,12 +3237,6 @@
 
   .stat-value.negative {
     color: #dc3545;
-  }
-
-  .stat-date {
-    font-size: 0.85rem;
-    font-weight: 400;
-    color: #666;
   }
 
   h3 {
@@ -4221,6 +4165,36 @@
 
   .badge.draft {
     background: #f0ad4e;
+    color: white;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .badge.approved {
+    background: #28a745;
+    color: white;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .badge.rule {
+    background: #7b61ff;
+    color: white;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .badge.earmarked {
+    background: #17a2b8;
     color: white;
     padding: 0.15rem 0.4rem;
     border-radius: 4px;

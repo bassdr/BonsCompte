@@ -85,12 +85,37 @@ The system can use these weights to divide the cost fairly.
   - **User accounts**: Regular participants who pay and owe
   - **Pool accounts**: Shared account per project for tracking collective funds (e.g., house fund, shared bank account)
 - Track contributions by participant across all transactions
-- Per-pool warning settings: Configure when to warn about negative balances
-  - Pool total warning: Alert when shared account will go negative
-  - Per-user warning: Alert when individual's pool share will go negative
+- Per-pool warning settings: Configure when to warn about balance issues
+  - Pool total warning: Alert when shared account balance drops below expected minimum
+  - Per-user warning: Alert when individual's pool share drops below their expected minimum
   - Configurable horizons: end of month, next month, 3 months, 6 months
 
-### 6. Transfer System
+### 6. Pool Rules & Expected Minimum (Dual Ledger)
+
+Pools support a dual ledger system for tracking both actual balance AND expected contributions:
+
+- **Rules**: Define expected deposits without moving money
+  - Set up recurring contribution expectations (e.g., "each user should deposit $500/month")
+  - Track who is behind on their expected contributions
+  - Rules don't affect actual balance, only expected minimum
+
+- **Transaction Types with Expectation Tracking**:
+  - **Rule** (purple badge): Sets expected minimum only, no money moves
+  - **Earmarked** (teal badge): Deposit counts toward expected contribution
+  - **Approved** (green badge): Expense reduces expected minimum proportionally
+
+- **Visual Indicators**:
+  - Overview page shows expected minimum alongside actual balance
+  - Chart displays red dashed line for expected minimum threshold
+  - Red shaded area highlights when balance drops below expected minimum
+  - Horizon mode shows: current, projected, max, and min expected minimum with dates
+
+- **Smart Warnings**:
+  - Warnings trigger when balance goes below expected minimum (not just negative)
+  - Per-user warnings track individual contribution shortfalls
+  - Configurable warning horizons for planning ahead
+
+### 7. Transfer System
 
 BonsCompte supports multiple payment types for flexible debt settlement:
 
@@ -113,7 +138,7 @@ BonsCompte supports multiple payment types for flexible debt settlement:
   - To a user: Receiver holds money for the group, owes contributors their share
   - To a pool: Contributors' pool ownership increases by their share
 
-### 7. Smart Payment Interface
+### 8. Smart Payment Interface
 
 - View all transactions (recurring and one-time) with type indicators
 - Edit recent transactions with full recalculation
@@ -123,7 +148,7 @@ BonsCompte supports multiple payment types for flexible debt settlement:
 - Past/future badges for date context
 - Receipt image storage and viewing
 
-### 8. Security Hardening
+### 9. Security Hardening
 
 The backend includes multiple security layers for production deployment:
 

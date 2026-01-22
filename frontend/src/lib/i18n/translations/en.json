@@ -187,9 +187,9 @@
   "overview.noPreviousPayment": "No previous transaction",
   "overview.noNextPayment": "No next transaction",
   "overview.includeDrafts": "Include drafts",
-  "overview.currentTotal": "Current Total",
-  "overview.projectedTotal": "Projected Total",
-  "overview.minimumTotal": "Minimum",
+  "overview.balanceStart": "Balance at Start",
+  "overview.balanceEnd": "Balance at End",
+  "overview.balanceLowest": "Lowest Balance",
   "overview.poolNegativeWarning": "Pool balance goes negative in this period!",
   "overview.poolWillGoBelow": "{pool} will go below expected minimum on {date}",
   "overview.poolIsBelow": "{pool} is below expected minimum",
@@ -198,6 +198,12 @@
   "overview.userWillGoBelowExpected": "{user}'s share in {pool} will go below expected minimum on {date}",
   "overview.userIsBelowExpected": "{user}'s share in {pool} is below expected minimum",
   "overview.warningPeriod": "Warning Period",
+  "overview.expectedMinimum": "Expected minimum",
+  "overview.expectedStart": "Expected Minimum at Start",
+  "overview.expectedEnd": "Expected Minimum at End",
+  "overview.expectedHighest": "Highest Expected Minimum",
+  "overview.shortfall": "Shortfall",
+  "overview.belowExpected": "Below expected minimum",
 
   "cashflow.title": "Cashflow Planning",
   "cashflow.failedToLoad": "Failed to load cashflow projection",
@@ -344,6 +350,8 @@
   "transactions.status": "Status",
   "transactions.statusFinal": "Final",
   "transactions.statusDraft": "Draft",
+  "transactions.statusApproved": "Approved",
+  "transactions.statusEarmarked": "Earmarked",
   "transactions.filterByStatus": "Status",
   "transactions.allStatuses": "All statuses",
   "transactions.outgoing": "Add payment",
@@ -546,12 +554,5 @@
   "months.sep": "Sep",
   "months.oct": "Oct",
   "months.nov": "Nov",
-  "months.dec": "Dec",
-
-  "overview.expectedMinimum": "Expected minimum",
-  "overview.currentExpectedMin": "Current exp. min.",
-  "overview.projectedExpectedMin": "Projected exp. min.",
-  "overview.minimumExpectedMin": "Min. exp. min.",
-  "overview.shortfall": "Shortfall",
-  "overview.belowExpected": "Below expected minimum"
+  "months.dec": "Dec"
 }

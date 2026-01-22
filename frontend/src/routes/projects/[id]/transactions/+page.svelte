@@ -352,6 +352,16 @@
             <div class="transaction-title">
               <strong>{p.description}</strong>
               <div class="transaction-icons">
+                {#if p.affects_balance === false}
+                  <span class="badge rule">{$_('transactions.typeRule')}</span>
+                {:else}
+                  {#if p.affects_payer_expectation}
+                    <span class="badge approved">{$_('transactions.statusApproved')}</span>
+                  {/if}
+                  {#if p.affects_receiver_expectation}
+                    <span class="badge earmarked">{$_('transactions.statusEarmarked')}</span>
+                  {/if}
+                {/if}
                 {#if !p.is_final}
                   <span class="badge draft">{$_('transactions.statusDraft')}</span>
                 {/if}
@@ -611,6 +621,36 @@
 
   .badge.draft {
     background: #f0ad4e;
+    color: white;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .badge.approved {
+    background: #28a745;
+    color: white;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .badge.rule {
+    background: #7b61ff;
+    color: white;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .badge.earmarked {
+    background: #17a2b8;
     color: white;
     padding: 0.15rem 0.4rem;
     border-radius: 4px;

@@ -926,3 +926,35 @@ export const castVote = (
     method: 'POST',
     body: JSON.stringify({ vote, reason } as CastVoteRequest)
   });
+
+// ========================================
+// Trusted Users (Password Recovery)
+// ========================================
+
+export interface TrustedUser {
+  id: number;
+  trusted_user_id: number;
+  username: string;
+  display_name: string | null;
+  created_at: string;
+}
+
+export interface RecoveryStatus {
+  recoverable: boolean;
+  trusted_user_count: number;
+  required_count: number;
+}
+
+export const getTrustedUsers = (): Promise<TrustedUser[]> => authFetch('/users/me/trusted-users');
+
+export const addTrustedUser = (username: string): Promise<TrustedUser> =>
+  authFetch('/users/me/trusted-users', {
+    method: 'POST',
+    body: JSON.stringify({ username })
+  });
+
+export const removeTrustedUser = (id: number): Promise<{ message: string }> =>
+  authFetch(`/users/me/trusted-users/${id}`, { method: 'DELETE' });
+
+export const getRecoveryStatus = (): Promise<RecoveryStatus> =>
+  authFetch('/users/me/recovery-status');

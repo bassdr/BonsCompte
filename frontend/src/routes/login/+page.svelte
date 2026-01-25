@@ -1,12 +1,16 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
+  import { page } from '$app/stores';
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
   import { login, ApiRequestError } from '$lib/api';
   import { auth } from '$lib/auth';
   import { _ } from '$lib/i18n';
   import { preferences } from '$lib/stores/preferences';
+
+  // Get return URL from query params
+  const returnUrl = $derived($page.url.searchParams.get('returnUrl') || '/');
 
   let username = $state('');
   let password = $state('');
@@ -53,7 +57,8 @@
       auth.setAuth(response.token, response.user);
       // Sync preferences from backend
       preferences.initFromUser(response.user.preferences);
-      await goto('/');
+      // Redirect to return URL or home
+      await goto(returnUrl);
     } catch (err) {
       if (err instanceof ApiRequestError) {
         error = getErrorMessage(err.code);
@@ -114,7 +119,12 @@
   {/if}
 
   <p class="link">
-    {$_('auth.noAccount')} <a href={resolve('/register')}>{$_('auth.register')}</a>
+    {$_('auth.noAccount')}
+    <a
+      href={returnUrl !== '/'
+        ? `${resolve('/register')}?returnUrl=${encodeURIComponent(returnUrl)}`
+        : resolve('/register')}>{$_('auth.register')}</a
+    >
   </p>
 </div>
 

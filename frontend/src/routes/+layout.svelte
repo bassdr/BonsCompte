@@ -15,6 +15,13 @@
     isLocaleLoaded
   } from '$lib/i18n';
   import { preferences } from '$lib/stores/preferences';
+  import {
+    recoveryStatus,
+    refreshRecoveryStatus,
+    resetRecoveryStatus,
+    isDontShowAgain,
+    setDontShowAgain
+  } from '$lib/stores/recoveryStatus';
   import { getActionableApprovals } from '$lib/api';
   import { onMount, onDestroy } from 'svelte';
 
@@ -26,6 +33,17 @@
 
   let actionableApprovalsCount = $state(0);
   let approvalCheckInterval: ReturnType<typeof setInterval> | null = null;
+  let recoveryCheckInterval: ReturnType<typeof setInterval> | null = null;
+  let dismissedForSession = $state(false);
+  let showDismissDialog = $state(false);
+  let dontShowAgainPermanent = $state(false);
+
+  // Check if permanently dismissed on mount
+  $effect(() => {
+    if (browser) {
+      dontShowAgainPermanent = isDontShowAgain();
+    }
+  });
 
   async function checkActionableApprovals() {
     if (!$isAuthenticated) return;
@@ -39,19 +57,55 @@
     }
   }
 
+  // Check recovery status when authentication state changes
+  $effect(() => {
+    if ($isAuthenticated) {
+      refreshRecoveryStatus();
+      dismissedForSession = false; // Reset session dismiss on login
+    } else {
+      resetRecoveryStatus();
+    }
+  });
+
   onMount(() => {
     // Check immediately on mount
     checkActionableApprovals();
 
     // Check every 30 seconds
     approvalCheckInterval = setInterval(checkActionableApprovals, 30000);
+    // Check recovery status every 10 seconds (catches changes from settings page)
+    recoveryCheckInterval = setInterval(() => {
+      if ($isAuthenticated) refreshRecoveryStatus();
+    }, 10000);
   });
 
   onDestroy(() => {
     if (approvalCheckInterval) {
       clearInterval(approvalCheckInterval);
     }
+    if (recoveryCheckInterval) {
+      clearInterval(recoveryCheckInterval);
+    }
   });
+
+  function handleDismissClick() {
+    showDismissDialog = true;
+  }
+
+  function dismissForSession() {
+    dismissedForSession = true;
+    showDismissDialog = false;
+  }
+
+  function dismissPermanently() {
+    setDontShowAgain(true);
+    dontShowAgainPermanent = true;
+    showDismissDialog = false;
+  }
+
+  function cancelDismiss() {
+    showDismissDialog = false;
+  }
 
   // Initialize auth on mount
   $effect(() => {
@@ -84,9 +138,13 @@
       const isPublicPath = publicPaths.some((p) => $page.url.pathname.startsWith(p));
 
       if (!$isAuthenticated && !isPublicPath) {
-        void goto('/login');
+        // Save current URL as return destination after login
+        const returnUrl = $page.url.pathname + $page.url.search;
+        void goto(`/login?returnUrl=${encodeURIComponent(returnUrl)}`);
       } else if ($isAuthenticated && isPublicPath && !$page.url.pathname.startsWith('/help')) {
-        void goto('/');
+        // Check for returnUrl parameter when redirecting authenticated users away from auth pages
+        const returnUrl = $page.url.searchParams.get('returnUrl');
+        void goto(returnUrl || '/');
       }
     }
   });
@@ -140,6 +198,54 @@
         <button onclick={handleLogout}>{$_('nav.logout')}</button>
       </div>
     </nav>
+
+    {#if $recoveryStatus && !$recoveryStatus.recoverable && !dismissedForSession && !dontShowAgainPermanent}
+      <div class="recovery-warning-banner">
+        <div class="warning-content">
+          <span class="warning-icon">⚠</span>
+          <span>
+            {$_('layout.recoveryWarning', {
+              values: {
+                current: $recoveryStatus.trusted_user_count,
+                required: $recoveryStatus.required_count
+              }
+            })}
+          </span>
+          <a href={resolve('/settings')}>{$_('layout.setupTrustedUsers')}</a>
+        </div>
+        <button class="dismiss-btn" onclick={handleDismissClick}>×</button>
+      </div>
+    {/if}
+
+    {#if showDismissDialog}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="dismiss-dialog-overlay"
+        onclick={cancelDismiss}
+        onkeydown={(e) => e.key === 'Escape' && cancelDismiss()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dismiss-dialog-title"
+        tabindex="-1"
+      >
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="dismiss-dialog" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
+          <h3 id="dismiss-dialog-title">{$_('layout.dismissWarningTitle')}</h3>
+          <p>{$_('layout.dismissWarningDescription')}</p>
+          <div class="dismiss-dialog-buttons">
+            <button class="btn-secondary" onclick={cancelDismiss}>
+              {$_('common.cancel')}
+            </button>
+            <button class="btn-secondary" onclick={dismissForSession}>
+              {$_('layout.dismissForNow')}
+            </button>
+            <button class="btn-danger" onclick={dismissPermanently}>
+              {$_('layout.dontShowAgain')}
+            </button>
+          </div>
+        </div>
+      </div>
+    {/if}
   {:else}
     <!-- Language selector for unauthenticated pages -->
     <nav class="navbar navbar-minimal">
@@ -275,6 +381,122 @@
     padding: 2rem;
     max-width: 1200px;
     margin: 0 auto;
+  }
+
+  .recovery-warning-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 2rem;
+    background: #fff3cd;
+    border-bottom: 1px solid #ffc107;
+    color: #856404;
+    font-size: 0.9rem;
+  }
+
+  .warning-content {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .warning-icon {
+    font-size: 1.1rem;
+  }
+
+  .warning-content a {
+    color: #856404;
+    font-weight: 600;
+    text-decoration: underline;
+  }
+
+  .warning-content a:hover {
+    color: #533f03;
+  }
+
+  .dismiss-btn {
+    background: transparent;
+    border: none;
+    font-size: 1.2rem;
+    color: #856404;
+    cursor: pointer;
+    padding: 0 0.5rem;
+    line-height: 1;
+  }
+
+  .dismiss-btn:hover {
+    color: #533f03;
+  }
+
+  .dismiss-dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+  }
+
+  .dismiss-dialog {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  }
+
+  .dismiss-dialog h3 {
+    margin: 0 0 0.75rem 0;
+    font-size: 1.1rem;
+    color: #333;
+  }
+
+  .dismiss-dialog p {
+    margin: 0 0 1.25rem 0;
+    color: #666;
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  .dismiss-dialog-buttons {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .dismiss-dialog-buttons button {
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-secondary {
+    background: #f5f5f5;
+    border: 1px solid #ddd;
+    color: #333;
+  }
+
+  .btn-secondary:hover {
+    background: #eee;
+  }
+
+  .btn-danger {
+    background: #dc3545;
+    border: 1px solid #dc3545;
+    color: white;
+  }
+
+  .btn-danger:hover {
+    background: #c82333;
   }
 
   /* Mobile responsive styles */

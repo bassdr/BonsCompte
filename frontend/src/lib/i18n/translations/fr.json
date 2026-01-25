@@ -21,6 +21,13 @@
   "nav.settings": "Paramètres",
   "nav.logout": "Déconnexion",
 
+  "layout.recoveryWarning": "En cas de perte de mot de passe, votre compte ne pourra pas être récupéré ({current}/{required} utilisateurs de confiance).",
+  "layout.setupTrustedUsers": "Configurer les utilisateurs de confiance",
+  "layout.dismissWarningTitle": "Masquer l'avertissement de récupération",
+  "layout.dismissWarningDescription": "Cet avertissement vous rappelle de configurer la récupération de compte. Voulez-vous vraiment le masquer ?",
+  "layout.dismissForNow": "Masquer pour l'instant",
+  "layout.dontShowAgain": "Ne plus afficher",
+
   "auth.login": "Connexion",
   "auth.register": "Inscription",
   "auth.username": "Nom d'utilisateur",
@@ -47,6 +54,14 @@
   "auth.errors.usernameExists": "Ce nom d'utilisateur est déjà pris",
   "auth.errors.invalidInput": "Veuillez vérifier vos informations et réessayer",
   "auth.errors.internalError": "Une erreur s'est produite. Veuillez réessayer plus tard.",
+
+  "register.trustedUsersTitle": "Configurer la récupération de compte",
+  "register.trustedUsersDescription": "Ajoutez des utilisateurs de confiance qui peuvent vous aider à récupérer votre compte si vous oubliez votre mot de passe. Nous recommandons d'ajouter au moins 2 utilisateurs de confiance.",
+  "register.accountRecoverable": "Votre compte peut être récupéré via les utilisateurs de confiance",
+  "register.accountNotRecoverable": "Pas encore récupérable ({current}/2 utilisateurs de confiance)",
+  "register.skipForNow": "Passer pour l'instant",
+  "register.continue": "Continuer",
+  "register.canAddLater": "Vous pouvez toujours ajouter des utilisateurs de confiance plus tard dans les Paramètres.",
 
   "settings.title": "Paramètres du compte",
   "settings.accountInfo": "Informations du compte",
@@ -88,6 +103,22 @@
   "settings.preferencesSaved": "Préférences enregistrées",
   "settings.savingPreferences": "Enregistrement...",
   "settings.preferencesNotice": "Note : Ces paramètres affectent uniquement l'affichage des nombres et des dates. BonsCompte n'effectue pas de conversion de devises.",
+
+  "settings.trustedUsers.title": "Utilisateurs de confiance pour la récupération de mot de passe",
+  "settings.trustedUsers.description": "Les utilisateurs de confiance peuvent vous aider à récupérer votre compte si vous oubliez votre mot de passe. Vous avez besoin d'au moins 2 utilisateurs de confiance pour activer la récupération de compte.",
+  "settings.trustedUsers.warningTitle": "Compte non récupérable",
+  "settings.trustedUsers.warningDescription": "Vous avez besoin d'au moins {count} utilisateurs de confiance pour activer la récupération de mot de passe. Sans eux, seul un administrateur système peut vous aider à récupérer votre compte.",
+  "settings.trustedUsers.securityWarningTitle": "Avertissement de sécurité :",
+  "settings.trustedUsers.securityWarning": "N'ajoutez jamais deux comptes contrôlés par la même personne. Par exemple, si vous ajoutez un compte partagé de ménage et le compte personnel de quelqu'un, cette personne seule pourrait récupérer votre compte à votre insu.",
+  "settings.trustedUsers.usernamePlaceholder": "Entrez un nom d'utilisateur...",
+  "settings.trustedUsers.noTrustedUsers": "Vous n'avez pas encore ajouté d'utilisateurs de confiance.",
+  "settings.trustedUsers.statusRecoverable": "Votre compte peut être récupéré via les utilisateurs de confiance.",
+  "settings.trustedUsers.statusNotRecoverable": "Votre compte n'est pas récupérable ({current}/{required} utilisateurs de confiance).",
+
+  "common.add": "Ajouter",
+  "common.adding": "Ajout...",
+  "common.remove": "Retirer",
+  "common.removing": "Retrait...",
 
   "projects.title": "Mes projets",
   "projects.newProject": "+ Nouveau projet",
@@ -554,5 +585,46 @@
   "months.sep": "Sep",
   "months.oct": "Oct",
   "months.nov": "Nov",
-  "months.dec": "Déc"
+  "months.dec": "Déc",
+
+  "help.passwordRecovery.title": "Récupération de mot de passe",
+  "help.passwordRecovery.overview.title": "Aperçu",
+  "help.passwordRecovery.overview.description": "BonsCompte propose un système sécurisé de récupération de mot de passe via des utilisateurs de confiance. Si vous oubliez votre mot de passe, les personnes que vous avez désignées comme utilisateurs de confiance peuvent vous aider à retrouver l'accès à votre compte.",
+
+  "help.passwordRecovery.twoLayer.title": "Méthodes de récupération",
+  "help.passwordRecovery.twoLayer.systemAdmin.title": "Administrateur système",
+  "help.passwordRecovery.twoLayer.systemAdmin.description": "Un administrateur système ayant accès au serveur peut réinitialiser le mot de passe de n'importe quel utilisateur via l'outil en ligne de commande :",
+  "help.passwordRecovery.twoLayer.systemAdmin.result": "Ceci génère un mot de passe temporaire qui doit être changé à la première connexion.",
+
+  "help.passwordRecovery.twoLayer.projectMembers.title": "Récupération par utilisateurs de confiance",
+  "help.passwordRecovery.twoLayer.projectMembers.description": "Si vous avez configuré des utilisateurs de confiance dans les paramètres de votre compte, ils peuvent collectivement approuver votre demande de récupération de mot de passe. Cette méthode ne nécessite pas l'intervention d'un administrateur.",
+
+  "help.passwordRecovery.twoLayer.projectMembers.votingRules.title": "Conditions d'approbation :",
+  "help.passwordRecovery.twoLayer.projectMembers.votingRules.admin": "Vous devez avoir configuré au moins 2 utilisateurs de confiance pour que la récupération soit disponible",
+  "help.passwordRecovery.twoLayer.projectMembers.votingRules.regular": "Au moins 2 de vos utilisateurs de confiance doivent approuver la demande de récupération",
+  "help.passwordRecovery.twoLayer.projectMembers.votingRules.solo": "Les demandes de récupération expirent après 30 minutes si elles ne sont pas approuvées",
+
+  "help.passwordRecovery.workflow.title": "Processus de récupération",
+  "help.passwordRecovery.workflow.step1.title": "Initier la récupération",
+  "help.passwordRecovery.workflow.step1.description": "Sur la page de connexion, cliquez sur « Mot de passe oublié ? » et entrez votre nom d'utilisateur pour démarrer le processus de récupération.",
+  "help.passwordRecovery.workflow.step2.title": "Contacter les utilisateurs de confiance",
+  "help.passwordRecovery.workflow.step2.description": "Contactez vos utilisateurs de confiance par un autre moyen (téléphone, email, en personne) et demandez-leur d'approuver votre demande de récupération dans BonsCompte.",
+  "help.passwordRecovery.workflow.step3.title": "Approbation par les utilisateurs de confiance",
+  "help.passwordRecovery.workflow.step3.description": "Vos utilisateurs de confiance se connectent à BonsCompte et approuvent votre demande de récupération depuis leurs notifications ou la page Approbations.",
+  "help.passwordRecovery.workflow.step4.title": "Définir un nouveau mot de passe",
+  "help.passwordRecovery.workflow.step4.description": "Une fois que suffisamment d'utilisateurs de confiance ont approuvé, vous pourrez définir un nouveau mot de passe et retrouver l'accès à votre compte.",
+
+  "help.passwordRecovery.whyApproval.title": "Pourquoi des utilisateurs de confiance ?",
+  "help.passwordRecovery.whyApproval.description": "Le système d'utilisateurs de confiance assure la sécurité tout en évitant la récupération par email :",
+  "help.passwordRecovery.whyApproval.reason1": "Pas d'email requis - BonsCompte ne stocke pas votre adresse email",
+  "help.passwordRecovery.whyApproval.reason2": "Vérification humaine - les utilisateurs de confiance peuvent confirmer votre identité par d'autres moyens",
+  "help.passwordRecovery.whyApproval.reason3": "Confiance distribuée - aucune personne seule ne peut prendre le contrôle de votre compte",
+
+  "help.passwordRecovery.important.title": "Notes importantes",
+  "help.passwordRecovery.important.point1": "Configurez vos utilisateurs de confiance AVANT d'en avoir besoin - vous pouvez le faire dans les Paramètres",
+  "help.passwordRecovery.important.point2": "Choisissez des utilisateurs de confiance que vous pouvez contacter par d'autres moyens (téléphone, en personne)",
+  "help.passwordRecovery.important.point3": "Si vous n'avez pas d'utilisateurs de confiance, seul un administrateur système peut vous aider à récupérer votre compte",
+
+  "help.passwordRecovery.contactAdmin.title": "Besoin d'aide ?",
+  "help.passwordRecovery.contactAdmin.description": "Si vous n'avez pas configuré d'utilisateurs de confiance ou s'ils ne sont pas disponibles, contactez la personne qui gère votre serveur BonsCompte pour obtenir de l'aide."
 }

@@ -65,7 +65,7 @@ pub async fn register(
     let password_hash = hash_password(&input.password)?;
 
     let result = sqlx::query(
-        "INSERT INTO users (username, display_name, password_hash, user_state, token_version) VALUES (?, ?, ?, 'pending_approval', 1)"
+        "INSERT INTO users (username, display_name, password_hash, user_state, token_version) VALUES (?, ?, ?, 'active', 1)"
     )
     .bind(&username)
     .bind(&input.display_name)

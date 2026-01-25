@@ -21,6 +21,13 @@
   "nav.settings": "Settings",
   "nav.logout": "Logout",
 
+  "layout.recoveryWarning": "If you lose your password, your account cannot be recovered ({current}/{required} trusted users).",
+  "layout.setupTrustedUsers": "Set up trusted users",
+  "layout.dismissWarningTitle": "Dismiss Recovery Warning",
+  "layout.dismissWarningDescription": "This warning helps you remember to set up account recovery. Are you sure you want to dismiss it?",
+  "layout.dismissForNow": "Dismiss for now",
+  "layout.dontShowAgain": "Don't show again",
+
   "auth.login": "Login",
   "auth.register": "Register",
   "auth.username": "Username",
@@ -47,6 +54,14 @@
   "auth.errors.usernameExists": "This username is already taken",
   "auth.errors.invalidInput": "Please check your input and try again",
   "auth.errors.internalError": "Something went wrong. Please try again later.",
+
+  "register.trustedUsersTitle": "Set Up Account Recovery",
+  "register.trustedUsersDescription": "Add trusted users who can help you recover your account if you forget your password. We recommend adding at least 2 trusted users.",
+  "register.accountRecoverable": "Your account can be recovered via trusted users",
+  "register.accountNotRecoverable": "Not yet recoverable ({current}/2 trusted users)",
+  "register.skipForNow": "Skip for now",
+  "register.continue": "Continue",
+  "register.canAddLater": "You can always add trusted users later in Settings.",
 
   "settings.title": "Account Settings",
   "settings.accountInfo": "Account Info",
@@ -88,6 +103,22 @@
   "settings.preferencesSaved": "Preferences saved",
   "settings.savingPreferences": "Saving...",
   "settings.preferencesNotice": "Note: These settings only affect how numbers and dates are displayed. BonsCompte does not perform currency conversion.",
+
+  "settings.trustedUsers.title": "Trusted Users for Password Recovery",
+  "settings.trustedUsers.description": "Trusted users can help you recover your account if you forget your password. You need at least 2 trusted users for account recovery to be available.",
+  "settings.trustedUsers.warningTitle": "Account Not Recoverable",
+  "settings.trustedUsers.warningDescription": "You need at least {count} trusted users to enable password recovery. Without them, only a system administrator can help you recover your account.",
+  "settings.trustedUsers.securityWarningTitle": "Security Warning:",
+  "settings.trustedUsers.securityWarning": "Never add two accounts controlled by the same person. For example, if you add both a shared household account and someone's personal account, that person alone could recover your account without your knowledge.",
+  "settings.trustedUsers.usernamePlaceholder": "Enter username to add...",
+  "settings.trustedUsers.noTrustedUsers": "You haven't added any trusted users yet.",
+  "settings.trustedUsers.statusRecoverable": "Your account can be recovered via trusted users.",
+  "settings.trustedUsers.statusNotRecoverable": "Your account is not recoverable ({current}/{required} trusted users).",
+
+  "common.add": "Add",
+  "common.adding": "Adding...",
+  "common.remove": "Remove",
+  "common.removing": "Removing...",
 
   "projects.title": "My Projects",
   "projects.newProject": "+ New Project",
@@ -554,5 +585,46 @@
   "months.sep": "Sep",
   "months.oct": "Oct",
   "months.nov": "Nov",
-  "months.dec": "Dec"
+  "months.dec": "Dec",
+
+  "help.passwordRecovery.title": "Password Recovery",
+  "help.passwordRecovery.overview.title": "Overview",
+  "help.passwordRecovery.overview.description": "BonsCompte provides a secure password recovery system through trusted users. If you forget your password, people you've designated as trusted users can help you regain access to your account.",
+
+  "help.passwordRecovery.twoLayer.title": "Recovery Methods",
+  "help.passwordRecovery.twoLayer.systemAdmin.title": "System Administrator",
+  "help.passwordRecovery.twoLayer.systemAdmin.description": "A system administrator with server access can reset any user's password using the command line tool:",
+  "help.passwordRecovery.twoLayer.systemAdmin.result": "This generates a temporary password that must be changed on first login.",
+
+  "help.passwordRecovery.twoLayer.projectMembers.title": "Trusted Users Recovery",
+  "help.passwordRecovery.twoLayer.projectMembers.description": "If you've set up trusted users in your account settings, they can collectively approve your password recovery request. This method doesn't require administrator involvement.",
+
+  "help.passwordRecovery.twoLayer.projectMembers.votingRules.title": "Approval Requirements:",
+  "help.passwordRecovery.twoLayer.projectMembers.votingRules.admin": "You need at least 2 trusted users configured for recovery to be available",
+  "help.passwordRecovery.twoLayer.projectMembers.votingRules.regular": "At least 2 of your trusted users must approve the recovery request",
+  "help.passwordRecovery.twoLayer.projectMembers.votingRules.solo": "Recovery requests expire after 30 minutes if not approved",
+
+  "help.passwordRecovery.workflow.title": "Recovery Workflow",
+  "help.passwordRecovery.workflow.step1.title": "Initiate Recovery",
+  "help.passwordRecovery.workflow.step1.description": "On the login page, click \"Forgot password?\" and enter your username to start the recovery process.",
+  "help.passwordRecovery.workflow.step2.title": "Contact Trusted Users",
+  "help.passwordRecovery.workflow.step2.description": "Contact your trusted users through another channel (phone, email, in person) and ask them to approve your recovery request in BonsCompte.",
+  "help.passwordRecovery.workflow.step3.title": "Trusted Users Approve",
+  "help.passwordRecovery.workflow.step3.description": "Your trusted users log into BonsCompte and approve your recovery request from their notifications or the Approvals page.",
+  "help.passwordRecovery.workflow.step4.title": "Set New Password",
+  "help.passwordRecovery.workflow.step4.description": "Once enough trusted users have approved, you'll be able to set a new password and regain access to your account.",
+
+  "help.passwordRecovery.whyApproval.title": "Why Trusted Users?",
+  "help.passwordRecovery.whyApproval.description": "The trusted users system provides security while avoiding email-based recovery:",
+  "help.passwordRecovery.whyApproval.reason1": "No email required - BonsCompte doesn't store your email address",
+  "help.passwordRecovery.whyApproval.reason2": "Human verification - trusted users can confirm your identity through other means",
+  "help.passwordRecovery.whyApproval.reason3": "Distributed trust - no single person can take over your account",
+
+  "help.passwordRecovery.important.title": "Important Notes",
+  "help.passwordRecovery.important.point1": "Set up trusted users BEFORE you need them - you can do this in Settings",
+  "help.passwordRecovery.important.point2": "Choose trusted users you can contact through other means (phone, in person)",
+  "help.passwordRecovery.important.point3": "If you have no trusted users, only a system administrator can help you recover your account",
+
+  "help.passwordRecovery.contactAdmin.title": "Need Help?",
+  "help.passwordRecovery.contactAdmin.description": "If you don't have trusted users set up or they're unavailable, contact the person who manages your BonsCompte server for assistance."
 }

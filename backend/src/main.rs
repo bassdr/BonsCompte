@@ -190,6 +190,8 @@ async fn main() {
         .route("/health", get(|| async { "OK" }))
         // Public routes (auth) with optional rate limiting
         .nest("/auth", auth_routes)
+        // Recovery routes (some public, some require auth)
+        .nest("/recovery", routes::recovery::router())
         // Protected routes (with extensions middleware)
         .nest("/users", routes::users::router())
         .nest("/approvals", routes::approvals::router())

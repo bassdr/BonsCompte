@@ -12,7 +12,10 @@ use crate::{
         AuthUser,
     },
     error::{AppError, AppResult},
-    models::{User, UserPreferences, UserResponse, UserState},
+    models::{
+        AddTrustedUserRequest, RecoveryStatus, TrustedUserWithInfo, User, UserPreferences,
+        UserResponse, UserState,
+    },
     services::approval_service,
     AppState,
 };
@@ -26,6 +29,12 @@ pub fn router() -> Router<AppState> {
             "/me/preferences",
             get(get_preferences).put(update_preferences),
         )
+        .route(
+            "/me/trusted-users",
+            get(list_trusted_users).post(add_trusted_user),
+        )
+        .route("/me/trusted-users/{id}", delete(remove_trusted_user))
+        .route("/me/recovery-status", get(get_recovery_status))
         .route("/me", delete(delete_account))
         .route("/{id}", get(get_user))
         .route("/{id}/approve", put(approve_user))
@@ -381,6 +390,128 @@ async fn update_preferences(
         .await?;
 
     Ok(Json(UserPreferences::from_user(&user)))
+}
+
+// =====================
+// Trusted Users Management
+// =====================
+
+async fn list_trusted_users(
+    auth: AuthUser,
+    State(pool): State<SqlitePool>,
+) -> AppResult<Json<Vec<TrustedUserWithInfo>>> {
+    let trusted_users: Vec<TrustedUserWithInfo> = sqlx::query_as(
+        "SELECT tu.id, tu.trusted_user_id, u.username, u.display_name, tu.created_at
+         FROM trusted_users tu
+         JOIN users u ON tu.trusted_user_id = u.id
+         WHERE tu.user_id = ?
+         ORDER BY tu.created_at DESC",
+    )
+    .bind(auth.user_id)
+    .fetch_all(&pool)
+    .await?;
+
+    Ok(Json(trusted_users))
+}
+
+async fn add_trusted_user(
+    auth: AuthUser,
+    State(pool): State<SqlitePool>,
+    Json(req): Json<AddTrustedUserRequest>,
+) -> AppResult<Json<TrustedUserWithInfo>> {
+    let username = req.username.trim();
+
+    if username.is_empty() {
+        return Err(AppError::Validation("Username is required".to_string()));
+    }
+
+    // Find the user by username
+    let trusted_user: Option<User> = sqlx::query_as("SELECT * FROM users WHERE username = ?")
+        .bind(username)
+        .fetch_optional(&pool)
+        .await?;
+
+    let trusted_user =
+        trusted_user.ok_or_else(|| AppError::NotFound(format!("User '{}' not found", username)))?;
+
+    // Can't trust yourself
+    if trusted_user.id == auth.user_id {
+        return Err(AppError::Validation(
+            "You cannot add yourself as a trusted user".to_string(),
+        ));
+    }
+
+    // Insert the trust relationship
+    let result = sqlx::query("INSERT INTO trusted_users (user_id, trusted_user_id) VALUES (?, ?)")
+        .bind(auth.user_id)
+        .bind(trusted_user.id)
+        .execute(&pool)
+        .await;
+
+    match result {
+        Ok(r) => {
+            let id = r.last_insert_rowid();
+
+            // Fetch the created record with user info
+            let trusted_user_info: TrustedUserWithInfo = sqlx::query_as(
+                "SELECT tu.id, tu.trusted_user_id, u.username, u.display_name, tu.created_at
+                 FROM trusted_users tu
+                 JOIN users u ON tu.trusted_user_id = u.id
+                 WHERE tu.id = ?",
+            )
+            .bind(id)
+            .fetch_one(&pool)
+            .await?;
+
+            Ok(Json(trusted_user_info))
+        }
+        Err(e) => {
+            // Check for unique constraint violation
+            if e.to_string().contains("UNIQUE constraint failed") {
+                Err(AppError::Validation(format!(
+                    "User '{}' is already in your trusted users list",
+                    username
+                )))
+            } else {
+                Err(e.into())
+            }
+        }
+    }
+}
+
+async fn remove_trusted_user(
+    auth: AuthUser,
+    State(pool): State<SqlitePool>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<serde_json::Value>> {
+    // Delete the trust relationship (only if owned by current user)
+    let result = sqlx::query("DELETE FROM trusted_users WHERE id = ? AND user_id = ?")
+        .bind(id)
+        .bind(auth.user_id)
+        .execute(&pool)
+        .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(
+            "Trusted user not found or already removed".to_string(),
+        ));
+    }
+
+    Ok(Json(serde_json::json!({
+        "message": "Trusted user removed successfully"
+    })))
+}
+
+async fn get_recovery_status(
+    auth: AuthUser,
+    State(pool): State<SqlitePool>,
+) -> AppResult<Json<RecoveryStatus>> {
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM trusted_users WHERE user_id = ?")
+        .bind(auth.user_id)
+        .fetch_one(&pool)
+        .await?;
+
+    Ok(Json(RecoveryStatus::new(count)))
 }
 
 /// Check if user is a system admin (user ID 1 for now)

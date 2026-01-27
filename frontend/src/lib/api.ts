@@ -958,3 +958,106 @@ export const removeTrustedUser = (id: number): Promise<{ message: string }> =>
 
 export const getRecoveryStatus = (): Promise<RecoveryStatus> =>
   authFetch('/users/me/recovery-status');
+
+// ========================================
+// Recovery Intent API (Password Recovery)
+// ========================================
+
+export interface InitiateRecoveryResponse {
+  message: string;
+  token: string;
+  expires_at: string;
+}
+
+export interface RecoveryIntentStatus {
+  status: string;
+  approvals_count: number;
+  required_approvals: number;
+  expires_at: string;
+  is_expired: boolean;
+}
+
+export interface PendingRecoveryIntent {
+  id: number;
+  user_id: number;
+  username: string;
+  display_name: string | null;
+  token: string;
+  status: string;
+  created_at: string;
+  expires_at: string;
+  approvals_count: number;
+  rejections_count: number;
+  required_approvals: number;
+  is_blocked: boolean;
+  user_has_voted: boolean;
+  user_vote: string | null;
+}
+
+export interface RecoveryVoteResponse {
+  message: string;
+  vote: string;
+  approvals_count: number;
+  rejections_count: number;
+  required_approvals: number;
+  is_blocked: boolean;
+  status: string;
+}
+
+// Public API for recovery (no auth required)
+async function publicFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    ...(opts.headers as Record<string, string>)
+  };
+
+  const res = await fetch(`${BASE}${path}`, { ...opts, headers });
+
+  if (!res.ok) {
+    const text = await res.text();
+    try {
+      const data: ApiError = JSON.parse(text);
+      throw new ApiRequestError(data.code || 'UNKNOWN', data.error || text, res.status);
+    } catch (e) {
+      if (e instanceof ApiRequestError) throw e;
+      throw new ApiRequestError('UNKNOWN', text || res.statusText, res.status);
+    }
+  }
+
+  return res.json();
+}
+
+// Initiate password recovery (no auth)
+export const initiateRecovery = (username: string): Promise<InitiateRecoveryResponse> =>
+  publicFetch('/recovery/initiate', {
+    method: 'POST',
+    body: JSON.stringify({ username })
+  });
+
+// Get recovery status by token (no auth)
+export const getRecoveryIntentStatus = (token: string): Promise<RecoveryIntentStatus> =>
+  publicFetch(`/recovery/${token}/status`);
+
+// Reset password after recovery approved (no auth)
+export const resetPasswordWithToken = (
+  token: string,
+  newPassword: string
+): Promise<{ message: string }> =>
+  publicFetch(`/recovery/${token}/reset`, {
+    method: 'POST',
+    body: JSON.stringify({ new_password: newPassword })
+  });
+
+// Get pending recovery requests for trusted users to approve (requires auth)
+export const getPendingRecoveries = (): Promise<PendingRecoveryIntent[]> =>
+  authFetch('/recovery/pending');
+
+// Vote on a recovery intent (requires auth)
+export const voteOnRecovery = (
+  token: string,
+  vote: 'approve' | 'reject'
+): Promise<RecoveryVoteResponse> =>
+  authFetch(`/recovery/${token}/vote`, {
+    method: 'POST',
+    body: JSON.stringify({ vote })
+  });

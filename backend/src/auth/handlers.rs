@@ -161,6 +161,15 @@ pub async fn login(
         return Err(AppError::InvalidCredentials);
     }
 
+    // Cancel any pending recovery requests - user proved they know their password
+    sqlx::query(
+        "UPDATE recovery_intents SET status = 'used', resolved_at = datetime('now') WHERE user_id = ? AND status = 'pending'"
+    )
+    .bind(user.id)
+    .execute(&pool)
+    .await
+    .ok(); // Ignore errors, this is a cleanup operation
+
     // Generate token with token_version
     let token = create_token(user.id, &user.username, user.token_version, &jwt_secret)?;
 

@@ -197,6 +197,14 @@ async fn get_pending_recoveries(
         .fetch_one(&pool)
         .await?;
 
+        // Count rejections for this intent
+        let rejections: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM recovery_votes WHERE recovery_id = ? AND vote = 'reject'",
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await?;
+
         // Check if current user has voted
         let user_vote = sqlx::query_as::<_, (String,)>(
             "SELECT vote FROM recovery_votes WHERE recovery_id = ? AND voter_id = ?",
@@ -216,7 +224,9 @@ async fn get_pending_recoveries(
             created_at,
             expires_at,
             approvals_count: approvals.0,
+            rejections_count: rejections.0,
             required_approvals: RecoveryIntent::REQUIRED_APPROVALS,
+            is_blocked: rejections.0 > 0,
             user_has_voted: user_vote.is_some(),
             user_vote: user_vote.map(|(v,)| v),
         });
@@ -282,28 +292,58 @@ async fn vote_on_recovery(
         ));
     }
 
-    // Check if already voted
-    let existing_vote = sqlx::query_as::<_, (i64,)>(
-        "SELECT id FROM recovery_votes WHERE recovery_id = ? AND voter_id = ?",
+    // Check if already voted - allow changing vote
+    let existing_vote = sqlx::query_as::<_, (i64, String)>(
+        "SELECT id, vote FROM recovery_votes WHERE recovery_id = ? AND voter_id = ?",
     )
     .bind(intent.id)
     .bind(auth_user.user_id)
     .fetch_optional(&pool)
     .await?;
 
-    if existing_vote.is_some() {
-        return Err(AppError::BadRequest(
-            "You have already voted on this recovery request".to_string(),
-        ));
-    }
+    let vote_changed = if let Some((vote_id, old_vote)) = existing_vote {
+        if old_vote == req.vote {
+            // Same vote, nothing to do
+            false
+        } else {
+            // Update existing vote
+            sqlx::query(
+                "UPDATE recovery_votes SET vote = ?, voted_at = datetime('now') WHERE id = ?",
+            )
+            .bind(&req.vote)
+            .bind(vote_id)
+            .execute(&pool)
+            .await?;
+            true
+        }
+    } else {
+        // Record new vote
+        sqlx::query("INSERT INTO recovery_votes (recovery_id, voter_id, vote) VALUES (?, ?, ?)")
+            .bind(intent.id)
+            .bind(auth_user.user_id)
+            .bind(&req.vote)
+            .execute(&pool)
+            .await?;
+        true
+    };
 
-    // Record the vote
-    sqlx::query("INSERT INTO recovery_votes (recovery_id, voter_id, vote) VALUES (?, ?, ?)")
+    // Skip status check if vote didn't change
+    if !vote_changed {
+        let approvals: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM recovery_votes WHERE recovery_id = ? AND vote = 'approve'",
+        )
         .bind(intent.id)
-        .bind(auth_user.user_id)
-        .bind(&req.vote)
-        .execute(&pool)
+        .fetch_one(&pool)
         .await?;
+
+        return Ok(Json(serde_json::json!({
+            "message": "Vote unchanged",
+            "vote": req.vote,
+            "approvals_count": approvals.0,
+            "required_approvals": RecoveryIntent::REQUIRED_APPROVALS,
+            "status": intent.status
+        })));
+    }
 
     // Check if we have enough approvals
     let approvals: (i64,) = sqlx::query_as(
@@ -313,9 +353,19 @@ async fn vote_on_recovery(
     .fetch_one(&pool)
     .await?;
 
-    let mut new_status = "pending".to_string();
+    // Check if there are any rejections (blocks approval)
+    let rejections: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM recovery_votes WHERE recovery_id = ? AND vote = 'reject'",
+    )
+    .bind(intent.id)
+    .fetch_one(&pool)
+    .await?;
 
-    if approvals.0 >= RecoveryIntent::REQUIRED_APPROVALS {
+    let mut new_status = "pending".to_string();
+    let is_blocked = rejections.0 > 0;
+
+    // Only approve if we have enough approvals AND no rejections
+    if approvals.0 >= RecoveryIntent::REQUIRED_APPROVALS && !is_blocked {
         // Mark as approved
         sqlx::query(
             "UPDATE recovery_intents SET status = 'approved', resolved_at = datetime('now') WHERE id = ?",
@@ -326,37 +376,13 @@ async fn vote_on_recovery(
         new_status = "approved".to_string();
     }
 
-    // Check for rejections (if majority reject, mark as rejected)
-    let rejections: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM recovery_votes WHERE recovery_id = ? AND vote = 'reject'",
-    )
-    .bind(intent.id)
-    .fetch_one(&pool)
-    .await?;
-
-    // Get total trusted users count
-    let total_trusted: (i64,) =
-        sqlx::query_as("SELECT COUNT(*) FROM trusted_users WHERE user_id = ?")
-            .bind(intent.user_id)
-            .fetch_one(&pool)
-            .await?;
-
-    // If more than half have rejected, mark as rejected
-    if rejections.0 > total_trusted.0 / 2 {
-        sqlx::query(
-            "UPDATE recovery_intents SET status = 'rejected', resolved_at = datetime('now') WHERE id = ?",
-        )
-        .bind(intent.id)
-        .execute(&pool)
-        .await?;
-        new_status = "rejected".to_string();
-    }
-
     Ok(Json(serde_json::json!({
         "message": "Vote recorded",
         "vote": req.vote,
         "approvals_count": approvals.0,
+        "rejections_count": rejections.0,
         "required_approvals": RecoveryIntent::REQUIRED_APPROVALS,
+        "is_blocked": is_blocked,
         "status": new_status
     })))
 }

@@ -25,7 +25,10 @@ pub struct RecoveryIntentWithInfo {
     pub created_at: String,
     pub expires_at: String,
     pub approvals_count: i64,
+    pub rejections_count: i64,
     pub required_approvals: i64,
+    /// Whether approval is blocked by a rejection
+    pub is_blocked: bool,
     /// Whether the current user has already voted
     pub user_has_voted: bool,
     /// The current user's vote if they voted

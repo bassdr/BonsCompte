@@ -1,6 +1,17 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { changePassword, deleteAccount, updatePreferences, updateProfile } from '$lib/api';
+  import {
+    changePassword,
+    deleteAccount,
+    updatePreferences,
+    updateProfile,
+    getTrustedUsers,
+    addTrustedUser,
+    removeTrustedUser,
+    getRecoveryStatus,
+    type TrustedUser,
+    type RecoveryStatus
+  } from '$lib/api';
   import { auth } from '$lib/auth';
   import { _ } from '$lib/i18n';
   import { preferences } from '$lib/stores/preferences';
@@ -35,6 +46,15 @@
   let prefsSuccess = $state('');
   let prefsError = $state('');
 
+  // Trusted users state
+  let trustedUsers = $state<TrustedUser[]>([]);
+  let recoveryStatus = $state<RecoveryStatus | null>(null);
+  let trustedUsersLoading = $state(true);
+  let trustedUsersError = $state('');
+  let newTrustedUsername = $state('');
+  let addingTrustedUser = $state(false);
+  let removingTrustedUserId = $state<number | null>(null);
+
   // Sync preferences state when store changes
   $effect(() => {
     prefsDateFormat = $preferences.date_format;
@@ -42,6 +62,61 @@
     prefsCurrencySymbol = $preferences.currency_symbol;
     prefsCurrencyPosition = $preferences.currency_symbol_position;
   });
+
+  // Load trusted users on mount
+  $effect(() => {
+    loadTrustedUsers();
+  });
+
+  async function loadTrustedUsers() {
+    trustedUsersLoading = true;
+    trustedUsersError = '';
+    try {
+      const [users, status] = await Promise.all([getTrustedUsers(), getRecoveryStatus()]);
+      trustedUsers = users;
+      recoveryStatus = status;
+    } catch (err) {
+      trustedUsersError = err instanceof Error ? err.message : 'Failed to load trusted users';
+    } finally {
+      trustedUsersLoading = false;
+    }
+  }
+
+  async function handleAddTrustedUser(e: Event) {
+    e.preventDefault();
+    if (!newTrustedUsername.trim()) return;
+
+    addingTrustedUser = true;
+    trustedUsersError = '';
+
+    try {
+      const newUser = await addTrustedUser(newTrustedUsername.trim());
+      trustedUsers = [newUser, ...trustedUsers];
+      newTrustedUsername = '';
+      // Refresh recovery status
+      recoveryStatus = await getRecoveryStatus();
+    } catch (err) {
+      trustedUsersError = err instanceof Error ? err.message : 'Failed to add trusted user';
+    } finally {
+      addingTrustedUser = false;
+    }
+  }
+
+  async function handleRemoveTrustedUser(id: number) {
+    removingTrustedUserId = id;
+    trustedUsersError = '';
+
+    try {
+      await removeTrustedUser(id);
+      trustedUsers = trustedUsers.filter((u) => u.id !== id);
+      // Refresh recovery status
+      recoveryStatus = await getRecoveryStatus();
+    } catch (err) {
+      trustedUsersError = err instanceof Error ? err.message : 'Failed to remove trusted user';
+    } finally {
+      removingTrustedUserId = null;
+    }
+  }
 
   function startEditProfile() {
     profileDisplayName = $auth.user?.display_name ?? '';
@@ -263,6 +338,80 @@
     <button type="button" onclick={handlePreferenceSave} disabled={prefsSaving}>
       {prefsSaving ? $_('settings.savingPreferences') : $_('common.save')}
     </button>
+  </section>
+
+  <section class="section trusted-users-section">
+    <h2>{$_('settings.trustedUsers.title')}</h2>
+
+    <div class="info-notice">
+      {$_('settings.trustedUsers.description')}
+    </div>
+
+    <div class="security-warning">
+      <strong>{$_('settings.trustedUsers.securityWarningTitle')}</strong>
+      {$_('settings.trustedUsers.securityWarning')}
+    </div>
+
+    {#if trustedUsersError}
+      <div class="error">{trustedUsersError}</div>
+    {/if}
+
+    <form class="add-trusted-form" onsubmit={handleAddTrustedUser}>
+      <input
+        type="text"
+        bind:value={newTrustedUsername}
+        placeholder={$_('settings.trustedUsers.usernamePlaceholder')}
+        disabled={addingTrustedUser}
+      />
+      <button type="submit" disabled={addingTrustedUser || !newTrustedUsername.trim()}>
+        {addingTrustedUser ? $_('common.adding') : $_('common.add')}
+      </button>
+    </form>
+
+    {#if trustedUsersLoading}
+      <div class="loading">{$_('common.loading')}</div>
+    {:else if trustedUsers.length === 0}
+      <div class="empty-state">
+        {$_('settings.trustedUsers.noTrustedUsers')}
+      </div>
+    {:else}
+      <ul class="trusted-users-list">
+        {#each trustedUsers as user (user.id)}
+          <li class="trusted-user-item">
+            <div class="user-info">
+              <span class="username">{user.username}</span>
+              {#if user.display_name}
+                <span class="display-name">({user.display_name})</span>
+              {/if}
+            </div>
+            <button
+              type="button"
+              class="btn-remove"
+              onclick={() => handleRemoveTrustedUser(user.id)}
+              disabled={removingTrustedUserId === user.id}
+            >
+              {removingTrustedUserId === user.id ? $_('common.removing') : $_('common.remove')}
+            </button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+
+    {#if recoveryStatus}
+      <div class="recovery-status" class:recoverable={recoveryStatus.recoverable}>
+        <span class="status-icon">{recoveryStatus.recoverable ? '✓' : '⚠'}</span>
+        <span>
+          {recoveryStatus.recoverable
+            ? $_('settings.trustedUsers.statusRecoverable')
+            : $_('settings.trustedUsers.statusNotRecoverable', {
+                values: {
+                  current: recoveryStatus.trusted_user_count,
+                  required: recoveryStatus.required_count
+                }
+              })}
+        </span>
+      </div>
+    {/if}
   </section>
 
   <section class="section">
@@ -680,6 +829,123 @@
 
     button {
       padding: 1rem;
+    }
+  }
+
+  /* Trusted Users Section */
+  .trusted-users-section .security-warning {
+    background: #f8d7da;
+    color: #721c24;
+    padding: 0.75rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    font-size: 0.85rem;
+    border-left: 4px solid #dc3545;
+  }
+
+  .add-trusted-form {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .add-trusted-form input {
+    flex: 1;
+    margin-bottom: 0;
+  }
+
+  .add-trusted-form button {
+    width: auto;
+    white-space: nowrap;
+  }
+
+  .trusted-users-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1rem 0;
+  }
+
+  .trusted-user-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
+  }
+
+  .user-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .user-info .username {
+    font-weight: 500;
+  }
+
+  .user-info .display-name {
+    color: #666;
+    font-size: 0.9rem;
+  }
+
+  .btn-remove {
+    background: #dc3545;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.85rem;
+  }
+
+  .empty-state {
+    color: #666;
+    text-align: center;
+    padding: 1rem;
+    font-style: italic;
+  }
+
+  .loading {
+    color: #666;
+    text-align: center;
+    padding: 1rem;
+  }
+
+  .recovery-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    border-radius: 8px;
+    background: #fff3cd;
+    color: #856404;
+    font-size: 0.9rem;
+  }
+
+  .recovery-status.recoverable {
+    background: #d4edda;
+    color: #155724;
+  }
+
+  .recovery-status .status-icon {
+    font-size: 1.1rem;
+  }
+
+  @media (max-width: 480px) {
+    .add-trusted-form {
+      flex-direction: column;
+    }
+
+    .add-trusted-form button {
+      width: 100%;
+    }
+
+    .trusted-user-item {
+      flex-direction: column;
+      gap: 0.5rem;
+      align-items: flex-start;
+    }
+
+    .btn-remove {
+      width: 100%;
     }
   }
 </style>

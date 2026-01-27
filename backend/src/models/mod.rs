@@ -1,15 +1,21 @@
+pub mod approval;
 pub mod contribution;
 pub mod history;
 pub mod member;
 pub mod participant;
 pub mod payment;
 pub mod project;
+pub mod recovery_intent;
+pub mod trusted_user;
 pub mod user;
 
+pub use approval::*;
 pub use contribution::*;
 pub use history::*;
 pub use member::*;
 pub use participant::*;
 pub use payment::*;
 pub use project::*;
+pub use recovery_intent::*;
+pub use trusted_user::*;
 pub use user::*;

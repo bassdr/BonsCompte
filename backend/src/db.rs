@@ -636,6 +636,134 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .await
     .ok();
 
+    // =====================
+    // Migration 019: Project Approvals System
+    // =====================
+    // Used for approving user actions like password changes within projects
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS project_approvals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            event_type TEXT NOT NULL,
+            event_metadata TEXT,
+            status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            resolved_at TEXT
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS approval_votes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            approval_id INTEGER NOT NULL REFERENCES project_approvals(id) ON DELETE CASCADE,
+            voter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            vote TEXT NOT NULL CHECK(vote IN ('approve', 'reject')),
+            reason TEXT,
+            voted_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(approval_id, voter_id)
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    // Indexes for approval queries
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_project_approvals_user ON project_approvals(user_id, status)")
+        .execute(pool)
+        .await
+        .ok();
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_project_approvals_project ON project_approvals(project_id, status)")
+        .execute(pool)
+        .await
+        .ok();
+
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_approval_votes_approval ON approval_votes(approval_id)",
+    )
+    .execute(pool)
+    .await
+    .ok();
+
+    // =====================
+    // Migration 020: Trusted Users for Password Recovery
+    // =====================
+    // Asymmetric trust relationships for account recovery
+    // If user A trusts user B, B can help A recover their password
+    // B trusting A requires a separate entry
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS trusted_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            trusted_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(user_id, trusted_user_id),
+            CHECK(user_id != trusted_user_id)
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    // Index for efficient lookup of trusted users
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_trusted_users_user ON trusted_users(user_id)")
+        .execute(pool)
+        .await?;
+
+    // Index for finding who trusts a given user (for admin/stats)
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_trusted_users_trusted ON trusted_users(trusted_user_id)",
+    )
+    .execute(pool)
+    .await?;
+
+    // =====================
+    // Migration 021: Recovery Intents for Password Recovery
+    // =====================
+    // Stores password recovery requests that need approval from trusted users
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS recovery_intents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            token TEXT NOT NULL UNIQUE,
+            status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected', 'expired', 'used')),
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            expires_at TEXT NOT NULL,
+            resolved_at TEXT
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    // Votes from trusted users on recovery intents
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS recovery_votes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            recovery_id INTEGER NOT NULL REFERENCES recovery_intents(id) ON DELETE CASCADE,
+            voter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            vote TEXT NOT NULL CHECK(vote IN ('approve', 'reject')),
+            voted_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(recovery_id, voter_id)
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    // Index for efficient lookup of recovery intents by token
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_recovery_intents_token ON recovery_intents(token)")
+        .execute(pool)
+        .await
+        .ok();
+
+    // Index for finding recovery intents by user
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_recovery_intents_user ON recovery_intents(user_id, status)",
+    )
+    .execute(pool)
+    .await
+    .ok();
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

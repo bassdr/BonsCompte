@@ -15,12 +15,97 @@
     isLocaleLoaded
   } from '$lib/i18n';
   import { preferences } from '$lib/stores/preferences';
+  import {
+    recoveryStatus,
+    refreshRecoveryStatus,
+    resetRecoveryStatus,
+    isDontShowAgain,
+    setDontShowAgain
+  } from '$lib/stores/recoveryStatus';
+  import { getActionableApprovals } from '$lib/api';
+  import { onMount, onDestroy } from 'svelte';
 
   let { children }: { children: Snippet } = $props();
 
   // Initialize i18n before anything else
   const initialLocale = getInitialLocale();
   setupI18n(initialLocale);
+
+  let actionableApprovalsCount = $state(0);
+  let approvalCheckInterval: ReturnType<typeof setInterval> | null = null;
+  let recoveryCheckInterval: ReturnType<typeof setInterval> | null = null;
+  let dismissedForSession = $state(false);
+  let showDismissDialog = $state(false);
+  let dontShowAgainPermanent = $state(false);
+
+  // Check if permanently dismissed on mount
+  $effect(() => {
+    if (browser) {
+      dontShowAgainPermanent = isDontShowAgain();
+    }
+  });
+
+  async function checkActionableApprovals() {
+    if (!$isAuthenticated) return;
+
+    try {
+      const approvals = await getActionableApprovals();
+      actionableApprovalsCount = approvals.length;
+    } catch {
+      // Silently fail - approvals might not be accessible
+      actionableApprovalsCount = 0;
+    }
+  }
+
+  // Check recovery status when authentication state changes
+  $effect(() => {
+    if ($isAuthenticated) {
+      refreshRecoveryStatus();
+      dismissedForSession = false; // Reset session dismiss on login
+    } else {
+      resetRecoveryStatus();
+    }
+  });
+
+  onMount(() => {
+    // Check immediately on mount
+    checkActionableApprovals();
+
+    // Check every 30 seconds
+    approvalCheckInterval = setInterval(checkActionableApprovals, 30000);
+    // Check recovery status every 10 seconds (catches changes from settings page)
+    recoveryCheckInterval = setInterval(() => {
+      if ($isAuthenticated) refreshRecoveryStatus();
+    }, 10000);
+  });
+
+  onDestroy(() => {
+    if (approvalCheckInterval) {
+      clearInterval(approvalCheckInterval);
+    }
+    if (recoveryCheckInterval) {
+      clearInterval(recoveryCheckInterval);
+    }
+  });
+
+  function handleDismissClick() {
+    showDismissDialog = true;
+  }
+
+  function dismissForSession() {
+    dismissedForSession = true;
+    showDismissDialog = false;
+  }
+
+  function dismissPermanently() {
+    setDontShowAgain(true);
+    dontShowAgainPermanent = true;
+    showDismissDialog = false;
+  }
+
+  function cancelDismiss() {
+    showDismissDialog = false;
+  }
 
   // Initialize auth on mount
   $effect(() => {
@@ -49,13 +134,17 @@
   // Redirect to login if not authenticated (except on auth pages)
   $effect(() => {
     if (browser && !$isLoading) {
-      const publicPaths = ['/login', '/register'];
-      const isPublicPath = publicPaths.includes($page.url.pathname);
+      const publicPaths = ['/login', '/register', '/help/password-recovery'];
+      const isPublicPath = publicPaths.some((p) => $page.url.pathname.startsWith(p));
 
       if (!$isAuthenticated && !isPublicPath) {
-        void goto('/login');
-      } else if ($isAuthenticated && isPublicPath) {
-        void goto('/');
+        // Save current URL as return destination after login
+        const returnUrl = $page.url.pathname + $page.url.search;
+        void goto(`/login?returnUrl=${encodeURIComponent(returnUrl)}`);
+      } else if ($isAuthenticated && isPublicPath && !$page.url.pathname.startsWith('/help')) {
+        // Check for returnUrl parameter when redirecting authenticated users away from auth pages
+        const returnUrl = $page.url.searchParams.get('returnUrl');
+        void goto(returnUrl || '/');
       }
     }
   });
@@ -83,6 +172,16 @@
       <div class="nav-brand">BonsCompte</div>
       <div class="nav-links">
         <a href={resolve('/')} class:active={$page.url.pathname === '/'}>{$_('nav.projects')}</a>
+        <a
+          href={resolve('/approvals')}
+          class="approvals-link"
+          class:active={$page.url.pathname.startsWith('/approvals')}
+        >
+          {$_('nav.approvals', { default: 'Approvals' })}
+          {#if actionableApprovalsCount > 0}
+            <span class="badge">{actionableApprovalsCount}</span>
+          {/if}
+        </a>
       </div>
       <div class="nav-user">
         <select class="language-select" value={$locale} onchange={handleLanguageChange}>
@@ -99,6 +198,54 @@
         <button onclick={handleLogout}>{$_('nav.logout')}</button>
       </div>
     </nav>
+
+    {#if $recoveryStatus && !$recoveryStatus.recoverable && !dismissedForSession && !dontShowAgainPermanent}
+      <div class="recovery-warning-banner">
+        <div class="warning-content">
+          <span class="warning-icon">⚠</span>
+          <span>
+            {$_('layout.recoveryWarning', {
+              values: {
+                current: $recoveryStatus.trusted_user_count,
+                required: $recoveryStatus.required_count
+              }
+            })}
+          </span>
+          <a href={resolve('/settings')}>{$_('layout.setupTrustedUsers')}</a>
+        </div>
+        <button class="dismiss-btn" onclick={handleDismissClick}>×</button>
+      </div>
+    {/if}
+
+    {#if showDismissDialog}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="dismiss-dialog-overlay"
+        onclick={cancelDismiss}
+        onkeydown={(e) => e.key === 'Escape' && cancelDismiss()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dismiss-dialog-title"
+        tabindex="-1"
+      >
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="dismiss-dialog" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
+          <h3 id="dismiss-dialog-title">{$_('layout.dismissWarningTitle')}</h3>
+          <p>{$_('layout.dismissWarningDescription')}</p>
+          <div class="dismiss-dialog-buttons">
+            <button class="btn-secondary" onclick={cancelDismiss}>
+              {$_('common.cancel')}
+            </button>
+            <button class="btn-secondary" onclick={dismissForSession}>
+              {$_('layout.dismissForNow')}
+            </button>
+            <button class="btn-danger" onclick={dismissPermanently}>
+              {$_('layout.dontShowAgain')}
+            </button>
+          </div>
+        </div>
+      </div>
+    {/if}
   {:else}
     <!-- Language selector for unauthenticated pages -->
     <nav class="navbar navbar-minimal">
@@ -207,54 +354,187 @@
     text-decoration: none;
     color: #666;
     font-weight: 500;
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
-    transition: all 0.2s;
+    transition: color 0.2s;
   }
 
   .settings-link:hover,
   .settings-link.active {
     color: var(--accent, #7b61ff);
-    background: rgba(123, 97, 255, 0.1);
+  }
+
+  .approvals-link {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .badge {
+    background: var(--accent, #7b61ff);
+    color: white;
+    padding: 0.15rem 0.5rem;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
   }
 
   main {
-    padding: 2rem 1rem;
+    padding: 2rem;
     max-width: 1200px;
     margin: 0 auto;
+  }
+
+  .recovery-warning-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 2rem;
+    background: #fff3cd;
+    border-bottom: 1px solid #ffc107;
+    color: #856404;
+    font-size: 0.9rem;
+  }
+
+  .warning-content {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .warning-icon {
+    font-size: 1.1rem;
+  }
+
+  .warning-content a {
+    color: #856404;
+    font-weight: 600;
+    text-decoration: underline;
+  }
+
+  .warning-content a:hover {
+    color: #533f03;
+  }
+
+  .dismiss-btn {
+    background: transparent;
+    border: none;
+    font-size: 1.2rem;
+    color: #856404;
+    cursor: pointer;
+    padding: 0 0.5rem;
+    line-height: 1;
+  }
+
+  .dismiss-btn:hover {
+    color: #533f03;
+  }
+
+  .dismiss-dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+  }
+
+  .dismiss-dialog {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  }
+
+  .dismiss-dialog h3 {
+    margin: 0 0 0.75rem 0;
+    font-size: 1.1rem;
+    color: #333;
+  }
+
+  .dismiss-dialog p {
+    margin: 0 0 1.25rem 0;
+    color: #666;
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  .dismiss-dialog-buttons {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .dismiss-dialog-buttons button {
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-secondary {
+    background: #f5f5f5;
+    border: 1px solid #ddd;
+    color: #333;
+  }
+
+  .btn-secondary:hover {
+    background: #eee;
+  }
+
+  .btn-danger {
+    background: #dc3545;
+    border: 1px solid #dc3545;
+    color: white;
+  }
+
+  .btn-danger:hover {
+    background: #c82333;
   }
 
   /* Mobile responsive styles */
   @media (max-width: 768px) {
     .navbar {
-      flex-wrap: wrap;
-      gap: 1rem;
       padding: 0.75rem 1rem;
+      flex-wrap: wrap;
+      gap: 0.5rem;
     }
 
     .nav-brand {
-      font-size: 1.1rem;
-      flex: 0 0 100%;
+      font-size: 1.2rem;
     }
 
     .nav-links {
+      order: 3;
+      width: 100%;
+      justify-content: center;
       gap: 1rem;
-      flex: 1;
+      padding-top: 0.5rem;
+      border-top: 1px solid #eee;
     }
 
     .nav-links a {
       font-size: 0.9rem;
-      padding: 0.5rem 0.75rem;
     }
 
     .nav-user {
-      flex: 0 0 100%;
-      justify-content: space-between;
-      gap: 0.75rem;
+      gap: 0.5rem;
     }
 
     .nav-user span {
-      font-size: 0.9rem;
+      display: none;
+    }
+
+    .language-select {
+      padding: 0.3rem 0.4rem;
+      font-size: 0.85rem;
     }
 
     .nav-user button {
@@ -263,30 +543,33 @@
     }
 
     main {
-      padding: 1rem 0.75rem;
+      padding: 1rem;
     }
   }
 
   @media (max-width: 480px) {
     .navbar {
-      padding: 0.5rem 0.5rem;
+      padding: 0.5rem 0.75rem;
     }
 
     .nav-brand {
-      font-size: 1rem;
+      font-size: 1.1rem;
     }
 
     .nav-links {
-      gap: 0.5rem;
+      gap: 0.75rem;
     }
 
     .nav-links a {
-      font-size: 0.8rem;
-      padding: 0.4rem 0.6rem;
+      font-size: 0.85rem;
+    }
+
+    .settings-link {
+      font-size: 0.85rem;
     }
 
     main {
-      padding: 0.75rem 0.5rem;
+      padding: 0.75rem;
     }
   }
 </style>

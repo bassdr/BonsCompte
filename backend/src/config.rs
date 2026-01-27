@@ -7,11 +7,19 @@ pub struct Config {
     pub host: String,
     pub port: u16,
     pub rate_limit_enabled: bool,
+    /// Maximum projects per user (None = unlimited, Some(0) = unlimited, Some(n) = n projects)
+    pub max_projects_per_user: Option<i64>,
 }
 
 impl Config {
     pub fn from_env() -> Self {
         dotenvy::dotenv().ok();
+
+        // Parse max projects per user: None or 0 = unlimited, positive number = limit
+        let max_projects_per_user = env::var("MAX_PROJECTS_PER_USER")
+            .ok()
+            .and_then(|s| s.parse::<i64>().ok())
+            .filter(|&n| n > 0);
 
         Self {
             database_url: env::var("DATABASE_URL")
@@ -31,6 +39,7 @@ impl Config {
                 .unwrap_or_else(|_| "false".to_string())
                 .parse()
                 .unwrap_or(false),
+            max_projects_per_user,
         }
     }
 }

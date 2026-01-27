@@ -33,6 +33,7 @@ export type AuthErrorCode =
   | 'INVALID_CREDENTIALS'
   | 'INVALID_INPUT'
   | 'ACCOUNT_PENDING'
+  | 'PENDING_APPROVAL'
   | 'ACCOUNT_REVOKED'
   | 'INTERNAL_ERROR';
 
@@ -98,6 +99,35 @@ async function authFetch(path: string, opts: AuthFetchOptions = {}) {
       window.location.href = '/login';
     }
     throw new Error('Session expired');
+  }
+
+  // Handle 403 - check for pending approval or revoked account
+  if (res.status === 403) {
+    const text = await res.text();
+    try {
+      const data: ApiError = JSON.parse(text);
+      if (data.code === 'ACCOUNT_PENDING' || data.code === 'PENDING_APPROVAL') {
+        // Redirect to quarantine page, don't clear token
+        if (browser) {
+          window.location.href = '/account/pending';
+        }
+        throw new ApiRequestError(data.code, data.error, res.status);
+      }
+      if (data.code === 'ACCOUNT_REVOKED') {
+        // Logout revoked users
+        auth.logout();
+        if (browser) {
+          sessionStorage.setItem('auth_message', 'account_revoked');
+          window.location.href = '/login';
+        }
+        throw new ApiRequestError(data.code, data.error, res.status);
+      }
+      // Other 403 errors
+      throw new ApiRequestError(data.code || 'FORBIDDEN', data.error, res.status);
+    } catch (e) {
+      if (e instanceof ApiRequestError) throw e;
+      throw new Error(`${res.status}: ${text}`);
+    }
   }
 
   if (!res.ok) {
@@ -839,3 +869,195 @@ export const undoHistoryEntry = (
 
 export const verifyHistoryChain = (projectId: number): Promise<ChainVerification> =>
   authFetch(`/projects/${projectId}/history/verify`);
+
+// ========================================
+// Approval endpoints
+// ========================================
+
+export interface ApprovalVote {
+  id: number;
+  approval_id: number;
+  voter_id: number;
+  voter_username?: string;
+  voter_display_name?: string;
+  vote: string; // 'approve' or 'reject'
+  reason?: string;
+  voted_at: string;
+}
+
+export interface ProjectApproval {
+  id: number;
+  user_id: number;
+  project_id: number;
+  event_type: string;
+  event_metadata?: string;
+  status: string; // 'pending', 'approved', 'rejected'
+  created_at: string;
+  resolved_at?: string;
+  // Additional fields from ApprovalWithDetails
+  project_name?: string;
+  username?: string;
+  display_name?: string;
+  votes?: ApprovalVote[];
+  vote_count?: number;
+  required_votes?: number;
+  can_self_approve?: boolean;
+}
+
+export interface CastVoteRequest {
+  vote: 'approve' | 'reject';
+  reason?: string;
+}
+
+export const getMyPendingApprovals = (): Promise<ProjectApproval[]> =>
+  authFetch('/approvals/my-pending');
+
+export const getActionableApprovals = (): Promise<ProjectApproval[]> =>
+  authFetch('/approvals/actionable');
+
+export const getApproval = (id: number): Promise<ProjectApproval> => authFetch(`/approvals/${id}`);
+
+export const castVote = (
+  approvalId: number,
+  vote: 'approve' | 'reject',
+  reason?: string
+): Promise<ProjectApproval> =>
+  authFetch(`/approvals/${approvalId}/vote`, {
+    method: 'POST',
+    body: JSON.stringify({ vote, reason } as CastVoteRequest)
+  });
+
+// ========================================
+// Trusted Users (Password Recovery)
+// ========================================
+
+export interface TrustedUser {
+  id: number;
+  trusted_user_id: number;
+  username: string;
+  display_name: string | null;
+  created_at: string;
+}
+
+export interface RecoveryStatus {
+  recoverable: boolean;
+  trusted_user_count: number;
+  required_count: number;
+}
+
+export const getTrustedUsers = (): Promise<TrustedUser[]> => authFetch('/users/me/trusted-users');
+
+export const addTrustedUser = (username: string): Promise<TrustedUser> =>
+  authFetch('/users/me/trusted-users', {
+    method: 'POST',
+    body: JSON.stringify({ username })
+  });
+
+export const removeTrustedUser = (id: number): Promise<{ message: string }> =>
+  authFetch(`/users/me/trusted-users/${id}`, { method: 'DELETE' });
+
+export const getRecoveryStatus = (): Promise<RecoveryStatus> =>
+  authFetch('/users/me/recovery-status');
+
+// ========================================
+// Recovery Intent API (Password Recovery)
+// ========================================
+
+export interface InitiateRecoveryResponse {
+  message: string;
+  token: string;
+  expires_at: string;
+}
+
+export interface RecoveryIntentStatus {
+  status: string;
+  approvals_count: number;
+  required_approvals: number;
+  expires_at: string;
+  is_expired: boolean;
+}
+
+export interface PendingRecoveryIntent {
+  id: number;
+  user_id: number;
+  username: string;
+  display_name: string | null;
+  token: string;
+  status: string;
+  created_at: string;
+  expires_at: string;
+  approvals_count: number;
+  rejections_count: number;
+  required_approvals: number;
+  is_blocked: boolean;
+  user_has_voted: boolean;
+  user_vote: string | null;
+}
+
+export interface RecoveryVoteResponse {
+  message: string;
+  vote: string;
+  approvals_count: number;
+  rejections_count: number;
+  required_approvals: number;
+  is_blocked: boolean;
+  status: string;
+}
+
+// Public API for recovery (no auth required)
+async function publicFetch<T>(path: string, opts: RequestInit = {}): Promise<T> {
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    ...(opts.headers as Record<string, string>)
+  };
+
+  const res = await fetch(`${BASE}${path}`, { ...opts, headers });
+
+  if (!res.ok) {
+    const text = await res.text();
+    try {
+      const data: ApiError = JSON.parse(text);
+      throw new ApiRequestError(data.code || 'UNKNOWN', data.error || text, res.status);
+    } catch (e) {
+      if (e instanceof ApiRequestError) throw e;
+      throw new ApiRequestError('UNKNOWN', text || res.statusText, res.status);
+    }
+  }
+
+  return res.json();
+}
+
+// Initiate password recovery (no auth)
+export const initiateRecovery = (username: string): Promise<InitiateRecoveryResponse> =>
+  publicFetch('/recovery/initiate', {
+    method: 'POST',
+    body: JSON.stringify({ username })
+  });
+
+// Get recovery status by token (no auth)
+export const getRecoveryIntentStatus = (token: string): Promise<RecoveryIntentStatus> =>
+  publicFetch(`/recovery/${token}/status`);
+
+// Reset password after recovery approved (no auth)
+export const resetPasswordWithToken = (
+  token: string,
+  newPassword: string
+): Promise<{ message: string }> =>
+  publicFetch(`/recovery/${token}/reset`, {
+    method: 'POST',
+    body: JSON.stringify({ new_password: newPassword })
+  });
+
+// Get pending recovery requests for trusted users to approve (requires auth)
+export const getPendingRecoveries = (): Promise<PendingRecoveryIntent[]> =>
+  authFetch('/recovery/pending');
+
+// Vote on a recovery intent (requires auth)
+export const voteOnRecovery = (
+  token: string,
+  vote: 'approve' | 'reject'
+): Promise<RecoveryVoteResponse> =>
+  authFetch(`/recovery/${token}/vote`, {
+    method: 'POST',
+    body: JSON.stringify({ vote })
+  });

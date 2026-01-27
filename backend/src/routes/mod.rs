@@ -1,3 +1,4 @@
+pub mod approvals;
 pub mod auth;
 pub mod cashflow;
 pub mod debts;
@@ -6,4 +7,5 @@ pub mod members;
 pub mod participants;
 pub mod payments;
 pub mod projects;
+pub mod recovery;
 pub mod users;

@@ -2,7 +2,7 @@ use axum::{extract::State, Json};
 use sqlx::SqlitePool;
 
 use crate::{
-    error::{AppError, AppResult, AuthFailureReason},
+    error::{AppError, AppResult, AuthFailureReason, ErrorCode},
     models::{AuthResponse, CreateUser, LoginRequest, User, UserResponse, UserState},
 };
 
@@ -31,7 +31,7 @@ pub async fn register(
             reason = AuthFailureReason::InvalidInput.as_code(),
             "Registration failed: empty username"
         );
-        return Err(AppError::BadRequest("Username is required".to_string()));
+        return Err(AppError::bad_request(ErrorCode::UsernameRequired));
     }
     if input.password.len() < 6 {
         tracing::warn!(
@@ -40,9 +40,7 @@ pub async fn register(
             username = %username,
             "Registration failed: password too short"
         );
-        return Err(AppError::BadRequest(
-            "Password must be at least 6 characters".to_string(),
-        ));
+        return Err(AppError::bad_request(ErrorCode::PasswordTooWeak));
     }
 
     // Check if user exists

@@ -11,7 +11,7 @@ use crate::{
         password::{hash_password, verify_password},
         AuthUser,
     },
-    error::{AppError, AppResult},
+    error::{AppError, AppResult, ErrorCode},
     models::{
         AddTrustedUserRequest, RecoveryStatus, TrustedUserWithInfo, User, UserPreferences,
         UserResponse, UserState,
@@ -100,7 +100,7 @@ async fn get_user(
         .fetch_optional(&pool)
         .await?;
 
-    let user = user.ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+    let user = user.ok_or_else(|| AppError::not_found(ErrorCode::UserNotFound))?;
 
     Ok(Json(UserResponse::from(user)))
 }
@@ -112,9 +112,7 @@ async fn change_password(
 ) -> AppResult<Json<serde_json::Value>> {
     // Validate new password
     if req.new_password.len() < 6 {
-        return Err(AppError::Validation(
-            "New password must be at least 6 characters".to_string(),
-        ));
+        return Err(AppError::validation(ErrorCode::PasswordTooWeak));
     }
 
     // Get current user with password hash
@@ -123,7 +121,7 @@ async fn change_password(
         .fetch_optional(&pool)
         .await?;
 
-    let user = user.ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+    let user = user.ok_or_else(|| AppError::not_found(ErrorCode::UserNotFound))?;
 
     // Verify current password
     if !verify_password(&req.current_password, &user.password_hash)? {
@@ -192,7 +190,7 @@ async fn delete_account(
         .fetch_optional(&pool)
         .await?;
 
-    let user = user.ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+    let user = user.ok_or_else(|| AppError::not_found(ErrorCode::UserNotFound))?;
 
     // Verify password
     if !verify_password(&req.password, &user.password_hash)? {
@@ -259,10 +257,7 @@ async fn delete_account(
             .await?;
 
             if other_members_count > 0 {
-                return Err(AppError::Validation(format!(
-                    "Cannot delete account: project '{}' has other members but no other admins. Please promote another member to admin first.",
-                    project.name
-                )));
+                return Err(AppError::validation(ErrorCode::CannotDeleteAccountNoAdmin));
             }
 
             // No other members - delete the project (will cascade to all related records)
@@ -313,7 +308,7 @@ async fn get_preferences(
         .fetch_optional(&pool)
         .await?;
 
-    let user = user.ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+    let user = user.ok_or_else(|| AppError::not_found(ErrorCode::UserNotFound))?;
 
     Ok(Json(UserPreferences::from_user(&user)))
 }
@@ -321,23 +316,17 @@ async fn get_preferences(
 fn validate_preferences(req: &UpdatePreferencesRequest) -> Result<(), AppError> {
     if let Some(ref df) = req.date_format {
         if !["mdy", "dmy", "ymd", "iso"].contains(&df.as_str()) {
-            return Err(AppError::Validation(
-                "Invalid date format. Supported: mdy, dmy, ymd, iso".to_string(),
-            ));
+            return Err(AppError::validation(ErrorCode::InvalidDateFormat));
         }
     }
     if let Some(ref sep) = req.decimal_separator {
         if ![".", ","].contains(&sep.as_str()) {
-            return Err(AppError::Validation(
-                "Invalid decimal separator. Supported: . ,".to_string(),
-            ));
+            return Err(AppError::validation(ErrorCode::InvalidDecimalSeparator));
         }
     }
     if let Some(ref pos) = req.currency_symbol_position {
         if !["before", "after"].contains(&pos.as_str()) {
-            return Err(AppError::Validation(
-                "Invalid currency position. Supported: before, after".to_string(),
-            ));
+            return Err(AppError::validation(ErrorCode::InvalidCurrencyPosition));
         }
     }
     // currency_symbol is freeform, no validation needed
@@ -422,7 +411,7 @@ async fn add_trusted_user(
     let username = req.username.trim();
 
     if username.is_empty() {
-        return Err(AppError::Validation("Username is required".to_string()));
+        return Err(AppError::validation(ErrorCode::UsernameRequired));
     }
 
     // Find the user by username
@@ -431,14 +420,11 @@ async fn add_trusted_user(
         .fetch_optional(&pool)
         .await?;
 
-    let trusted_user =
-        trusted_user.ok_or_else(|| AppError::NotFound(format!("User '{}' not found", username)))?;
+    let trusted_user = trusted_user.ok_or_else(|| AppError::not_found(ErrorCode::UserNotFound))?;
 
     // Can't trust yourself
     if trusted_user.id == auth.user_id {
-        return Err(AppError::Validation(
-            "You cannot add yourself as a trusted user".to_string(),
-        ));
+        return Err(AppError::validation(ErrorCode::CannotTrustSelf));
     }
 
     // Insert the trust relationship
@@ -468,10 +454,7 @@ async fn add_trusted_user(
         Err(e) => {
             // Check for unique constraint violation
             if e.to_string().contains("UNIQUE constraint failed") {
-                Err(AppError::Validation(format!(
-                    "User '{}' is already in your trusted users list",
-                    username
-                )))
+                Err(AppError::bad_request(ErrorCode::AlreadyTrustedUser))
             } else {
                 Err(e.into())
             }
@@ -492,9 +475,7 @@ async fn remove_trusted_user(
         .await?;
 
     if result.rows_affected() == 0 {
-        return Err(AppError::NotFound(
-            "Trusted user not found or already removed".to_string(),
-        ));
+        return Err(AppError::not_found(ErrorCode::NotFound));
     }
 
     Ok(Json(serde_json::json!({
@@ -526,9 +507,7 @@ async fn approve_user(
 ) -> AppResult<Json<UserResponse>> {
     // Check if requester is admin
     if !is_system_admin(auth.user_id) {
-        return Err(AppError::Forbidden(
-            "System admin access required".to_string(),
-        ));
+        return Err(AppError::forbidden(ErrorCode::AdminRequired));
     }
 
     // Update user state to active
@@ -544,7 +523,7 @@ async fn approve_user(
         .fetch_optional(&pool)
         .await?;
 
-    let user = user.ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+    let user = user.ok_or_else(|| AppError::not_found(ErrorCode::UserNotFound))?;
 
     Ok(Json(UserResponse::from(user)))
 }
@@ -556,16 +535,12 @@ async fn revoke_user(
 ) -> AppResult<Json<UserResponse>> {
     // Check if requester is admin
     if !is_system_admin(auth.user_id) {
-        return Err(AppError::Forbidden(
-            "System admin access required".to_string(),
-        ));
+        return Err(AppError::forbidden(ErrorCode::AdminRequired));
     }
 
     // Prevent revoking yourself
     if auth.user_id == user_id {
-        return Err(AppError::Forbidden(
-            "Cannot revoke your own account".to_string(),
-        ));
+        return Err(AppError::forbidden(ErrorCode::CannotModifySelf));
     }
 
     // Update user state to revoked and increment token_version to invalidate tokens
@@ -581,7 +556,7 @@ async fn revoke_user(
         .fetch_optional(&pool)
         .await?;
 
-    let user = user.ok_or_else(|| AppError::NotFound("User not found".to_string()))?;
+    let user = user.ok_or_else(|| AppError::not_found(ErrorCode::UserNotFound))?;
 
     Ok(Json(UserResponse::from(user)))
 }

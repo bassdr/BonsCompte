@@ -295,11 +295,7 @@ async fn test_register_password_too_short() {
         .unwrap();
     let error_body: Value = serde_json::from_slice(&body_bytes).unwrap();
 
-    assert_eq!(error_body["code"], "BAD_REQUEST");
-    assert!(error_body["error"]
-        .as_str()
-        .unwrap()
-        .contains("6 characters"));
+    assert_eq!(error_body["code"], "PASSWORD_TOO_WEAK");
 }
 
 #[tokio::test]

@@ -14,6 +14,7 @@
   import { auth } from '$lib/auth';
   import { _ } from '$lib/i18n';
   import { preferences } from '$lib/stores/preferences';
+  import { getErrorMessage as translateError, isNetworkError } from '$lib/errors';
 
   // Get return URL from query params
   const returnUrl = $derived($page.url.searchParams.get('returnUrl') || '/');
@@ -40,17 +41,6 @@
   } | null>(null);
   let newPassword = $state('');
   let confirmNewPassword = $state('');
-
-  // Map error codes to user-friendly translation keys
-  function getErrorMessage(code: string): string {
-    const errorMap: Record<string, string> = {
-      INVALID_CREDENTIALS: $_('auth.errors.invalidCredentials'),
-      ACCOUNT_PENDING: $_('auth.errors.accountPending'),
-      ACCOUNT_REVOKED: $_('auth.errors.accountRevoked'),
-      INTERNAL_ERROR: $_('auth.errors.internalError')
-    };
-    return errorMap[code] || $_('auth.loginFailed');
-  }
 
   // Check for session expired or account revoked message on mount
   onMount(() => {
@@ -82,10 +72,12 @@
       // Redirect to return URL or home
       await goto(returnUrl);
     } catch (err) {
-      if (err instanceof ApiRequestError) {
-        error = getErrorMessage(err.code);
+      if (isNetworkError(err)) {
+        error = $_('errors.networkError');
+      } else if (err instanceof ApiRequestError) {
+        error = translateError(err);
       } else {
-        error = err instanceof Error ? err.message : $_('auth.loginFailed');
+        error = $_('errors.unknown');
       }
     } finally {
       loading = false;
@@ -105,14 +97,14 @@
       recoveryInfo = $_('recovery.requestCreated');
       await checkRecoveryStatus();
     } catch (err) {
-      if (err instanceof ApiRequestError) {
-        // Generic message to not reveal if user exists
-        recoveryInfo = $_('recovery.requestSubmitted');
-      } else if (err instanceof TypeError && err.message === 'Failed to fetch') {
+      if (isNetworkError(err)) {
         // Network error - backend is down or unreachable
         recoveryError = $_('errors.networkError');
+      } else if (err instanceof ApiRequestError) {
+        // For RECOVERY_INSUFFICIENT_TRUSTED_USERS, show generic message to not reveal if user exists
+        recoveryInfo = $_('recovery.requestSubmitted');
       } else {
-        recoveryError = err instanceof Error ? err.message : $_('recovery.initiateFailed');
+        recoveryError = $_('errors.unknown');
       }
     } finally {
       recoveryLoading = false;
@@ -162,10 +154,12 @@
       recoveryStep = 'done';
       recoveryInfo = $_('recovery.passwordReset');
     } catch (err) {
-      if (err instanceof ApiRequestError) {
-        recoveryError = err.message;
+      if (isNetworkError(err)) {
+        recoveryError = $_('errors.networkError');
+      } else if (err instanceof ApiRequestError) {
+        recoveryError = translateError(err);
       } else {
-        recoveryError = err instanceof Error ? err.message : $_('recovery.resetFailed');
+        recoveryError = $_('errors.unknown');
       }
     } finally {
       recoveryLoading = false;

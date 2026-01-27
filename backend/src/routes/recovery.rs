@@ -7,7 +7,7 @@ use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::auth::middleware::AuthUser;
-use crate::error::AppError;
+use crate::error::{AppError, ErrorCode};
 use crate::models::{
     InitiateRecoveryRequest, InitiateRecoveryResponse, RecoveryIntent, RecoveryIntentStatus,
     RecoveryIntentWithInfo, RecoveryVoteRequest, ResetPasswordRequest,
@@ -39,8 +39,8 @@ async fn initiate_recovery(
 
     let Some((user_id, _username)) = user else {
         // Don't reveal if user exists or not
-        return Err(AppError::BadRequest(
-            "If this account exists and has trusted users configured, a recovery request has been created.".to_string(),
+        return Err(AppError::bad_request(
+            ErrorCode::RecoveryInsufficientTrustedUsers,
         ));
     };
 
@@ -53,8 +53,8 @@ async fn initiate_recovery(
 
     if trusted_count.0 < RecoveryIntent::REQUIRED_APPROVALS {
         // Don't reveal specific reason
-        return Err(AppError::BadRequest(
-            "If this account exists and has trusted users configured, a recovery request has been created.".to_string(),
+        return Err(AppError::bad_request(
+            ErrorCode::RecoveryInsufficientTrustedUsers,
         ));
     }
 
@@ -112,7 +112,7 @@ async fn get_recovery_status(
             .bind(&token)
             .fetch_optional(&pool)
             .await?
-            .ok_or_else(|| AppError::NotFound("Recovery request not found".to_string()))?;
+            .ok_or_else(|| AppError::not_found(ErrorCode::RecoveryNotFound))?;
 
     // Count approvals
     let approvals: (i64,) = sqlx::query_as(
@@ -243,9 +243,7 @@ async fn vote_on_recovery(
     Json(req): Json<RecoveryVoteRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     if req.vote != "approve" && req.vote != "reject" {
-        return Err(AppError::BadRequest(
-            "Vote must be 'approve' or 'reject'".to_string(),
-        ));
+        return Err(AppError::bad_request(ErrorCode::InvalidVote));
     }
 
     // Find the recovery intent
@@ -254,7 +252,7 @@ async fn vote_on_recovery(
             .bind(&token)
             .fetch_optional(&pool)
             .await?
-            .ok_or_else(|| AppError::NotFound("Recovery request not found".to_string()))?;
+            .ok_or_else(|| AppError::not_found(ErrorCode::RecoveryNotFound))?;
 
     // Check if expired
     if intent.is_expired() {
@@ -264,17 +262,12 @@ async fn vote_on_recovery(
         .bind(intent.id)
         .execute(&pool)
         .await?;
-        return Err(AppError::BadRequest(
-            "Recovery request has expired".to_string(),
-        ));
+        return Err(AppError::bad_request(ErrorCode::RecoveryExpired));
     }
 
     // Check if still pending
     if intent.status != "pending" {
-        return Err(AppError::BadRequest(format!(
-            "Recovery request is no longer pending (status: {})",
-            intent.status
-        )));
+        return Err(AppError::bad_request(ErrorCode::RecoveryNotPending));
     }
 
     // Verify the current user is a trusted user of the account owner
@@ -287,9 +280,7 @@ async fn vote_on_recovery(
     .await?;
 
     if is_trusted.0 == 0 {
-        return Err(AppError::Forbidden(
-            "You are not a trusted user for this account".to_string(),
-        ));
+        return Err(AppError::forbidden(ErrorCode::NotTrustedUser));
     }
 
     // Check if already voted - allow changing vote
@@ -395,9 +386,7 @@ async fn reset_password(
 ) -> Result<Json<serde_json::Value>, AppError> {
     // Validate password strength
     if req.new_password.len() < 6 {
-        return Err(AppError::BadRequest(
-            "Password must be at least 6 characters".to_string(),
-        ));
+        return Err(AppError::bad_request(ErrorCode::PasswordTooWeak));
     }
 
     // Find the recovery intent
@@ -406,21 +395,16 @@ async fn reset_password(
             .bind(&token)
             .fetch_optional(&pool)
             .await?
-            .ok_or_else(|| AppError::NotFound("Recovery request not found".to_string()))?;
+            .ok_or_else(|| AppError::not_found(ErrorCode::RecoveryNotFound))?;
 
     // Check status
     if intent.status != "approved" {
-        return Err(AppError::BadRequest(format!(
-            "Recovery request is not approved (status: {})",
-            intent.status
-        )));
+        return Err(AppError::bad_request(ErrorCode::RecoveryNotApproved));
     }
 
     // Check if expired (even approved ones can expire if not used quickly)
     if intent.is_expired() {
-        return Err(AppError::BadRequest(
-            "Recovery request has expired".to_string(),
-        ));
+        return Err(AppError::bad_request(ErrorCode::RecoveryExpired));
     }
 
     // Hash the new password

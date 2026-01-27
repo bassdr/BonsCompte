@@ -4,24 +4,30 @@
     getMyPendingApprovals,
     getActionableApprovals,
     castVote,
-    type ProjectApproval
+    getPendingRecoveries,
+    voteOnRecovery,
+    type ProjectApproval,
+    type PendingRecoveryIntent
   } from '$lib/api';
   import { _ } from 'svelte-i18n';
   import { goto } from '$app/navigation';
 
   let myApprovals = $state<ProjectApproval[]>([]);
   let actionableApprovals = $state<ProjectApproval[]>([]);
+  let pendingRecoveries = $state<PendingRecoveryIntent[]>([]);
   let loading = $state(true);
   let error = $state('');
   let votingInProgress = $state<Set<number>>(new Set());
+  let recoveryVotingInProgress = $state<Set<string>>(new Set());
 
   async function loadData() {
     try {
       loading = true;
       error = '';
-      [myApprovals, actionableApprovals] = await Promise.all([
+      [myApprovals, actionableApprovals, pendingRecoveries] = await Promise.all([
         getMyPendingApprovals(),
-        getActionableApprovals()
+        getActionableApprovals(),
+        getPendingRecoveries()
       ]);
     } catch (e) {
       error = e instanceof Error ? e.message : 'Failed to load approvals';
@@ -50,6 +56,22 @@
     }
   }
 
+  async function handleRecoveryVote(token: string, vote: 'approve' | 'reject') {
+    if (recoveryVotingInProgress.has(token)) return;
+
+    recoveryVotingInProgress.add(token);
+
+    try {
+      await voteOnRecovery(token, vote);
+      // Refresh data after voting
+      await loadData();
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Failed to cast vote';
+    } finally {
+      recoveryVotingInProgress.delete(token);
+    }
+  }
+
   function viewDetails(id: number) {
     goto(`/approvals/${id}`);
   }
@@ -64,6 +86,15 @@
         return eventType;
     }
   }
+
+  function formatExpiresAt(expiresAt: string): string {
+    try {
+      const date = new Date(expiresAt.replace(' ', 'T') + 'Z');
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return expiresAt;
+    }
+  }
 </script>
 
 <div class="container">
@@ -74,6 +105,107 @@
   {:else if error}
     <div class="error-message">{error}</div>
   {:else}
+    <!-- Recovery Requests Section (trusted users) -->
+    {#if pendingRecoveries.length > 0}
+      <section class="section">
+        <h2>{$_('recovery.pendingRecoveries')}</h2>
+
+        <div class="approvals-grid">
+          {#each pendingRecoveries as recovery (recovery.id)}
+            <div class="approval-card recovery-card">
+              <div class="card-header">
+                <div>
+                  <h3>{recovery.display_name || recovery.username}</h3>
+                  <p class="project-name">@{recovery.username}</p>
+                </div>
+                <span class="event-badge recovery-badge"
+                  >{$_('approvals.event.password_reset', { default: 'Password Reset' })}</span
+                >
+              </div>
+
+              <p class="recovery-description">
+                {$_('recovery.userRequestsRecovery', {
+                  values: { username: recovery.display_name || recovery.username }
+                })}
+              </p>
+
+              <div class="progress-section">
+                <div class="progress-bar">
+                  <div
+                    class="progress-fill"
+                    style="width: {Math.min(
+                      100,
+                      (recovery.approvals_count / recovery.required_approvals) * 100
+                    )}%"
+                  ></div>
+                </div>
+                <div class="progress-text">
+                  {recovery.approvals_count} / {recovery.required_approvals}
+                  {$_('recovery.approvals')}
+                </div>
+              </div>
+
+              <div class="expires-info">
+                {$_('recovery.expiresAt')}: {formatExpiresAt(recovery.expires_at)}
+              </div>
+
+              {#if recovery.is_blocked}
+                <div class="blocked-notice">
+                  {recovery.user_vote === 'reject'
+                    ? $_('recovery.blockedByYou')
+                    : $_('recovery.blockedByRejection')}
+                </div>
+              {/if}
+
+              {#if recovery.user_has_voted}
+                <div class="voted-status">
+                  {$_('recovery.yourVote')}:
+                  <span class={recovery.user_vote === 'approve' ? 'vote-approve' : 'vote-reject'}>
+                    {recovery.user_vote === 'approve'
+                      ? $_('recovery.votedApprove')
+                      : $_('recovery.votedReject')}
+                  </span>
+                </div>
+                <!-- Allow changing vote -->
+                <div class="change-vote">
+                  <button
+                    class="btn-change-vote"
+                    onclick={() =>
+                      handleRecoveryVote(
+                        recovery.token,
+                        recovery.user_vote === 'approve' ? 'reject' : 'approve'
+                      )}
+                    disabled={recoveryVotingInProgress.has(recovery.token)}
+                  >
+                    {recovery.user_vote === 'approve'
+                      ? $_('recovery.changeToReject')
+                      : $_('recovery.changeToApprove')}
+                  </button>
+                </div>
+              {:else}
+                <div class="action-buttons">
+                  <button
+                    class="btn-approve"
+                    onclick={() => handleRecoveryVote(recovery.token, 'approve')}
+                    disabled={recoveryVotingInProgress.has(recovery.token)}
+                  >
+                    {$_('recovery.voteApprove')}
+                  </button>
+                  <button
+                    class="btn-reject"
+                    onclick={() => handleRecoveryVote(recovery.token, 'reject')}
+                    disabled={recoveryVotingInProgress.has(recovery.token)}
+                  >
+                    {$_('recovery.voteReject')}
+                  </button>
+                </div>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
     <!-- My Pending Approvals Section -->
     <section class="section">
       <h2>{$_('approvals.my_pending', { default: 'My Pending Approvals' })}</h2>
@@ -380,5 +512,79 @@
     color: #dc2626;
     background: #fee2e2;
     border-radius: 8px;
+  }
+
+  .recovery-card {
+    border-left: 4px solid #f59e0b;
+  }
+
+  .recovery-badge {
+    background: #fef3c7 !important;
+    color: #92400e !important;
+  }
+
+  .recovery-description {
+    color: #6b7280;
+    font-size: 0.875rem;
+    margin-bottom: 1rem;
+  }
+
+  .expires-info {
+    font-size: 0.75rem;
+    color: #9ca3af;
+    margin-bottom: 1rem;
+  }
+
+  .voted-status {
+    background: #f3f4f6;
+    padding: 0.75rem;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    text-align: center;
+  }
+
+  .vote-approve {
+    color: #059669;
+    font-weight: 600;
+  }
+
+  .vote-reject {
+    color: #dc2626;
+    font-weight: 600;
+  }
+
+  .blocked-notice {
+    background: #fef3c7;
+    color: #92400e;
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    margin-bottom: 0.75rem;
+    text-align: center;
+  }
+
+  .change-vote {
+    margin-top: 0.5rem;
+  }
+
+  .btn-change-vote {
+    width: 100%;
+    background: #f3f4f6;
+    color: #4b5563;
+    border: 1px solid #d1d5db;
+    padding: 0.4rem 0.75rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: background 0.2s;
+  }
+
+  .btn-change-vote:hover:not(:disabled) {
+    background: #e5e7eb;
+  }
+
+  .btn-change-vote:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>

@@ -9,7 +9,7 @@ use sqlx::SqlitePool;
 
 use crate::{
     auth::{AdminMember, AuthUser, ProjectMember},
-    error::{AppError, AppResult},
+    error::{AppError, AppResult, ErrorCode},
     models::{
         CreateProject, EntityType, JoinProject, Project, ProjectListItem, UpdateProject,
         UpdateProjectSettings,
@@ -56,6 +56,7 @@ struct ProjectListRow {
     role: String,
     owner_name: String,
     user_participant_id: Option<i64>,
+    member_status: String,
 }
 
 async fn list_projects(
@@ -65,15 +66,17 @@ async fn list_projects(
     use crate::models::PoolSummary;
 
     // Get projects with owner name and user's participant ID
+    // Include both 'active' and 'recovered' members (recovered have read-only access)
     let rows: Vec<ProjectListRow> = sqlx::query_as(
         "SELECT p.id, p.name, p.description, p.invite_code, p.created_by, p.created_at,
                 p.invites_enabled, p.require_approval, p.pool_warning_horizon, pm.role,
                 COALESCE(u.display_name, u.username) as owner_name,
-                pm.participant_id as user_participant_id
+                pm.participant_id as user_participant_id,
+                pm.status as member_status
          FROM projects p
          JOIN project_members pm ON p.id = pm.project_id
          JOIN users u ON p.created_by = u.id
-         WHERE pm.user_id = ? AND pm.status = 'active'
+         WHERE pm.user_id = ? AND pm.status IN ('active', 'recovered')
          ORDER BY p.created_at DESC",
     )
     .bind(auth.user_id)
@@ -132,6 +135,7 @@ async fn list_projects(
             owner_name: row.owner_name,
             user_balance,
             user_pools,
+            member_status: row.member_status,
         });
     }
 
@@ -153,10 +157,7 @@ async fn create_project(
                 .await?;
 
         if project_count >= max_projects {
-            return Err(AppError::Forbidden(format!(
-                "Project creation limit reached (maximum {} projects per user)",
-                max_projects
-            )));
+            return Err(AppError::forbidden(ErrorCode::ProjectLimitReached));
         }
     }
 
@@ -250,7 +251,7 @@ async fn update_project(
     }
 
     if updates.is_empty() {
-        return Err(AppError::BadRequest("No fields to update".to_string()));
+        return Err(AppError::bad_request(ErrorCode::NoFieldsToUpdate));
     }
 
     let sql = format!("UPDATE projects SET {} WHERE id = ?", updates.join(", "));
@@ -347,7 +348,7 @@ async fn update_project_settings(
     }
 
     if updates.is_empty() {
-        return Err(AppError::BadRequest("No settings to update".to_string()));
+        return Err(AppError::bad_request(ErrorCode::NoFieldsToUpdate));
     }
 
     let sql = format!("UPDATE projects SET {} WHERE id = ?", updates.join(", "));
@@ -400,7 +401,7 @@ async fn join_project(
         .fetch_optional(&pool)
         .await?;
 
-    let project = project.ok_or_else(|| AppError::NotFound("Invalid invite code".to_string()))?;
+    let project = project.ok_or_else(|| AppError::not_found(ErrorCode::InviteNotFound))?;
 
     // Check if invites are enabled
     if !project.invites_enabled {

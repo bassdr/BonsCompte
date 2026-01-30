@@ -4,8 +4,9 @@
   import { resolve } from '$app/paths';
   import { joinProject } from '$lib/api';
   import { t } from 'svelte-i18n';
+  import { getErrorKey } from '$lib/errors';
 
-  let error = $state('');
+  let errorKey = $state('');
   let joining = $state(false);
   let success = $state('');
 
@@ -22,7 +23,7 @@
     if (!inviteCode) return;
 
     joining = true;
-    error = '';
+    errorKey = '';
     success = '';
 
     try {
@@ -35,7 +36,7 @@
         await goto(`/projects/${response.project.id}`);
       }
     } catch (e) {
-      error = e instanceof Error ? e.message : $t('join.failedToJoin');
+      errorKey = getErrorKey(e, 'join.failedToJoin');
     } finally {
       joining = false;
     }
@@ -51,8 +52,8 @@
       <a href={resolve('/')} class="btn-primary">{$t('join.goToProjects')}</a>
     </div>
   {:else}
-    {#if error}
-      <div class="error">{error}</div>
+    {#if errorKey}
+      <div class="error">{$t(errorKey)}</div>
     {/if}
 
     {#if code}

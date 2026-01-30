@@ -8,10 +8,19 @@ export const participants = writable<Participant[]>([]);
 export const members = writable<ProjectMember[]>([]);
 
 // Derived stores
-export const isAdmin = derived(currentProject, ($project) => $project?.role === 'admin');
+export const isRecovered = derived(
+  currentProject,
+  ($project) => $project?.member_status === 'recovered'
+);
+export const isAdmin = derived(
+  currentProject,
+  ($project) => $project?.role === 'admin' && $project?.member_status !== 'recovered'
+);
 export const isEditor = derived(
   currentProject,
-  ($project) => $project?.role === 'admin' || $project?.role === 'editor'
+  ($project) =>
+    ($project?.role === 'admin' || $project?.role === 'editor') &&
+    $project?.member_status !== 'recovered'
 );
 export const canEdit = isEditor;
 
@@ -33,7 +42,8 @@ export async function loadProject(projectId: number) {
       role: 'reader',
       owner_name: '',
       user_balance: null,
-      user_pools: []
+      user_pools: [],
+      member_status: 'active'
     }
   );
   participants.set(participantsList);

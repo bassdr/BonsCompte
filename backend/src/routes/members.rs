@@ -8,7 +8,7 @@ use sqlx::SqlitePool;
 
 use crate::{
     auth::{AdminMember, ProjectMember},
-    error::{AppError, AppResult},
+    error::{AppError, AppResult, ErrorCode},
     models::{EntityType, ProjectMemberResponse, Role, SetMemberParticipant, UpdateMemberRole},
     services::HistoryService,
     AppState,
@@ -38,12 +38,14 @@ async fn list_members(
     member: ProjectMember,
     State(pool): State<SqlitePool>,
 ) -> AppResult<Json<Vec<ProjectMemberResponse>>> {
+    // Include both 'active' and 'recovered' members
+    // Recovered members have read-only access until re-approved
     let members: Vec<ProjectMemberResponse> = sqlx::query_as(
         "SELECT pm.id, pm.project_id, pm.user_id, u.username, u.display_name, pm.role, pm.participant_id, p.name as participant_name, pm.joined_at, pm.status
          FROM project_members pm
          JOIN users u ON pm.user_id = u.id
          LEFT JOIN participants p ON pm.participant_id = p.id
-         WHERE pm.project_id = ? AND pm.status = 'active'
+         WHERE pm.project_id = ? AND pm.status IN ('active', 'recovered')
          ORDER BY pm.joined_at"
     )
     .bind(member.project_id)
@@ -58,12 +60,13 @@ async fn list_pending_members(
     State(pool): State<SqlitePool>,
 ) -> AppResult<Json<Vec<ProjectMemberResponse>>> {
     let member = admin.0;
+    // Include both 'pending' and 'recovered' members that need approval
     let members: Vec<ProjectMemberResponse> = sqlx::query_as(
         "SELECT pm.id, pm.project_id, pm.user_id, u.username, u.display_name, pm.role, pm.participant_id, p.name as participant_name, pm.joined_at, pm.status
          FROM project_members pm
          JOIN users u ON pm.user_id = u.id
          LEFT JOIN participants p ON pm.participant_id = p.id
-         WHERE pm.project_id = ? AND pm.status = 'pending'
+         WHERE pm.project_id = ? AND pm.status IN ('pending', 'recovered')
          ORDER BY pm.joined_at"
     )
     .bind(member.project_id)
@@ -92,7 +95,7 @@ async fn get_member(
 
     target
         .map(Json)
-        .ok_or_else(|| AppError::NotFound("Member not found".to_string()))
+        .ok_or_else(|| AppError::not_found(ErrorCode::MemberNotFound))
 }
 
 async fn update_member_role(
@@ -105,16 +108,14 @@ async fn update_member_role(
 
     // Can't change own role (prevent admin lockout)
     if path.user_id == member.user_id {
-        return Err(AppError::BadRequest(
-            "Cannot change your own role".to_string(),
-        ));
+        return Err(AppError::bad_request(ErrorCode::CannotModifySelf));
     }
 
     // Validate role
     let new_role = input
         .role
         .parse::<Role>()
-        .map_err(|_| AppError::BadRequest("Invalid role".to_string()))?;
+        .map_err(|_| AppError::bad_request(ErrorCode::InvalidRole))?;
 
     // Capture before state
     let before: Option<ProjectMemberResponse> = sqlx::query_as(
@@ -129,7 +130,7 @@ async fn update_member_role(
     .fetch_optional(&pool)
     .await?;
 
-    let before = before.ok_or_else(|| AppError::NotFound("Member not found".to_string()))?;
+    let before = before.ok_or_else(|| AppError::not_found(ErrorCode::MemberNotFound))?;
 
     sqlx::query("UPDATE project_members SET role = ? WHERE project_id = ? AND user_id = ?")
         .bind(new_role.as_str())
@@ -178,7 +179,7 @@ async fn remove_member(
 
     // Can't remove yourself
     if path.user_id == member.user_id {
-        return Err(AppError::BadRequest("Cannot remove yourself".to_string()));
+        return Err(AppError::bad_request(ErrorCode::CannotRemoveSelf));
     }
 
     // Capture before state for history
@@ -194,7 +195,7 @@ async fn remove_member(
     .fetch_optional(&pool)
     .await?;
 
-    let before = before.ok_or_else(|| AppError::NotFound("Member not found".to_string()))?;
+    let before = before.ok_or_else(|| AppError::not_found(ErrorCode::MemberNotFound))?;
 
     let result = sqlx::query("DELETE FROM project_members WHERE project_id = ? AND user_id = ?")
         .bind(member.project_id)
@@ -203,7 +204,7 @@ async fn remove_member(
         .await?;
 
     if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("Member not found".to_string()));
+        return Err(AppError::not_found(ErrorCode::MemberNotFound));
     }
 
     // Also unlink user from any participant they claimed
@@ -246,7 +247,7 @@ async fn set_member_participant(
             .await?;
 
     if target_exists.is_none() {
-        return Err(AppError::NotFound("Member not found".to_string()));
+        return Err(AppError::not_found(ErrorCode::MemberNotFound));
     }
 
     // If setting a participant, verify it belongs to project
@@ -259,7 +260,7 @@ async fn set_member_participant(
                 .await?;
 
         if participant_exists.is_none() {
-            return Err(AppError::BadRequest("Invalid participant".to_string()));
+            return Err(AppError::bad_request(ErrorCode::InvalidParticipant));
         }
 
         // Check if participant is already claimed by another user
@@ -272,9 +273,7 @@ async fn set_member_participant(
         .await?;
 
         if already_claimed.is_some() {
-            return Err(AppError::BadRequest(
-                "Participant already claimed by another user".to_string(),
-            ));
+            return Err(AppError::bad_request(ErrorCode::ParticipantAlreadyClaimed));
         }
     }
 
@@ -341,15 +340,10 @@ async fn approve_member(
     .await?;
 
     match target_status.as_deref() {
-        None => return Err(AppError::NotFound("Member not found".to_string())),
-        Some("active") => return Err(AppError::BadRequest("Member is already active".to_string())),
-        Some("pending") => {} // OK to proceed
-        Some(s) => {
-            return Err(AppError::BadRequest(format!(
-                "Cannot approve member with status: {}",
-                s
-            )))
-        }
+        None => return Err(AppError::not_found(ErrorCode::MemberNotFound)),
+        Some("active") => return Err(AppError::bad_request(ErrorCode::MemberAlreadyActive)),
+        Some("pending") | Some("recovered") => {} // OK to proceed - both need approval
+        Some(_) => return Err(AppError::bad_request(ErrorCode::CannotApproveMember)),
     }
 
     sqlx::query(
@@ -392,19 +386,11 @@ async fn reject_member(
     .await?;
 
     match target_status.as_deref() {
-        None => return Err(AppError::NotFound("Member not found".to_string())),
-        Some("active") => {
-            return Err(AppError::BadRequest(
-                "Cannot reject an active member".to_string(),
-            ))
-        }
+        None => return Err(AppError::not_found(ErrorCode::MemberNotFound)),
+        Some("active") => return Err(AppError::bad_request(ErrorCode::CannotRejectActiveMember)),
+        Some("recovered") => return Err(AppError::bad_request(ErrorCode::CannotRejectMember)),
         Some("pending") => {} // OK to proceed
-        Some(s) => {
-            return Err(AppError::BadRequest(format!(
-                "Cannot reject member with status: {}",
-                s
-            )))
-        }
+        Some(_) => return Err(AppError::bad_request(ErrorCode::CannotRejectMember)),
     }
 
     // Delete the pending member

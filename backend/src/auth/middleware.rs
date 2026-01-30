@@ -121,15 +121,17 @@ pub struct ProjectMember {
     pub project_id: i64,
     pub role: Role,
     pub participant_id: Option<i64>,
+    /// True if the user's membership is in 'recovered' status (read-only until re-approved)
+    pub is_recovered: bool,
 }
 
 impl ProjectMember {
     pub fn is_admin(&self) -> bool {
-        self.role == Role::Admin
+        self.role == Role::Admin && !self.is_recovered
     }
 
     pub fn is_editor_or_above(&self) -> bool {
-        self.role >= Role::Editor
+        self.role >= Role::Editor && !self.is_recovered
     }
 
     pub fn can_edit(&self) -> bool {
@@ -181,8 +183,10 @@ where
 
         match member {
             Some((role_str, participant_id, status)) => {
-                // Check if membership is active
-                if status != "active" {
+                // Check if membership status allows access
+                let is_recovered = status == "recovered";
+                if status != "active" && !is_recovered {
+                    // 'pending' or other non-active statuses block access
                     return Err(AppError::AccountPendingApproval);
                 }
 
@@ -196,6 +200,7 @@ where
                     project_id,
                     role,
                     participant_id,
+                    is_recovered,
                 })
             }
             None => Err(AppError::NotFound(

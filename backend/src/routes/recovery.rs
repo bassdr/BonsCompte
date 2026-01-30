@@ -427,7 +427,12 @@ async fn reset_password(
     .execute(&pool)
     .await?;
 
-    // TODO: In Step 3, we'll also set the user's project memberships to RECOVERED state
+    // Set all project memberships to 'recovered' status
+    // Project admins must re-approve the user in each project
+    sqlx::query("UPDATE project_members SET status = 'recovered' WHERE user_id = ?")
+        .bind(intent.user_id)
+        .execute(&pool)
+        .await?;
 
     Ok(Json(serde_json::json!({
         "message": "Password has been reset successfully. You can now log in with your new password."

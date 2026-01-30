@@ -1,19 +1,27 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { resolve } from '$app/paths';
-  import { loadProject, clearProject, currentProject, isAdmin } from '$lib/stores/project';
+  import { goto } from '$app/navigation';
+  import {
+    loadProject,
+    clearProject,
+    currentProject,
+    isAdmin,
+    isRecovered
+  } from '$lib/stores/project';
   import type { Snippet } from 'svelte';
   import { _ } from '$lib/i18n';
   import { formatDateWithWeekday, getLocalDateString } from '$lib/format';
   import { SvelteMap } from 'svelte/reactivity';
   import { getDebts, type DebtSummary, type PaymentOccurrence } from '$lib/api';
+  import { getErrorKey } from '$lib/errors';
 
   import { participants } from '$lib/stores/project';
 
   let { children }: { children: Snippet } = $props();
 
   let loading = $state(true);
-  let error = $state('');
+  let errorKey = $state('');
 
   $effect(() => {
     const projectId = parseInt($page.params.id ?? '');
@@ -28,11 +36,27 @@
 
   async function loadProjectData(projectId: number) {
     loading = true;
-    error = '';
+    errorKey = '';
     try {
       await loadProject(projectId);
-    } catch (e) {
-      error = e instanceof Error ? e.message : $_('projects.failedToLoad');
+    } catch (e: unknown) {
+      // Check for access denied errors - redirect to projects list
+      const err = e as { code?: string };
+      if (err && typeof err.code === 'string') {
+        const code = err.code;
+        if (
+          code === 'NOT_FOUND' ||
+          code === 'PROJECT_NOT_FOUND' ||
+          code === 'FORBIDDEN' ||
+          code === 'UNAUTHORIZED'
+        ) {
+          goto(resolve('/'));
+          return;
+        }
+      }
+
+      // For all other errors (including network), get the appropriate error key
+      errorKey = getErrorKey(e, 'projects.failedToLoad');
     } finally {
       loading = false;
     }
@@ -347,10 +371,10 @@
 
 {#if loading}
   <div class="loading">{$_('common.loading')}</div>
-{:else if error}
+{:else if errorKey}
   <div class="error">
     <h2>{$_('common.error')}</h2>
-    <p>{error}</p>
+    <p>{$_(errorKey)}</p>
     <a href={resolve('/')}>{$_('nav.projects')}</a>
   </div>
 {:else if $currentProject}
@@ -431,6 +455,14 @@
             </div>
           {/if}
         {/each}
+      {/if}
+
+      <!-- Recovered account warning banner -->
+      {#if $isRecovered}
+        <div class="recovered-warning-banner">
+          <span class="warning-icon">🔒</span>
+          <span class="warning-text">{$_('project.recoveredWarning')}</span>
+        </div>
       {/if}
       <nav class="project-nav">
         <a
@@ -582,6 +614,29 @@
 
   .pool-warning-banner .warning-text {
     display: block;
+  }
+
+  /* Recovered account warning banner */
+  .recovered-warning-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    background: linear-gradient(135deg, rgba(255, 193, 7, 0.15), rgba(255, 193, 7, 0.08));
+    color: #856404;
+    padding: 0.75rem 1rem;
+    border: 1px solid rgba(255, 193, 7, 0.4);
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    font-weight: 500;
+  }
+
+  .recovered-warning-banner .warning-icon {
+    flex-shrink: 0;
+  }
+
+  .recovered-warning-banner .warning-text {
+    flex-grow: 1;
   }
 
   .project-nav {

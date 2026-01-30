@@ -15,25 +15,26 @@
   import { auth } from '$lib/auth';
   import { _ } from '$lib/i18n';
   import { preferences } from '$lib/stores/preferences';
+  import { getErrorKey } from '$lib/errors';
 
   // Profile state
   let editingProfile = $state(false);
   let profileDisplayName = $state($auth.user?.display_name ?? '');
   let profileSaving = $state(false);
-  let profileError = $state('');
+  let profileErrorKey = $state('');
   let profileSuccess = $state('');
 
   // Password change state
   let currentPassword = $state('');
   let newPassword = $state('');
   let confirmPassword = $state('');
-  let passwordError = $state('');
+  let passwordErrorKey = $state('');
   let passwordSuccess = $state('');
   let changingPassword = $state(false);
 
   // Delete account state
   let deletePassword = $state('');
-  let deleteError = $state('');
+  let deleteErrorKey = $state('');
   let deleting = $state(false);
   let showDeleteConfirm = $state(false);
 
@@ -44,13 +45,13 @@
   let prefsCurrencyPosition = $state($preferences.currency_symbol_position);
   let prefsSaving = $state(false);
   let prefsSuccess = $state('');
-  let prefsError = $state('');
+  let prefsErrorKey = $state('');
 
   // Trusted users state
   let trustedUsers = $state<TrustedUser[]>([]);
   let recoveryStatus = $state<RecoveryStatus | null>(null);
   let trustedUsersLoading = $state(true);
-  let trustedUsersError = $state('');
+  let trustedUsersErrorKey = $state('');
   let newTrustedUsername = $state('');
   let addingTrustedUser = $state(false);
   let removingTrustedUserId = $state<number | null>(null);
@@ -70,13 +71,13 @@
 
   async function loadTrustedUsers() {
     trustedUsersLoading = true;
-    trustedUsersError = '';
+    trustedUsersErrorKey = '';
     try {
       const [users, status] = await Promise.all([getTrustedUsers(), getRecoveryStatus()]);
       trustedUsers = users;
       recoveryStatus = status;
     } catch (err) {
-      trustedUsersError = err instanceof Error ? err.message : 'Failed to load trusted users';
+      trustedUsersErrorKey = getErrorKey(err, 'settings.trustedUsers.failedToLoad');
     } finally {
       trustedUsersLoading = false;
     }
@@ -87,7 +88,7 @@
     if (!newTrustedUsername.trim()) return;
 
     addingTrustedUser = true;
-    trustedUsersError = '';
+    trustedUsersErrorKey = '';
 
     try {
       const newUser = await addTrustedUser(newTrustedUsername.trim());
@@ -96,7 +97,7 @@
       // Refresh recovery status
       recoveryStatus = await getRecoveryStatus();
     } catch (err) {
-      trustedUsersError = err instanceof Error ? err.message : 'Failed to add trusted user';
+      trustedUsersErrorKey = getErrorKey(err, 'settings.trustedUsers.failedToAdd');
     } finally {
       addingTrustedUser = false;
     }
@@ -104,7 +105,7 @@
 
   async function handleRemoveTrustedUser(id: number) {
     removingTrustedUserId = id;
-    trustedUsersError = '';
+    trustedUsersErrorKey = '';
 
     try {
       await removeTrustedUser(id);
@@ -112,7 +113,7 @@
       // Refresh recovery status
       recoveryStatus = await getRecoveryStatus();
     } catch (err) {
-      trustedUsersError = err instanceof Error ? err.message : 'Failed to remove trusted user';
+      trustedUsersErrorKey = getErrorKey(err, 'settings.trustedUsers.failedToRemove');
     } finally {
       removingTrustedUserId = null;
     }
@@ -121,19 +122,19 @@
   function startEditProfile() {
     profileDisplayName = $auth.user?.display_name ?? '';
     editingProfile = true;
-    profileError = '';
+    profileErrorKey = '';
     profileSuccess = '';
   }
 
   function cancelEditProfile() {
     editingProfile = false;
     profileDisplayName = $auth.user?.display_name ?? '';
-    profileError = '';
+    profileErrorKey = '';
   }
 
   async function handleProfileSave() {
     profileSaving = true;
-    profileError = '';
+    profileErrorKey = '';
     profileSuccess = '';
 
     try {
@@ -144,7 +145,7 @@
       profileSuccess = $_('settings.profileSaved');
       editingProfile = false;
     } catch (err) {
-      profileError = err instanceof Error ? err.message : $_('settings.failedToSaveProfile');
+      profileErrorKey = getErrorKey(err, 'settings.failedToSaveProfile');
     } finally {
       profileSaving = false;
     }
@@ -153,7 +154,7 @@
   async function handlePreferenceSave() {
     prefsSaving = true;
     prefsSuccess = '';
-    prefsError = '';
+    prefsErrorKey = '';
 
     try {
       const updatedPrefs = await updatePreferences({
@@ -166,7 +167,7 @@
       preferences.setAll(updatedPrefs);
       prefsSuccess = $_('settings.preferencesSaved');
     } catch (err) {
-      prefsError = err instanceof Error ? err.message : 'Failed to save preferences';
+      prefsErrorKey = getErrorKey(err, 'settings.failedToSavePreferences');
     } finally {
       prefsSaving = false;
     }
@@ -174,16 +175,16 @@
 
   async function handleChangePassword(e: Event) {
     e.preventDefault();
-    passwordError = '';
+    passwordErrorKey = '';
     passwordSuccess = '';
 
     if (newPassword !== confirmPassword) {
-      passwordError = 'Passwords do not match';
+      passwordErrorKey = 'settings.passwordsDoNotMatch';
       return;
     }
 
     if (newPassword.length < 6) {
-      passwordError = 'New password must be at least 6 characters';
+      passwordErrorKey = 'settings.passwordTooShort';
       return;
     }
 
@@ -191,12 +192,12 @@
 
     try {
       await changePassword(currentPassword, newPassword);
-      passwordSuccess = 'Password changed successfully';
+      passwordSuccess = $_('settings.passwordChanged');
       currentPassword = '';
       newPassword = '';
       confirmPassword = '';
     } catch (err) {
-      passwordError = err instanceof Error ? err.message : 'Failed to change password';
+      passwordErrorKey = getErrorKey(err, 'settings.failedToChangePassword');
     } finally {
       changingPassword = false;
     }
@@ -204,10 +205,10 @@
 
   async function handleDeleteAccount(e: Event) {
     e.preventDefault();
-    deleteError = '';
+    deleteErrorKey = '';
 
     if (!deletePassword) {
-      deleteError = 'Password is required';
+      deleteErrorKey = 'settings.passwordRequired';
       return;
     }
 
@@ -219,7 +220,7 @@
       auth.logout();
       await goto('/login');
     } catch (err) {
-      deleteError = err instanceof Error ? err.message : 'Failed to delete account';
+      deleteErrorKey = getErrorKey(err, 'settings.failedToDelete');
     } finally {
       deleting = false;
     }
@@ -235,8 +236,8 @@
     <section class="section">
       <h2>{$_('settings.accountInfo')}</h2>
 
-      {#if profileError}
-        <div class="error">{profileError}</div>
+      {#if profileErrorKey}
+        <div class="error">{$_(profileErrorKey)}</div>
       {/if}
       {#if profileSuccess}
         <div class="success">{profileSuccess}</div>
@@ -289,8 +290,8 @@
       {$_('settings.preferencesNotice')}
     </div>
 
-    {#if prefsError}
-      <div class="error">{prefsError}</div>
+    {#if prefsErrorKey}
+      <div class="error">{$_(prefsErrorKey)}</div>
     {/if}
     {#if prefsSuccess}
       <div class="success">{prefsSuccess}</div>
@@ -352,8 +353,8 @@
       {$_('settings.trustedUsers.securityWarning')}
     </div>
 
-    {#if trustedUsersError}
-      <div class="error">{trustedUsersError}</div>
+    {#if trustedUsersErrorKey}
+      <div class="error">{$_(trustedUsersErrorKey)}</div>
     {/if}
 
     <form class="add-trusted-form" onsubmit={handleAddTrustedUser}>
@@ -418,8 +419,8 @@
     <h2>{$_('settings.changePassword')}</h2>
 
     <form onsubmit={handleChangePassword}>
-      {#if passwordError}
-        <div class="error">{passwordError}</div>
+      {#if passwordErrorKey}
+        <div class="error">{$_(passwordErrorKey)}</div>
       {/if}
       {#if passwordSuccess}
         <div class="success">{passwordSuccess}</div>
@@ -480,8 +481,8 @@
         <h3>{$_('settings.confirmDeletion')}</h3>
 
         <form onsubmit={handleDeleteAccount}>
-          {#if deleteError}
-            <div class="error">{deleteError}</div>
+          {#if deleteErrorKey}
+            <div class="error">{$_(deleteErrorKey)}</div>
           {/if}
 
           <div class="field">
@@ -503,7 +504,7 @@
               onclick={() => {
                 showDeleteConfirm = false;
                 deletePassword = '';
-                deleteError = '';
+                deleteErrorKey = '';
               }}
               disabled={deleting}
             >

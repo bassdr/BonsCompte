@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
 use crate::auth::middleware::ProjectMember;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult, ErrorCode};
 use crate::services::debt_calculator::CashflowProjection;
 use crate::AppState;
 
@@ -110,12 +110,7 @@ async fn consolidate_payments(
                     ));
                 }
             }
-            None => {
-                return Err(crate::error::AppError::NotFound(format!(
-                    "Payment {} not found",
-                    payment_id
-                )))
-            }
+            None => return Err(AppError::not_found(ErrorCode::PaymentNotFound)),
         }
     }
 

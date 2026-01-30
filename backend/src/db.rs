@@ -764,6 +764,16 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .await
     .ok();
 
+    // Migration 022: Support 'recovered' status for project_members
+    // =====================
+    // When a user recovers their password via trusted users, their project memberships
+    // are set to 'recovered' status. Project admins must re-approve them.
+    // Valid statuses are now: 'active', 'pending', 'recovered'
+    // Note: SQLite doesn't easily support modifying CHECK constraints, but since the
+    // project_members.status column was added via ALTER TABLE (Migration 006), it
+    // doesn't have a CHECK constraint. We just document the valid values here.
+    // This migration is a no-op but documents the schema change.
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

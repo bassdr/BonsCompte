@@ -101,7 +101,11 @@
   "settings.currencyBefore": "Before amount",
   "settings.currencyAfter": "After amount",
   "settings.preferencesSaved": "Preferences saved",
+  "settings.failedToSavePreferences": "Failed to save preferences",
   "settings.savingPreferences": "Saving...",
+  "settings.passwordsDoNotMatch": "Passwords do not match",
+  "settings.passwordTooShort": "New password must be at least 6 characters",
+  "settings.passwordChanged": "Password changed successfully",
   "settings.preferencesNotice": "Note: These settings only affect how numbers and dates are displayed. BonsCompte does not perform currency conversion.",
 
   "settings.trustedUsers.title": "Trusted Users for Password Recovery",
@@ -114,6 +118,9 @@
   "settings.trustedUsers.noTrustedUsers": "You haven't added any trusted users yet.",
   "settings.trustedUsers.statusRecoverable": "Your account can be recovered via trusted users.",
   "settings.trustedUsers.statusNotRecoverable": "Your account is not recoverable ({current}/{required} trusted users).",
+  "settings.trustedUsers.failedToLoad": "Failed to load trusted users",
+  "settings.trustedUsers.failedToAdd": "Failed to add trusted user",
+  "settings.trustedUsers.failedToRemove": "Failed to remove trusted user",
 
   "common.add": "Add",
   "common.adding": "Adding...",
@@ -152,6 +159,8 @@
   "projects.createdDaysAgo": "created {days}d ago",
   "projects.createdMonthsAgo": "created {months}mo ago",
   "projects.createdYearsAgo": "created {years}y ago",
+
+  "project.recoveredWarning": "Your account was recovered. You have read-only access until an admin re-approves your membership.",
 
   "join.title": "Join Project",
   "join.inviteMessage": "You've been invited to join a project!",
@@ -235,6 +244,7 @@
   "overview.expectedHighest": "Highest Expected Minimum",
   "overview.shortfall": "Shortfall",
   "overview.belowExpected": "Below expected minimum",
+  "overview.failedToLoad": "Failed to load overview",
 
   "cashflow.title": "Cashflow Planning",
   "cashflow.failedToLoad": "Failed to load cashflow projection",
@@ -416,6 +426,17 @@
   "transactions.freeHint": "Free deposit - available for any use",
   "transactions.earmarkedHint": "Earmarked deposit - increases expected minimum (protected)",
   "transactions.noEditPermission": "You don't have permission to edit transactions.",
+  "transactions.failedToLoad": "Failed to load transactions",
+  "transactions.failedToDelete": "Failed to delete transaction",
+  "transactions.failedToLoadPayment": "Failed to load payment",
+  "transactions.failedToSave": "Failed to save payment",
+  "transactions.image.unsupportedFormat": "Please select a supported image format (JPEG, PNG, GIF, or WebP)",
+  "transactions.image.tooLarge": "Image must be less than 5MB",
+  "transactions.image.readFailed": "Failed to read the image file",
+  "transactions.image.invalidImage": "File is not a valid image. Please upload a real image file.",
+  "transactions.split.beforeStart": "Split date cannot be before the original payment start date",
+  "transactions.split.afterEnd": "Split date cannot be after the recurrence end date",
+  "transactions.split.beforeFirstOccurrence": "Split date is before the first recurrence. Please choose a date on or after the first occurrence.",
 
   "participants.title": "Participants",
   "participants.description": "Natural or legal persons participating in the project, with or without an associated member user",
@@ -451,6 +472,9 @@
   "members.you": "(you)",
   "members.as": "as",
   "members.remove": "Remove",
+  "members.recovered": "Recovered",
+  "members.recoveredAccount": "Recovered account",
+  "members.newJoinRequest": "New join request",
 
   "history.title": "History",
   "history.type": "Type",
@@ -491,6 +515,10 @@
   "history.entities.project": "Project",
   "history.entities.contribution": "Contribution",
   "history.entities.participant_invite": "Invite",
+  "history.failedToLoad": "Failed to load history",
+  "history.failedToUndo": "Failed to undo action",
+  "history.undoSuccess": "Action undone successfully",
+  "history.verificationFailed": "Verification failed",
 
   "projectSettings.title": "Project Settings",
   "projectSettings.needAdminPermissions": "You need admin permissions to access settings.",
@@ -509,6 +537,7 @@
   "projectSettings.pendingRequests": "Pending Member Requests",
   "projectSettings.noPendingRequests": "No pending member requests.",
   "projectSettings.approve": "Approve",
+  "projectSettings.reapprove": "Re-approve",
   "projectSettings.reject": "Reject",
   "projectSettings.dangerZone": "Danger Zone",
   "projectSettings.deleteWarning": "Deleting the project will permanently remove all transactions, participants, and members.",
@@ -583,6 +612,8 @@
   "approvals.reason": "Reason",
   "approvals.reason_optional": "Reason (optional)",
   "approvals.reason_placeholder": "Why are you voting this way?",
+  "approvals.failedToLoad": "Failed to load approvals",
+  "approvals.failedToVote": "Failed to cast vote",
 
   "common.view_details": "View Details",
 

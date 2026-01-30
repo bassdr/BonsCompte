@@ -16,6 +16,7 @@
   import { SvelteSet, SvelteMap, SvelteDate } from 'svelte/reactivity';
   import type { PairwisePaymentBreakdown } from '$lib/api';
   import { Chart, registerables } from 'chart.js';
+  import { getErrorKey } from '$lib/errors';
   import 'chartjs-adapter-date-fns';
 
   // Chart.js annotation plugin - loaded dynamically for SSR safety
@@ -91,7 +92,7 @@
   let startDebts: DebtSummary | null = $state(null); // Debts at targetDate for range mode
   let allPayments: PaymentWithContributions[] = $state([]);
   let loading = $state(true);
-  let error = $state('');
+  let errorKey = $state('');
   let showOccurrences = $state(false);
 
   // Track which balance rows are expanded to show pairwise details
@@ -1813,7 +1814,7 @@
 
   async function loadDebts() {
     loading = true;
-    error = '';
+    errorKey = '';
     try {
       // In range mode, load debts up to endDate; otherwise use targetDate
       const dateToLoad = isRangeMode && endDate ? endDate : targetDate;
@@ -1829,7 +1830,7 @@
       // Also load all payments to know future dates
       allPayments = await getPayments(projectId);
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to load debts';
+      errorKey = getErrorKey(e, 'overview.failedToLoad');
     } finally {
       loading = false;
     }
@@ -2302,8 +2303,8 @@
     </div>
   {/if}
 </div>
-{#if error}
-  <div class="error">{error}</div>
+{#if errorKey}
+  <div class="error">{$_(errorKey)}</div>
 {/if}
 
 {#if loading}
@@ -3072,11 +3073,6 @@
                                         >
                                       {/if}
                                     </span>
-                                    {#if occ.is_recurring && payment}
-                                      <span class="icon recurring" title={formatRecurrence(payment)}
-                                        >&#x27F3;</span
-                                      >
-                                    {/if}
                                   </span>
                                   <span class="trans-amount">{formatCurrency(occ.amount)}</span>
                                 </div>
@@ -4219,15 +4215,6 @@
     border-radius: 4px;
     font-size: 0.75rem;
     font-weight: 600;
-  }
-
-  .icon {
-    font-size: 1rem;
-    cursor: default;
-  }
-
-  .icon.recurring {
-    color: var(--accent, #7b61ff);
   }
 
   .chip {

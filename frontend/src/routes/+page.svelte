@@ -4,10 +4,11 @@
   import { resolve } from '$app/paths';
   import { _ } from '$lib/i18n';
   import { formatCurrency } from '$lib/format/currency';
+  import { getErrorKey } from '$lib/errors';
 
   let projects: ProjectWithRole[] = $state([]);
   let loading = $state(true);
-  let error = $state('');
+  let errorKey = $state('');
 
   // Create project form
   let showCreateForm = $state(false);
@@ -22,11 +23,11 @@
 
   async function loadProjects() {
     loading = true;
-    error = '';
+    errorKey = '';
     try {
       projects = await getProjects();
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to load projects';
+      errorKey = getErrorKey(e, 'projects.failedToLoad');
     } finally {
       loading = false;
     }
@@ -37,7 +38,7 @@
     if (!newProjectName.trim()) return;
 
     creating = true;
-    error = '';
+    errorKey = '';
 
     try {
       const project = await createProject({
@@ -53,7 +54,7 @@
       // Go to new project
       await goto(`/projects/${project.id}`);
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to create project';
+      errorKey = getErrorKey(e, 'projects.failedToCreate');
     } finally {
       creating = false;
     }
@@ -64,7 +65,7 @@
     if (!inviteCode.trim()) return;
 
     joining = true;
-    error = '';
+    errorKey = '';
 
     try {
       const response = await joinProject(inviteCode.trim());
@@ -76,7 +77,7 @@
       // Go to joined project
       await goto(`/projects/${response.project.id}`);
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to join project';
+      errorKey = getErrorKey(e, 'projects.failedToJoin');
     } finally {
       joining = false;
     }
@@ -155,8 +156,8 @@
 
 <h1>{$_('projects.title')}</h1>
 
-{#if error}
-  <div class="error">{error}</div>
+{#if errorKey}
+  <div class="error">{$_(errorKey)}</div>
 {/if}
 
 <div class="actions">

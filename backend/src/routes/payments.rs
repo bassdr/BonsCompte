@@ -8,7 +8,7 @@ use sqlx::SqlitePool;
 
 use crate::{
     auth::ProjectMember,
-    error::{AppError, AppResult},
+    error::{AppError, AppResult, ErrorCode},
     models::{
         ContributionWithParticipant, CreatePayment, EntityType, Payment, PaymentWithContributions,
     },
@@ -85,7 +85,7 @@ async fn get_payment(
             .fetch_optional(&pool)
             .await?;
 
-    let payment = payment.ok_or_else(|| AppError::NotFound("Payment not found".to_string()))?;
+    let payment = payment.ok_or_else(|| AppError::not_found(ErrorCode::PaymentNotFound))?;
 
     // Get payer name
     let payer_name: Option<String> = if let Some(payer_id) = payment.payer_id {
@@ -121,12 +121,12 @@ async fn create_payment(
 ) -> AppResult<Json<PaymentWithContributions>> {
     // Check editor permission
     if !member.can_edit() {
-        return Err(AppError::Forbidden("Editor access required".to_string()));
+        return Err(AppError::forbidden(ErrorCode::EditorRequired));
     }
 
     // Validate
     if input.amount <= 0.0 {
-        return Err(AppError::BadRequest("Amount must be positive".to_string()));
+        return Err(AppError::bad_request(ErrorCode::AmountMustBePositive));
     }
     if input.contributions.is_empty() {
         return Err(AppError::BadRequest(
@@ -144,7 +144,7 @@ async fn create_payment(
                 .await?;
 
         if payer_exists.is_none() {
-            return Err(AppError::BadRequest("Invalid payer".to_string()));
+            return Err(AppError::bad_request(ErrorCode::InvalidPayer));
         }
     }
 
@@ -158,7 +158,7 @@ async fn create_payment(
                 .await?;
 
         if receiver_exists.is_none() {
-            return Err(AppError::BadRequest("Invalid receiver account".to_string()));
+            return Err(AppError::bad_request(ErrorCode::InvalidReceiver));
         }
     }
 
@@ -172,10 +172,7 @@ async fn create_payment(
                 .await?;
 
         if participant_exists.is_none() {
-            return Err(AppError::BadRequest(format!(
-                "Invalid participant: {}",
-                contrib.participant_id
-            )));
+            return Err(AppError::bad_request(ErrorCode::InvalidParticipant));
         }
     }
 
@@ -309,7 +306,7 @@ async fn update_payment(
 ) -> AppResult<Json<PaymentWithContributions>> {
     // Check editor permission
     if !member.can_edit() {
-        return Err(AppError::Forbidden("Editor access required".to_string()));
+        return Err(AppError::forbidden(ErrorCode::EditorRequired));
     }
 
     // Verify payment exists and belongs to project
@@ -319,7 +316,7 @@ async fn update_payment(
             .bind(member.project_id)
             .fetch_optional(&pool)
             .await?
-            .ok_or_else(|| AppError::NotFound("Payment not found".to_string()))?;
+            .ok_or_else(|| AppError::not_found(ErrorCode::PaymentNotFound))?;
 
     // Capture before state for history (including contributions)
     let existing_contributions: Vec<ContributionWithParticipant> = sqlx::query_as(
@@ -349,7 +346,7 @@ async fn update_payment(
 
     // Validate
     if input.amount <= 0.0 {
-        return Err(AppError::BadRequest("Amount must be positive".to_string()));
+        return Err(AppError::bad_request(ErrorCode::AmountMustBePositive));
     }
     if input.contributions.is_empty() {
         return Err(AppError::BadRequest(
@@ -367,7 +364,7 @@ async fn update_payment(
                 .await?;
 
         if payer_exists.is_none() {
-            return Err(AppError::BadRequest("Invalid payer".to_string()));
+            return Err(AppError::bad_request(ErrorCode::InvalidPayer));
         }
     }
 
@@ -381,7 +378,7 @@ async fn update_payment(
                 .await?;
 
         if receiver_exists.is_none() {
-            return Err(AppError::BadRequest("Invalid receiver account".to_string()));
+            return Err(AppError::bad_request(ErrorCode::InvalidReceiver));
         }
     }
 
@@ -395,10 +392,7 @@ async fn update_payment(
                 .await?;
 
         if participant_exists.is_none() {
-            return Err(AppError::BadRequest(format!(
-                "Invalid participant: {}",
-                contrib.participant_id
-            )));
+            return Err(AppError::bad_request(ErrorCode::InvalidParticipant));
         }
     }
 
@@ -543,7 +537,7 @@ async fn delete_payment(
 ) -> AppResult<Json<serde_json::Value>> {
     // Check editor permission
     if !member.can_edit() {
-        return Err(AppError::Forbidden("Editor access required".to_string()));
+        return Err(AppError::forbidden(ErrorCode::EditorRequired));
     }
 
     // Capture the before state for history
@@ -554,7 +548,7 @@ async fn delete_payment(
             .fetch_optional(&pool)
             .await?;
 
-    let existing = existing.ok_or_else(|| AppError::NotFound("Payment not found".to_string()))?;
+    let existing = existing.ok_or_else(|| AppError::not_found(ErrorCode::PaymentNotFound))?;
 
     // Get contributions before deletion
     let existing_contributions: Vec<ContributionWithParticipant> = sqlx::query_as(
@@ -597,7 +591,7 @@ async fn delete_payment(
         .await?;
 
     if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("Payment not found".to_string()));
+        return Err(AppError::not_found(ErrorCode::PaymentNotFound));
     }
 
     // Log the deletion to history

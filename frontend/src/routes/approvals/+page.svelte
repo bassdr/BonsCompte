@@ -11,26 +11,27 @@
   } from '$lib/api';
   import { _ } from 'svelte-i18n';
   import { goto } from '$app/navigation';
+  import { getErrorKey } from '$lib/errors';
 
   let myApprovals = $state<ProjectApproval[]>([]);
   let actionableApprovals = $state<ProjectApproval[]>([]);
   let pendingRecoveries = $state<PendingRecoveryIntent[]>([]);
   let loading = $state(true);
-  let error = $state('');
+  let errorKey = $state('');
   let votingInProgress = $state<Set<number>>(new Set());
   let recoveryVotingInProgress = $state<Set<string>>(new Set());
 
   async function loadData() {
     try {
       loading = true;
-      error = '';
+      errorKey = '';
       [myApprovals, actionableApprovals, pendingRecoveries] = await Promise.all([
         getMyPendingApprovals(),
         getActionableApprovals(),
         getPendingRecoveries()
       ]);
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to load approvals';
+      errorKey = getErrorKey(e, 'approvals.failedToLoad');
     } finally {
       loading = false;
     }
@@ -50,7 +51,7 @@
       // Refresh data after voting
       await loadData();
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to cast vote';
+      errorKey = getErrorKey(e, 'approvals.failedToVote');
     } finally {
       votingInProgress.delete(approvalId);
     }
@@ -66,7 +67,7 @@
       // Refresh data after voting
       await loadData();
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to cast vote';
+      errorKey = getErrorKey(e, 'approvals.failedToVote');
     } finally {
       recoveryVotingInProgress.delete(token);
     }
@@ -102,8 +103,8 @@
 
   {#if loading}
     <div class="loading">{$_('common.loading', { default: 'Loading...' })}</div>
-  {:else if error}
-    <div class="error-message">{error}</div>
+  {:else if errorKey}
+    <div class="error-message">{$_(errorKey)}</div>
   {:else}
     <!-- Recovery Requests Section (trusted users) -->
     {#if pendingRecoveries.length > 0}

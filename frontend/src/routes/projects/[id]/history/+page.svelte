@@ -11,12 +11,13 @@
   import { _ } from '$lib/i18n';
   import { formatCurrency } from '$lib/format/currency';
   import { SvelteSet, SvelteDate } from 'svelte/reactivity';
+  import { getErrorKey } from '$lib/errors';
 
   let entries: HistoryEntry[] = $state([]);
   let loading = $state(true);
-  let error = $state('');
+  let errorKey = $state('');
   let undoingId = $state<number | null>(null);
-  let undoError = $state('');
+  let undoErrorKey = $state('');
   let undoSuccess = $state('');
 
   // Filters
@@ -69,11 +70,11 @@
 
   async function loadHistory() {
     loading = true;
-    error = '';
+    errorKey = '';
     try {
       entries = await getProjectHistory(projectId, { limit: 200 });
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to load history';
+      errorKey = getErrorKey(e, 'history.failedToLoad');
     } finally {
       loading = false;
     }
@@ -109,17 +110,17 @@
     if (!entryToUndo) return;
 
     undoingId = entryToUndo.id;
-    undoError = '';
+    undoErrorKey = '';
     undoSuccess = '';
 
     try {
       await undoHistoryEntry(projectId, entryToUndo.id, undoReason || undefined);
-      undoSuccess = `Successfully undone: ${entryToUndo.action} ${entryToUndo.entity_type}`;
+      undoSuccess = $_('history.undoSuccess');
       closeUndoDialog();
       // Reload history to show the new UNDO entry
       await loadHistory();
     } catch (e) {
-      undoError = e instanceof Error ? e.message : 'Failed to undo action';
+      undoErrorKey = getErrorKey(e, 'history.failedToUndo');
     } finally {
       undoingId = null;
     }
@@ -130,12 +131,12 @@
     verification = null;
     try {
       verification = await verifyHistoryChain(projectId);
-    } catch (e) {
+    } catch {
       verification = {
         is_valid: false,
         total_entries: 0,
         first_broken_id: null,
-        message: e instanceof Error ? e.message : 'Verification failed'
+        message: $_('history.verificationFailed')
       };
     } finally {
       verifying = false;
@@ -253,12 +254,12 @@
   <div class="success-message">{undoSuccess}</div>
 {/if}
 
-{#if undoError}
-  <div class="error">{undoError}</div>
+{#if undoErrorKey}
+  <div class="error">{$_(undoErrorKey)}</div>
 {/if}
 
-{#if error}
-  <div class="error">{error}</div>
+{#if errorKey}
+  <div class="error">{$_(errorKey)}</div>
 {/if}
 
 <!-- Filters -->

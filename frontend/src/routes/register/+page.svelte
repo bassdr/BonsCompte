@@ -2,10 +2,11 @@
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
   import { page } from '$app/stores';
-  import { register, ApiRequestError, addTrustedUser, type TrustedUser } from '$lib/api';
+  import { register, addTrustedUser, type TrustedUser } from '$lib/api';
   import { auth } from '$lib/auth';
   import { _ } from '$lib/i18n';
   import { preferences } from '$lib/stores/preferences';
+  import { getErrorKey } from '$lib/errors';
 
   // Get return URL from query params
   const returnUrl = $derived($page.url.searchParams.get('returnUrl') || '/');
@@ -18,37 +19,26 @@
   let displayName = $state('');
   let password = $state('');
   let confirmPassword = $state('');
-  let error = $state('');
+  let errorKey = $state('');
   let loading = $state(false);
 
   // Trusted users form state
   let trustedUsers = $state<TrustedUser[]>([]);
   let newTrustedUsername = $state('');
   let addingTrustedUser = $state(false);
-  let trustedUserError = $state('');
-
-  // Map error codes to user-friendly translation keys
-  function getErrorMessage(code: string): string {
-    const errorMap: Record<string, string> = {
-      PASSWORD_TOO_WEAK: $_('auth.errors.passwordTooWeak'),
-      USERNAME_EXISTS: $_('auth.errors.usernameExists'),
-      INVALID_INPUT: $_('auth.errors.invalidInput'),
-      INTERNAL_ERROR: $_('auth.errors.internalError')
-    };
-    return errorMap[code] || $_('auth.registrationFailed');
-  }
+  let trustedUserErrorKey = $state('');
 
   async function handleSubmit(e: Event) {
     e.preventDefault();
-    error = '';
+    errorKey = '';
 
     if (password !== confirmPassword) {
-      error = $_('auth.passwordMismatch');
+      errorKey = 'auth.passwordMismatch';
       return;
     }
 
     if (password.length < 6) {
-      error = $_('auth.passwordTooShort');
+      errorKey = 'auth.passwordTooShort';
       return;
     }
 
@@ -62,11 +52,7 @@
       // Move to trusted users step
       step = 'trusted-users';
     } catch (err) {
-      if (err instanceof ApiRequestError) {
-        error = getErrorMessage(err.code);
-      } else {
-        error = err instanceof Error ? err.message : $_('auth.registrationFailed');
-      }
+      errorKey = getErrorKey(err, 'auth.registrationFailed');
     } finally {
       loading = false;
     }
@@ -77,14 +63,14 @@
     if (!newTrustedUsername.trim()) return;
 
     addingTrustedUser = true;
-    trustedUserError = '';
+    trustedUserErrorKey = '';
 
     try {
       const newUser = await addTrustedUser(newTrustedUsername.trim());
       trustedUsers = [...trustedUsers, newUser];
       newTrustedUsername = '';
     } catch (err) {
-      trustedUserError = err instanceof Error ? err.message : 'Failed to add trusted user';
+      trustedUserErrorKey = getErrorKey(err, 'settings.trustedUsers.failedToAdd');
     } finally {
       addingTrustedUser = false;
     }
@@ -100,8 +86,8 @@
     <h1>{$_('auth.register')}</h1>
 
     <form onsubmit={handleSubmit}>
-      {#if error}
-        <div class="error">{error}</div>
+      {#if errorKey}
+        <div class="error">{$_(errorKey)}</div>
       {/if}
 
       <div class="field">
@@ -162,8 +148,8 @@
       {$_('settings.trustedUsers.securityWarning')}
     </div>
 
-    {#if trustedUserError}
-      <div class="error">{trustedUserError}</div>
+    {#if trustedUserErrorKey}
+      <div class="error">{$_(trustedUserErrorKey)}</div>
     {/if}
 
     <form class="add-trusted-form" onsubmit={handleAddTrustedUser}>

@@ -80,4 +80,6 @@ pub struct ProjectListItem {
     pub user_balance: Option<f64>,
     /// Current user's pool ownership summaries
     pub user_pools: Vec<PoolSummary>,
+    /// Current user's membership status in this project
+    pub member_status: String,
 }

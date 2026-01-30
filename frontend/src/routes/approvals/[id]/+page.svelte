@@ -5,22 +5,23 @@
   import { getApproval, castVote, type ProjectApproval } from '$lib/api';
   import { formatDateWithWeekday } from '$lib/format/date';
   import { _ } from 'svelte-i18n';
+  import { getErrorKey } from '$lib/errors';
 
   const approvalId = Number($page.params.id);
 
   let approval = $state<ProjectApproval | null>(null);
   let loading = $state(true);
-  let error = $state('');
+  let errorKey = $state('');
   let voting = $state(false);
   let voteReason = $state('');
 
   async function loadApproval() {
     try {
       loading = true;
-      error = '';
+      errorKey = '';
       approval = await getApproval(approvalId);
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to load approval';
+      errorKey = getErrorKey(e, 'approvals.failedToLoad');
     } finally {
       loading = false;
     }
@@ -40,7 +41,7 @@
       await loadApproval();
       voteReason = '';
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to cast vote';
+      errorKey = getErrorKey(e, 'approvals.failedToVote');
     } finally {
       voting = false;
     }
@@ -76,8 +77,8 @@
 
   {#if loading}
     <div class="loading">{$_('common.loading', { default: 'Loading...' })}</div>
-  {:else if error}
-    <div class="error-message">{error}</div>
+  {:else if errorKey}
+    <div class="error-message">{$_(errorKey)}</div>
   {:else if approval}
     <div class="approval-detail">
       <div class="header">

@@ -9,7 +9,7 @@ use sqlx::SqlitePool;
 
 use crate::{
     auth::{AdminMember, ProjectMember},
-    error::{AppError, AppResult},
+    error::{AppError, AppResult, ErrorCode},
     models::{
         CreateParticipant, EntityType, Participant, UpdateParticipant, UpdatePoolWarningSettings,
     },
@@ -69,7 +69,7 @@ async fn get_participant(
 
     participant
         .map(Json)
-        .ok_or_else(|| AppError::NotFound("Participant not found".to_string()))
+        .ok_or_else(|| AppError::not_found(ErrorCode::ParticipantNotFound))
 }
 
 async fn create_participant(
@@ -79,7 +79,7 @@ async fn create_participant(
 ) -> AppResult<Json<Participant>> {
     // Check editor permission
     if !member.can_edit() {
-        return Err(AppError::Forbidden("Editor access required".to_string()));
+        return Err(AppError::forbidden(ErrorCode::EditorRequired));
     }
 
     let default_weight = input.default_weight.unwrap_or(1.0);
@@ -131,7 +131,7 @@ async fn update_participant(
 ) -> AppResult<Json<Participant>> {
     // Check editor permission
     if !member.can_edit() {
-        return Err(AppError::Forbidden("Editor access required".to_string()));
+        return Err(AppError::forbidden(ErrorCode::EditorRequired));
     }
 
     // Verify participant belongs to project
@@ -142,8 +142,7 @@ async fn update_participant(
             .fetch_optional(&pool)
             .await?;
 
-    let existing =
-        existing.ok_or_else(|| AppError::NotFound("Participant not found".to_string()))?;
+    let existing = existing.ok_or_else(|| AppError::not_found(ErrorCode::ParticipantNotFound))?;
 
     // Validate account_type if provided
     if let Some(ref account_type) = input.account_type {
@@ -190,7 +189,7 @@ async fn update_participant(
     }
 
     if updates.is_empty() {
-        return Err(AppError::BadRequest("No fields to update".to_string()));
+        return Err(AppError::bad_request(ErrorCode::NoFieldsToUpdate));
     }
 
     let sql = format!(
@@ -249,8 +248,7 @@ async fn delete_participant(
             .fetch_optional(&pool)
             .await?;
 
-    let existing =
-        existing.ok_or_else(|| AppError::NotFound("Participant not found".to_string()))?;
+    let existing = existing.ok_or_else(|| AppError::not_found(ErrorCode::ParticipantNotFound))?;
 
     let result = sqlx::query("DELETE FROM participants WHERE id = ? AND project_id = ?")
         .bind(path.participant_id)
@@ -259,7 +257,7 @@ async fn delete_participant(
         .await?;
 
     if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("Participant not found".to_string()));
+        return Err(AppError::not_found(ErrorCode::ParticipantNotFound));
     }
 
     // Log the deletion to history
@@ -292,7 +290,7 @@ async fn claim_participant(
             .await?;
 
     let participant =
-        participant.ok_or_else(|| AppError::NotFound("Participant not found".to_string()))?;
+        participant.ok_or_else(|| AppError::not_found(ErrorCode::ParticipantNotFound))?;
 
     if participant.user_id.is_some() {
         return Err(AppError::BadRequest(
@@ -382,7 +380,7 @@ async fn create_invite(
             .await?;
 
     let participant =
-        participant.ok_or_else(|| AppError::NotFound("Participant not found".to_string()))?;
+        participant.ok_or_else(|| AppError::not_found(ErrorCode::ParticipantNotFound))?;
 
     // Check if participant already has a user
     if participant.user_id.is_some() {
@@ -432,7 +430,7 @@ async fn get_invite(
             .bind(member.project_id)
             .fetch_optional(&pool)
             .await?
-            .ok_or_else(|| AppError::NotFound("Participant not found".to_string()))?;
+            .ok_or_else(|| AppError::not_found(ErrorCode::ParticipantNotFound))?;
 
     let invite: Option<ParticipantInviteResponse> = sqlx::query_as(
         "SELECT id, participant_id, invite_token, created_at, expires_at, used_by, used_at
@@ -444,7 +442,7 @@ async fn get_invite(
 
     invite
         .map(Json)
-        .ok_or_else(|| AppError::NotFound("No invite found for this participant".to_string()))
+        .ok_or_else(|| AppError::not_found(ErrorCode::InviteNotFound))
 }
 
 async fn revoke_invite(
@@ -461,7 +459,7 @@ async fn revoke_invite(
             .bind(member.project_id)
             .fetch_optional(&pool)
             .await?
-            .ok_or_else(|| AppError::NotFound("Participant not found".to_string()))?;
+            .ok_or_else(|| AppError::not_found(ErrorCode::ParticipantNotFound))?;
 
     let result = sqlx::query("DELETE FROM participant_invites WHERE participant_id = ?")
         .bind(path.participant_id)
@@ -469,7 +467,7 @@ async fn revoke_invite(
         .await?;
 
     if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("No invite found".to_string()));
+        return Err(AppError::not_found(ErrorCode::InviteNotFound));
     }
 
     Ok(Json(serde_json::json!({ "revoked": true })))
@@ -483,7 +481,7 @@ async fn update_pool_warning_settings(
 ) -> AppResult<Json<Participant>> {
     // Check editor permission
     if !member.can_edit() {
-        return Err(AppError::Forbidden("Editor access required".to_string()));
+        return Err(AppError::forbidden(ErrorCode::EditorRequired));
     }
 
     // Verify participant belongs to project and is a pool account
@@ -494,8 +492,7 @@ async fn update_pool_warning_settings(
             .fetch_optional(&pool)
             .await?;
 
-    let existing =
-        existing.ok_or_else(|| AppError::NotFound("Participant not found".to_string()))?;
+    let existing = existing.ok_or_else(|| AppError::not_found(ErrorCode::ParticipantNotFound))?;
 
     if existing.account_type != "pool" {
         return Err(AppError::BadRequest(
@@ -536,21 +533,13 @@ async fn update_pool_warning_settings(
     // Validate non-empty values
     if let Some(Some(ref horizon)) = account_update {
         if !valid_horizons.contains(&horizon.as_str()) {
-            return Err(AppError::BadRequest(format!(
-                "Invalid warning_horizon_account: {}. Must be one of: {}",
-                horizon,
-                valid_horizons.join(", ")
-            )));
+            return Err(AppError::bad_request(ErrorCode::InvalidWarningHorizon));
         }
     }
 
     if let Some(Some(ref horizon)) = users_update {
         if !valid_horizons.contains(&horizon.as_str()) {
-            return Err(AppError::BadRequest(format!(
-                "Invalid warning_horizon_users: {}. Must be one of: {}",
-                horizon,
-                valid_horizons.join(", ")
-            )));
+            return Err(AppError::bad_request(ErrorCode::InvalidWarningHorizon));
         }
     }
 
@@ -568,7 +557,7 @@ async fn update_pool_warning_settings(
     }
 
     if updates.is_empty() {
-        return Err(AppError::BadRequest("No fields to update".to_string()));
+        return Err(AppError::bad_request(ErrorCode::NoFieldsToUpdate));
     }
 
     let sql = format!(

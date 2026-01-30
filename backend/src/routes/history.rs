@@ -7,7 +7,7 @@ use sqlx::SqlitePool;
 
 use crate::{
     auth::ProjectMember,
-    error::{AppError, AppResult},
+    error::{AppError, AppResult, ErrorCode},
     models::{ChainVerification, HistoryEntryResponse, HistoryQuery, UndoRequest},
     services::{history::LogEventParams, HistoryService},
     AppState,
@@ -94,11 +94,11 @@ async fn undo_action(
     // Get the original entry
     let entry = HistoryService::get_entry(&pool, path.history_id)
         .await?
-        .ok_or_else(|| AppError::NotFound("History entry not found".to_string()))?;
+        .ok_or_else(|| AppError::not_found(ErrorCode::NotFound))?;
 
     // Verify it belongs to this project
     if entry.project_id != Some(member.project_id) {
-        return Err(AppError::NotFound("History entry not found".to_string()));
+        return Err(AppError::not_found(ErrorCode::NotFound));
     }
 
     // Check if already undone
@@ -139,7 +139,7 @@ async fn perform_undo(
     let correlation_id = HistoryService::new_correlation_id();
     let entity_id = entry
         .entity_id
-        .ok_or_else(|| AppError::BadRequest("Cannot undo entry without entity_id".to_string()))?;
+        .ok_or_else(|| AppError::bad_request(ErrorCode::InvalidInput))?;
 
     match entry.entity_type.as_str() {
         "payment" => undo_payment(pool, member, entry, entity_id, &correlation_id, reason).await,
@@ -150,10 +150,7 @@ async fn perform_undo(
             undo_project_member(pool, member, entry, entity_id, &correlation_id, reason).await
         }
         "project" => undo_project(pool, member, entry, entity_id, &correlation_id, reason).await,
-        _ => Err(AppError::BadRequest(format!(
-            "Undo not supported for entity type: {}",
-            entry.entity_type
-        ))),
+        _ => Err(AppError::bad_request(ErrorCode::InvalidInput)),
     }
 }
 
@@ -204,7 +201,7 @@ async fn undo_payment(
                 .payload_before
                 .as_ref()
                 .and_then(|s| serde_json::from_str(s).ok())
-                .ok_or_else(|| AppError::BadRequest("No before state to restore".to_string()))?;
+                .ok_or_else(|| AppError::bad_request(ErrorCode::InvalidInput))?;
 
             // Update payment with before values
             sqlx::query(
@@ -277,7 +274,7 @@ async fn undo_payment(
                 .payload_before
                 .as_ref()
                 .and_then(|s| serde_json::from_str(s).ok())
-                .ok_or_else(|| AppError::BadRequest("No before state to restore".to_string()))?;
+                .ok_or_else(|| AppError::bad_request(ErrorCode::InvalidInput))?;
 
             // Get the payment data from the nested "payment" field (PaymentWithContributions structure)
             let payment_data = before.get("payment").unwrap_or(&before);
@@ -396,10 +393,7 @@ async fn undo_payment(
             )
             .await
         }
-        _ => Err(AppError::BadRequest(format!(
-            "Cannot undo action: {}",
-            entry.action
-        ))),
+        _ => Err(AppError::bad_request(ErrorCode::InvalidInput)),
     }
 }
 
@@ -443,7 +437,7 @@ async fn undo_participant(
                 .payload_before
                 .as_ref()
                 .and_then(|s| serde_json::from_str(s).ok())
-                .ok_or_else(|| AppError::BadRequest("No before state to restore".to_string()))?;
+                .ok_or_else(|| AppError::bad_request(ErrorCode::InvalidInput))?;
 
             sqlx::query(
                 r#"
@@ -494,7 +488,7 @@ async fn undo_participant(
                 .payload_before
                 .as_ref()
                 .and_then(|s| serde_json::from_str(s).ok())
-                .ok_or_else(|| AppError::BadRequest("No before state to restore".to_string()))?;
+                .ok_or_else(|| AppError::bad_request(ErrorCode::InvalidInput))?;
 
             sqlx::query(
                 r#"
@@ -528,10 +522,7 @@ async fn undo_participant(
             )
             .await
         }
-        _ => Err(AppError::BadRequest(format!(
-            "Cannot undo action: {}",
-            entry.action
-        ))),
+        _ => Err(AppError::bad_request(ErrorCode::InvalidInput)),
     }
 }
 
@@ -550,7 +541,7 @@ async fn undo_project_member(
                 .payload_before
                 .as_ref()
                 .and_then(|s| serde_json::from_str(s).ok())
-                .ok_or_else(|| AppError::BadRequest("No before state to restore".to_string()))?;
+                .ok_or_else(|| AppError::bad_request(ErrorCode::InvalidInput))?;
 
             // entity_id is the user_id in project_members
             sqlx::query(
@@ -602,7 +593,7 @@ async fn undo_project_member(
                 .payload_before
                 .as_ref()
                 .and_then(|s| serde_json::from_str(s).ok())
-                .ok_or_else(|| AppError::BadRequest("No before state to restore".to_string()))?;
+                .ok_or_else(|| AppError::bad_request(ErrorCode::InvalidInput))?;
 
             sqlx::query(
                 r#"
@@ -645,10 +636,7 @@ async fn undo_project_member(
             )
             .await
         }
-        _ => Err(AppError::BadRequest(format!(
-            "Cannot undo action: {}",
-            entry.action
-        ))),
+        _ => Err(AppError::bad_request(ErrorCode::InvalidInput)),
     }
 }
 
@@ -667,7 +655,7 @@ async fn undo_project(
                 .payload_before
                 .as_ref()
                 .and_then(|s| serde_json::from_str(s).ok())
-                .ok_or_else(|| AppError::BadRequest("No before state to restore".to_string()))?;
+                .ok_or_else(|| AppError::bad_request(ErrorCode::InvalidInput))?;
 
             sqlx::query(
                 r#"
@@ -714,10 +702,7 @@ async fn undo_project(
             )
             .await
         }
-        _ => Err(AppError::BadRequest(format!(
-            "Cannot undo action: {} for project",
-            entry.action
-        ))),
+        _ => Err(AppError::bad_request(ErrorCode::InvalidInput)),
     }
 }
 

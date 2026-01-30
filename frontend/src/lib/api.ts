@@ -69,7 +69,16 @@ async function authFetch(path: string, opts: AuthFetchOptions = {}) {
     ...(fetchOpts.headers as Record<string, string>)
   };
 
-  const res = await fetch(`${BASE}${path}`, { ...fetchOpts, headers });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, { ...fetchOpts, headers });
+  } catch (e) {
+    // Network error - backend is down or unreachable
+    if (e instanceof TypeError && e.message === 'Failed to fetch') {
+      throw new ApiRequestError('NETWORK_ERROR', 'NETWORK_ERROR', 0);
+    }
+    throw e;
+  }
 
   // Handle 404 silently if nullOn404 is set
   if (res.status === 404 && nullOn404) {
@@ -153,11 +162,20 @@ export interface AuthResponse {
 }
 
 export async function login(username: string, password: string): Promise<AuthResponse> {
-  const res = await fetch(`${BASE}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+  } catch (e) {
+    // Network error - backend is down or unreachable
+    if (e instanceof TypeError && e.message === 'Failed to fetch') {
+      throw new ApiRequestError('NETWORK_ERROR', 'NETWORK_ERROR', 0);
+    }
+    throw e;
+  }
 
   if (!res.ok) {
     const data: ApiError = await res
@@ -174,11 +192,20 @@ export async function register(
   password: string,
   display_name?: string
 ): Promise<AuthResponse> {
-  const res = await fetch(`${BASE}/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password, display_name })
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, display_name })
+    });
+  } catch (e) {
+    // Network error - backend is down or unreachable
+    if (e instanceof TypeError && e.message === 'Failed to fetch') {
+      throw new ApiRequestError('NETWORK_ERROR', 'NETWORK_ERROR', 0);
+    }
+    throw e;
+  }
 
   if (!res.ok) {
     const data: ApiError = await res
@@ -253,6 +280,7 @@ export interface ProjectWithRole extends Project {
   owner_name: string;
   user_balance: number | null;
   user_pools: PoolSummary[];
+  member_status: 'active' | 'pending' | 'recovered';
 }
 
 export interface Participant {
@@ -277,7 +305,7 @@ export interface ProjectMember {
   participant_id: number | null;
   participant_name: string | null;
   joined_at: string;
-  status: 'pending' | 'active' | 'rejected';
+  status: 'pending' | 'active' | 'rejected' | 'recovered';
 }
 
 export interface ParticipantInvite {
@@ -1011,7 +1039,16 @@ async function publicFetch<T>(path: string, opts: RequestInit = {}): Promise<T> 
     ...(opts.headers as Record<string, string>)
   };
 
-  const res = await fetch(`${BASE}${path}`, { ...opts, headers });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, { ...opts, headers });
+  } catch (e) {
+    // Network error - backend is down or unreachable
+    if (e instanceof TypeError && e.message === 'Failed to fetch') {
+      throw new ApiRequestError('NETWORK_ERROR', 'NETWORK_ERROR', 0);
+    }
+    throw e;
+  }
 
   if (!res.ok) {
     const text = await res.text();

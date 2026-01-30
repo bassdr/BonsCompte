@@ -101,7 +101,11 @@
   "settings.currencyBefore": "Avant le montant",
   "settings.currencyAfter": "Après le montant",
   "settings.preferencesSaved": "Préférences enregistrées",
+  "settings.failedToSavePreferences": "Échec de l'enregistrement des préférences",
   "settings.savingPreferences": "Enregistrement...",
+  "settings.passwordsDoNotMatch": "Les mots de passe ne correspondent pas",
+  "settings.passwordTooShort": "Le nouveau mot de passe doit contenir au moins 6 caractères",
+  "settings.passwordChanged": "Mot de passe modifié avec succès",
   "settings.preferencesNotice": "Note : Ces paramètres affectent uniquement l'affichage des nombres et des dates. BonsCompte n'effectue pas de conversion de devises.",
 
   "settings.trustedUsers.title": "Utilisateurs de confiance pour la récupération de mot de passe",
@@ -114,6 +118,9 @@
   "settings.trustedUsers.noTrustedUsers": "Vous n'avez pas encore ajouté d'utilisateurs de confiance.",
   "settings.trustedUsers.statusRecoverable": "Votre compte peut être récupéré via les utilisateurs de confiance.",
   "settings.trustedUsers.statusNotRecoverable": "Votre compte n'est pas récupérable ({current}/{required} utilisateurs de confiance).",
+  "settings.trustedUsers.failedToLoad": "Échec du chargement des utilisateurs de confiance",
+  "settings.trustedUsers.failedToAdd": "Échec de l'ajout de l'utilisateur de confiance",
+  "settings.trustedUsers.failedToRemove": "Échec de la suppression de l'utilisateur de confiance",
 
   "common.add": "Ajouter",
   "common.adding": "Ajout...",
@@ -152,6 +159,8 @@
   "projects.createdDaysAgo": "créé il y a {days}j",
   "projects.createdMonthsAgo": "créé il y a {months} mois",
   "projects.createdYearsAgo": "créé il y a {years} an(s)",
+
+  "project.recoveredWarning": "Votre compte a été récupéré. Vous avez un accès en lecture seule jusqu'à ce qu'un administrateur réapprouve votre adhésion.",
 
   "join.title": "Rejoindre un projet",
   "join.inviteMessage": "Vous avez été invité à rejoindre un projet !",
@@ -235,6 +244,7 @@
   "overview.expectedHighest": "Minimum attendu le plus élevé",
   "overview.shortfall": "Manque à gagner",
   "overview.belowExpected": "En dessous du minimum attendu",
+  "overview.failedToLoad": "Échec du chargement du résumé",
 
   "cashflow.title": "Planification de trésorerie",
   "cashflow.failedToLoad": "Échec du chargement de la projection de trésorerie",
@@ -416,6 +426,17 @@
   "transactions.freeHint": "Dépôt libre - disponible pour tout usage",
   "transactions.earmarkedHint": "Dépôt réservé - augmente le minimum attendu (protégé)",
   "transactions.noEditPermission": "Vous n'avez pas la permission de modifier les transactions.",
+  "transactions.failedToLoad": "Échec du chargement des transactions",
+  "transactions.failedToDelete": "Échec de la suppression de la transaction",
+  "transactions.failedToLoadPayment": "Échec du chargement du paiement",
+  "transactions.failedToSave": "Échec de l'enregistrement du paiement",
+  "transactions.image.unsupportedFormat": "Veuillez sélectionner un format d'image pris en charge (JPEG, PNG, GIF ou WebP)",
+  "transactions.image.tooLarge": "L'image doit faire moins de 5 Mo",
+  "transactions.image.readFailed": "Échec de la lecture du fichier image",
+  "transactions.image.invalidImage": "Le fichier n'est pas une image valide. Veuillez télécharger un vrai fichier image.",
+  "transactions.split.beforeStart": "La date de séparation ne peut pas être antérieure à la date de début du paiement original",
+  "transactions.split.afterEnd": "La date de séparation ne peut pas être postérieure à la date de fin de récurrence",
+  "transactions.split.beforeFirstOccurrence": "La date de séparation est antérieure à la première occurrence. Veuillez choisir une date à partir de la première occurrence.",
 
   "participants.title": "Participants",
   "participants.description": "Personnes physiques ou morales participant au projet, avec ou sans utilisateur membre associé",
@@ -451,6 +472,9 @@
   "members.you": "(vous)",
   "members.as": "en tant que",
   "members.remove": "Retirer",
+  "members.recovered": "Récupéré",
+  "members.recoveredAccount": "Compte récupéré",
+  "members.newJoinRequest": "Nouvelle demande",
 
   "history.title": "Historique",
   "history.type": "Type",
@@ -491,6 +515,10 @@
   "history.entities.project": "Projet",
   "history.entities.contribution": "Contribution",
   "history.entities.participant_invite": "Invitation",
+  "history.failedToLoad": "Échec du chargement de l'historique",
+  "history.failedToUndo": "Échec de l'annulation de l'action",
+  "history.undoSuccess": "Action annulée avec succès",
+  "history.verificationFailed": "Échec de la vérification",
 
   "projectSettings.title": "Paramètres du projet",
   "projectSettings.needAdminPermissions": "Vous avez besoin de permissions d'administrateur pour accéder aux paramètres.",
@@ -509,6 +537,7 @@
   "projectSettings.pendingRequests": "Demandes de membres en attente",
   "projectSettings.noPendingRequests": "Aucune demande de membre en attente.",
   "projectSettings.approve": "Approuver",
+  "projectSettings.reapprove": "Réapprouver",
   "projectSettings.reject": "Refuser",
   "projectSettings.dangerZone": "Zone de danger",
   "projectSettings.deleteWarning": "La suppression du projet supprimera définitivement toutes les transactions, participants et membres.",
@@ -583,6 +612,8 @@
   "approvals.reason": "Raison",
   "approvals.reason_optional": "Raison (optionnelle)",
   "approvals.reason_placeholder": "Pourquoi votez-vous ainsi ?",
+  "approvals.failedToLoad": "Échec du chargement des approbations",
+  "approvals.failedToVote": "Échec du vote",
 
   "common.view_details": "Voir les détails",
 

@@ -241,3 +241,29 @@ export function getErrorMessage(error: unknown, fallbackKey = 'errors.unknown'):
 
   return $_(fallbackKey);
 }
+
+/**
+ * Gets the appropriate translation key for an error.
+ * Use this in catch blocks, then translate in template with $_(key).
+ *
+ * @param error - The error to get a key from
+ * @param fallbackKey - Optional fallback translation key (default: 'errors.unknown')
+ * @returns The translation key (NOT the translated message)
+ */
+export function getErrorKey(error: unknown, fallbackKey = 'errors.unknown'): string {
+  // Network error
+  if (isNetworkError(error)) {
+    return 'errors.networkError';
+  }
+
+  // ApiRequestError with code
+  if (error && typeof error === 'object' && 'code' in error) {
+    const code = (error as { code: string }).code;
+    const translationKey = errorCodeToTranslationKey[code as BackendErrorCode];
+    if (translationKey) {
+      return `errors.${translationKey}`;
+    }
+  }
+
+  return fallbackKey;
+}

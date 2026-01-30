@@ -7,10 +7,11 @@
   import { formatCurrency } from '$lib/format/currency';
   import { formatDate } from '$lib/format/date';
   import { SvelteDate } from 'svelte/reactivity';
+  import { getErrorKey } from '$lib/errors';
 
   let transactions: PaymentWithContributions[] = $state([]);
   let loading = $state(true);
-  let error = $state('');
+  let errorKey = $state('');
 
   // Filter state
   let searchText = $state('');
@@ -40,11 +41,11 @@
 
   async function loadTransactions(projectId: number) {
     loading = true;
-    error = '';
+    errorKey = '';
     try {
       transactions = await getPayments(projectId);
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to load transactions';
+      errorKey = getErrorKey(e, 'transactions.failedToLoad');
     } finally {
       loading = false;
     }
@@ -180,7 +181,7 @@
       await deletePayment(projectId, transactionId);
       transactions = transactions.filter((p) => p.id !== transactionId);
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to delete transaction';
+      errorKey = getErrorKey(e, 'transactions.failedToDelete');
     }
   }
 
@@ -225,8 +226,8 @@
   }
 </script>
 
-{#if error}
-  <div class="error">{error}</div>
+{#if errorKey}
+  <div class="error">{$_(errorKey)}</div>
 {/if}
 
 <h2>{$_('transactions.title')}</h2>
@@ -364,9 +365,6 @@
                 {/if}
                 {#if !p.is_final}
                   <span class="badge draft">{$_('transactions.statusDraft')}</span>
-                {/if}
-                {#if p.is_recurring}
-                  <span class="icon recurring" title={formatRecurrence(p)}>&#x27F3;</span>
                 {/if}
                 {#if p.receipt_image}
                   <button
@@ -608,15 +606,6 @@
   .transaction-icons {
     display: flex;
     gap: 0.25rem;
-  }
-
-  .icon {
-    font-size: 1rem;
-    cursor: default;
-  }
-
-  .icon.recurring {
-    color: var(--accent, #7b61ff);
   }
 
   .badge.draft {

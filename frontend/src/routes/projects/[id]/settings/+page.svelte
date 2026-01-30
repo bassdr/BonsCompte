@@ -35,8 +35,9 @@
   } from '$lib/stores/project';
   import { auth } from '$lib/auth';
   import { _ } from '$lib/i18n';
+  import { getErrorKey } from '$lib/errors';
 
-  let error = $state('');
+  let errorKey = $state('');
   let success = $state('');
 
   let projectId = $derived(parseInt($page.params.id ?? ''));
@@ -128,7 +129,7 @@
     if (!name.trim()) return;
 
     saving = true;
-    error = '';
+    errorKey = '';
     success = '';
 
     try {
@@ -140,7 +141,7 @@
       success = $_('projectSettings.handleSave.success');
       await loadProject(projectId);
     } catch (e) {
-      error = e instanceof Error ? e.message : $_('projectSettings.handleSave.fail');
+      errorKey = getErrorKey(e, 'projectSettings.handleSave.fail');
     } finally {
       saving = false;
     }
@@ -149,7 +150,7 @@
   async function handleRegenerateCode() {
     if (!confirm($_('projectSettings.handleRegenerateCode.confirm'))) return;
 
-    error = '';
+    errorKey = '';
     success = '';
 
     try {
@@ -157,13 +158,13 @@
       success = $_('projectSettings.handleRegenerateCode.success');
       await loadProject(projectId);
     } catch (e) {
-      error = e instanceof Error ? e.message : $_('projectSettings.handleRegenerateCode.fail');
+      errorKey = getErrorKey(e, 'projectSettings.handleRegenerateCode.fail');
     }
   }
 
   async function handleSaveSettings() {
     savingSettings = true;
-    error = '';
+    errorKey = '';
     success = '';
 
     try {
@@ -174,7 +175,7 @@
       success = $_('projectSettings.handleSaveSettings.success');
       await loadProject(projectId);
     } catch (e) {
-      error = e instanceof Error ? e.message : $_('projectSettings.handleSaveSettings.fail');
+      errorKey = getErrorKey(e, 'projectSettings.handleSaveSettings.fail');
     } finally {
       savingSettings = false;
     }
@@ -186,7 +187,7 @@
     value: string
   ) {
     savingPoolWarning = poolId;
-    error = '';
+    errorKey = '';
     success = '';
 
     try {
@@ -200,7 +201,7 @@
       success = $_('projectSettings.handleSavePoolWarning.success');
       await refreshParticipants(projectId);
     } catch (e) {
-      error = e instanceof Error ? e.message : $_('projectSettings.handleSavePoolWarning.fail');
+      errorKey = getErrorKey(e, 'projectSettings.handleSavePoolWarning.fail');
     } finally {
       savingPoolWarning = null;
     }
@@ -219,14 +220,14 @@
 
   async function handleApproveMember(userId: number) {
     processingMember = userId;
-    error = '';
+    errorKey = '';
 
     try {
       await approveMember(projectId, userId);
       await loadPendingMembers();
       success = $_('projectSettings.handleApproveMember.success');
     } catch (e) {
-      error = e instanceof Error ? e.message : $_('projectSettings.handleApproveMember.fail');
+      errorKey = getErrorKey(e, 'projectSettings.handleApproveMember.fail');
     } finally {
       processingMember = null;
     }
@@ -236,14 +237,14 @@
     if (!confirm($_('projectSettings.handleRejectMember.confirm'))) return;
 
     processingMember = userId;
-    error = '';
+    errorKey = '';
 
     try {
       await rejectMember(projectId, userId);
       await loadPendingMembers();
       success = $_('projectSettings.handleRejectMember.success');
     } catch (e) {
-      error = e instanceof Error ? e.message : $_('projectSettings.handleRejectMember.fail');
+      errorKey = getErrorKey(e, 'projectSettings.handleRejectMember.fail');
     } finally {
       processingMember = null;
     }
@@ -255,7 +256,7 @@
     if (!newParticipantName.trim()) return;
 
     addingParticipant = true;
-    error = '';
+    errorKey = '';
     success = '';
 
     try {
@@ -274,7 +275,7 @@
 
       await refreshParticipants(projectId);
     } catch (e) {
-      error = e instanceof Error ? e.message : $_('projectSettings.handleAddParticipant.fail');
+      errorKey = getErrorKey(e, 'projectSettings.handleAddParticipant.fail');
     } finally {
       addingParticipant = false;
     }
@@ -299,7 +300,7 @@
     if (!editingParticipantId || !editParticipantName.trim()) return;
 
     updatingParticipant = true;
-    error = '';
+    errorKey = '';
     success = '';
 
     try {
@@ -315,7 +316,7 @@
 
       await refreshParticipants(projectId);
     } catch (e) {
-      error = e instanceof Error ? e.message : $_('projectSettings.handleUpdateParticipant.fail');
+      errorKey = getErrorKey(e, 'projectSettings.handleUpdateParticipant.fail');
     } finally {
       updatingParticipant = false;
     }
@@ -324,7 +325,7 @@
   async function handleDeleteParticipant(participantId: number) {
     if (!confirm($_('projectSettings.handleDeleteParticipant.confirm'))) return;
 
-    error = '';
+    errorKey = '';
     success = '';
 
     try {
@@ -332,12 +333,12 @@
       success = $_('projectSettings.handleDeleteParticipant.success');
       await refreshParticipants(projectId);
     } catch (e) {
-      error = e instanceof Error ? e.message : $_('projectSettings.handleDeleteParticipant.fail');
+      errorKey = getErrorKey(e, 'projectSettings.handleDeleteParticipant.fail');
     }
   }
 
   async function handleClaimParticipant(participantId: number) {
-    error = '';
+    errorKey = '';
     success = '';
 
     try {
@@ -345,7 +346,7 @@
       success = $_('projectSettings.handleClaimParticipant.success');
       await refreshParticipants(projectId);
     } catch (e) {
-      error = e instanceof Error ? e.message : $_('projectSettings.handleClaimParticipant.fail');
+      errorKey = getErrorKey(e, 'projectSettings.handleClaimParticipant.fail');
     }
   }
 
@@ -357,15 +358,14 @@
 
   async function handleGenerateParticipantInvite(participantId: number) {
     loadingInvite = participantId;
-    error = '';
+    errorKey = '';
 
     try {
       const invite = await createParticipantInvite(projectId, participantId);
       participantInvites[participantId] = invite;
       success = $_('projectSettings.handleGenerateParticipantInvite.success');
     } catch (e) {
-      if (e instanceof Error) error = e.message;
-      else error = $_('projectSettings.handleGenerateParticipantInvite.fail');
+      errorKey = getErrorKey(e, 'projectSettings.handleGenerateParticipantInvite.fail');
     } finally {
       loadingInvite = null;
     }
@@ -375,15 +375,14 @@
     if (!confirm($_('projectSettings.handleRevokeParticipantInvite.confirm'))) return;
 
     loadingInvite = participantId;
-    error = '';
+    errorKey = '';
 
     try {
       await revokeParticipantInvite(projectId, participantId);
       participantInvites[participantId] = null;
       success = $_('projectSettings.handleRevokeParticipantInvite.success');
     } catch (e) {
-      if (e instanceof Error) error = e.message;
-      else error = $_('projectSettings.handleRevokeParticipantInvite.fail');
+      errorKey = getErrorKey(e, 'projectSettings.handleRevokeParticipantInvite.fail');
     } finally {
       loadingInvite = null;
     }
@@ -420,7 +419,7 @@
         if (copiedId === participantId) copiedId = null;
       }, 2000);
     } catch {
-      error = $_('projectSettings.copyParticipantInviteUrl.fail');
+      errorKey = 'projectSettings.copyParticipantInviteUrl.fail';
     }
   }
 
@@ -442,7 +441,7 @@
     if (!editingMemberId) return;
 
     updatingMember = true;
-    error = '';
+    errorKey = '';
     success = '';
 
     try {
@@ -451,14 +450,14 @@
       cancelEditMember();
       await refreshMembers(projectId);
     } catch (e) {
-      error = e instanceof Error ? e.message : $_('projectSettings.handleUpdateMemberRole.fail');
+      errorKey = getErrorKey(e, 'projectSettings.handleUpdateMemberRole.fail');
     } finally {
       updatingMember = false;
     }
   }
 
   async function handleSetMemberParticipant(userId: number, participantId: number | null) {
-    error = '';
+    errorKey = '';
     success = '';
 
     try {
@@ -466,15 +465,14 @@
       success = $_('projectSettings.handleSetMemberParticipant.success');
       await refreshMembers(projectId);
     } catch (e) {
-      if (e instanceof Error) error = e.message;
-      else error = $_('projectSettings.handleSetMemberParticipant.fail');
+      errorKey = getErrorKey(e, 'projectSettings.handleSetMemberParticipant.fail');
     }
   }
 
   async function handleRemoveMember(userId: number) {
     if (!confirm($_('projectSettings.handleRemoveMember.confirm'))) return;
 
-    error = '';
+    errorKey = '';
     success = '';
 
     try {
@@ -482,7 +480,7 @@
       success = $_('projectSettings.handleRemoveMember.success');
       await refreshMembers(projectId);
     } catch (e) {
-      error = e instanceof Error ? e.message : $_('projectSettings.handleRemoveMember.fail');
+      errorKey = getErrorKey(e, 'projectSettings.handleRemoveMember.fail');
     }
   }
 
@@ -493,18 +491,18 @@
   // Delete Project
   async function handleDelete() {
     if (deleteConfirmText !== $currentProject?.name) {
-      error = $_('projectSettings.handleDelete.cancel');
+      errorKey = 'projectSettings.handleDelete.cancel';
       return;
     }
 
     deleting = true;
-    error = '';
+    errorKey = '';
 
     try {
       await deleteProject(projectId);
       await goto('/');
     } catch (e) {
-      error = e instanceof Error ? e.message : $_('projectSettings.handleDelete.fail');
+      errorKey = getErrorKey(e, 'projectSettings.handleDelete.fail');
       deleting = false;
     }
   }
@@ -515,8 +513,8 @@
 {#if !$isAdmin}
   <div class="error">{$_('projectSettings.needAdminPermissions')}</div>
 {:else}
-  {#if error}
-    <div class="error">{error}</div>
+  {#if errorKey}
+    <div class="error">{$_(errorKey)}</div>
   {/if}
 
   {#if success}
@@ -593,6 +591,12 @@
               <div class="member-info">
                 <span class="member-name">{member.display_name || member.username}</span>
                 <span class="member-username">@{member.username}</span>
+                {#if member.status === 'recovered'}
+                  <span class="status-badge status-recovered">{$_('members.recoveredAccount')}</span
+                  >
+                {:else}
+                  <span class="status-badge status-pending">{$_('members.newJoinRequest')}</span>
+                {/if}
               </div>
               <div class="member-actions">
                 <button
@@ -600,15 +604,19 @@
                   onclick={() => handleApproveMember(member.user_id)}
                   disabled={processingMember === member.user_id}
                 >
-                  {$_('projectSettings.approve')}
+                  {member.status === 'recovered'
+                    ? $_('projectSettings.reapprove')
+                    : $_('projectSettings.approve')}
                 </button>
-                <button
-                  class="btn-reject"
-                  onclick={() => handleRejectMember(member.user_id)}
-                  disabled={processingMember === member.user_id}
-                >
-                  {$_('projectSettings.reject')}
-                </button>
+                {#if member.status !== 'recovered'}
+                  <button
+                    class="btn-reject"
+                    onclick={() => handleRejectMember(member.user_id)}
+                    disabled={processingMember === member.user_id}
+                  >
+                    {$_('projectSettings.reject')}
+                  </button>
+                {/if}
               </div>
             </li>
           {/each}
@@ -833,6 +841,9 @@
                 </div>
                 <div class="item-actions">
                   <span class="role-badge role-{m.role}">{$_(`roles.${m.role}`)}</span>
+                  {#if m.status === 'recovered'}
+                    <span class="status-badge status-recovered">{$_('members.recovered')}</span>
+                  {/if}
                   {#if !isCurrentUser(m.user_id)}
                     <button class="btn-edit" onclick={() => startEditMember(m)}
                       >{$_('common.edit')}</button
@@ -1283,6 +1294,26 @@
   .role-reader {
     background: #e0e0e0;
     color: #666;
+  }
+
+  .status-badge {
+    font-size: 0.7rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-weight: 500;
+    margin-left: 0.5rem;
+  }
+
+  .status-recovered {
+    background: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffc107;
+  }
+
+  .status-pending {
+    background: #cce5ff;
+    color: #004085;
+    border: 1px solid #b8daff;
   }
 
   .btn-claim {

@@ -13,6 +13,7 @@
   import { _ } from '$lib/i18n';
   import { formatCurrency } from '$lib/format/currency';
   import { SvelteDate } from 'svelte/reactivity';
+  import { getErrorKey } from '$lib/errors';
 
   // Mode from URL params
   let mode = $derived($page.params.mode as 'outgoing' | 'incoming' | 'internal' | 'rule');
@@ -28,7 +29,7 @@
   let projectId = $derived(parseInt($page.params.id ?? ''));
 
   let loading = $state(true);
-  let error = $state('');
+  let errorKey = $state('');
 
   // Edit mode state
   let editingPaymentId = $state<number | null>(null);
@@ -320,12 +321,12 @@
 
   async function loadPaymentForEditing(paymentId: number) {
     loading = true;
-    error = '';
+    errorKey = '';
     try {
       const payment = await getPayment(projectId, paymentId);
       startEditing(payment);
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to load payment';
+      errorKey = getErrorKey(e, 'transactions.failedToLoadPayment');
     } finally {
       loading = false;
     }
@@ -486,30 +487,30 @@
 
     const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
     if (!allowedTypes.includes(file.type)) {
-      error = 'Please select a supported image format (JPEG, PNG, GIF, or WebP)';
+      errorKey = 'transactions.image.unsupportedFormat';
       return;
     }
 
     const maxSizeMB = 5;
     const maxSizeBytes = maxSizeMB * 1024 * 1024;
     if (file.size > maxSizeBytes) {
-      error = `Image must be less than ${maxSizeMB}MB (actual: ${(file.size / (1024 * 1024)).toFixed(2)}MB)`;
+      errorKey = 'transactions.image.tooLarge';
       return;
     }
 
     const reader = new FileReader();
     reader.onerror = () => {
-      error = 'Failed to read the image file';
+      errorKey = 'transactions.image.readFailed';
     };
     reader.onload = (e) => {
       const base64 = e.target?.result as string;
       if (!isValidImageMagic(base64)) {
-        error = 'File is not a valid image. Please upload a real image file.';
+        errorKey = 'transactions.image.invalidImage';
         return;
       }
       receiptImage = base64;
       receiptPreview = base64;
-      error = '';
+      errorKey = '';
     };
     reader.readAsDataURL(file);
   }
@@ -920,12 +921,12 @@
 
     // Validate mode-specific requirements
     if (modeConfig.requiresReceiver && receiverAccountId === null) {
-      error = $_('transactions.receiverRequired');
+      errorKey = 'transactions.receiverRequired';
       return;
     }
 
     submitting = true;
-    error = '';
+    errorKey = '';
 
     try {
       // For internal transfers, always use payer as sole contributor
@@ -1010,7 +1011,7 @@
           payload.recurrence_interval || editingPaymentOriginal.recurrence_interval || 1;
 
         if (splitDate < originalStartDate) {
-          error = 'Split date cannot be before the original payment start date';
+          errorKey = 'transactions.split.beforeStart';
           submitting = false;
           return;
         }
@@ -1019,7 +1020,7 @@
           ? parseDate(payload.recurrence_end_date)
           : originalEndDate;
         if (newEndDate && splitDate > newEndDate) {
-          error = 'Split date cannot be after the recurrence end date';
+          errorKey = 'transactions.split.afterEnd';
           submitting = false;
           return;
         }
@@ -1032,8 +1033,7 @@
         );
 
         if (!lastOccurrenceBeforeSplit) {
-          error =
-            'Split date is before the first recurrence. Please choose a date on or after the first occurrence.';
+          errorKey = 'transactions.split.beforeFirstOccurrence';
           submitting = false;
           return;
         }
@@ -1114,7 +1114,7 @@
       // Redirect to list after success
       goto(`/projects/${projectId}/transactions`);
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Failed to save payment';
+      errorKey = getErrorKey(e, 'transactions.failedToSave');
     } finally {
       submitting = false;
     }
@@ -1132,8 +1132,8 @@
 {:else if loading}
   <div class="loading">{$_('common.loading')}</div>
 {:else}
-  {#if error}
-    <div class="error">{error}</div>
+  {#if errorKey}
+    <div class="error">{$_(errorKey)}</div>
   {/if}
 
   {#if $canEdit}

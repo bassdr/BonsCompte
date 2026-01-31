@@ -159,6 +159,9 @@
   "projects.createdDaysAgo": "created {days}d ago",
   "projects.createdMonthsAgo": "created {months}mo ago",
   "projects.createdYearsAgo": "created {years}y ago",
+  "projects.pendingApproval": "Pending Approval",
+  "projects.pendingApprovalMessage": "Your access request is pending admin approval.",
+  "projects.pendingReadOnly": "Pending (Read-Only)",
 
   "project.recoveredWarning": "Your account was recovered. You have read-only access until an admin re-approves your membership.",
 

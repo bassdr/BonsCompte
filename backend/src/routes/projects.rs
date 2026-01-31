@@ -67,7 +67,7 @@ async fn list_projects(
     use crate::models::PoolSummary;
 
     // Get projects with owner name and user's participant ID
-    // Include both 'active' and 'recovered' members (recovered have read-only access)
+    // Include 'active', 'recovered', and 'pending' members
     let rows: Vec<ProjectListRow> = sqlx::query_as(
         "SELECT p.id, p.name, p.description, p.invite_code, p.created_by, p.created_at,
                 p.invites_enabled, p.require_approval, p.pool_warning_horizon,
@@ -79,7 +79,7 @@ async fn list_projects(
          FROM projects p
          JOIN project_members pm ON p.id = pm.project_id
          JOIN users u ON p.created_by = u.id
-         WHERE pm.user_id = ? AND pm.status IN ('active', 'recovered')
+         WHERE pm.user_id = ? AND pm.status IN ('active', 'recovered', 'pending')
          ORDER BY p.created_at DESC",
     )
     .bind(auth.user_id)
@@ -92,32 +92,41 @@ async fn list_projects(
         let mut user_balance: Option<f64> = None;
         let mut user_pools: Vec<PoolSummary> = Vec::new();
 
-        // If user has a participant in this project, get their debt summary
-        if let Some(participant_id) = row.user_participant_id {
-            // Use the debt calculator to get accurate balances (including recurring payments)
-            // Exclude drafts from project list summary
-            if let Ok(debt_summary) = debt_calculator::calculate_debts(&pool, row.id, false).await {
-                // Find user's balance
-                if let Some(balance) = debt_summary
-                    .balances
-                    .iter()
-                    .find(|b| b.participant_id == participant_id)
-                {
-                    user_balance = Some(balance.net_balance);
-                }
+        // Only calculate debt summary if user has access (not pending with 'none' access)
+        let has_data_access = row.member_status == "active"
+            || row.member_status == "recovered"
+            || (row.member_status == "pending" && row.pending_member_access != "none");
 
-                // Get user's pool ownerships
-                for pool_ownership in &debt_summary.pool_ownerships {
-                    if let Some(entry) = pool_ownership
-                        .entries
+        // If user has a participant in this project and has data access, get their debt summary
+        if let Some(participant_id) = row.user_participant_id {
+            if has_data_access {
+                // Use the debt calculator to get accurate balances (including recurring payments)
+                // Exclude drafts from project list summary
+                if let Ok(debt_summary) =
+                    debt_calculator::calculate_debts(&pool, row.id, false).await
+                {
+                    // Find user's balance
+                    if let Some(balance) = debt_summary
+                        .balances
                         .iter()
-                        .find(|e| e.participant_id == participant_id)
+                        .find(|b| b.participant_id == participant_id)
                     {
-                        if entry.ownership.abs() >= 0.01 {
-                            user_pools.push(PoolSummary {
-                                pool_name: pool_ownership.pool_name.clone(),
-                                ownership: entry.ownership,
-                            });
+                        user_balance = Some(balance.net_balance);
+                    }
+
+                    // Get user's pool ownerships
+                    for pool_ownership in &debt_summary.pool_ownerships {
+                        if let Some(entry) = pool_ownership
+                            .entries
+                            .iter()
+                            .find(|e| e.participant_id == participant_id)
+                        {
+                            if entry.ownership.abs() >= 0.01 {
+                                user_pools.push(PoolSummary {
+                                    pool_name: pool_ownership.pool_name.clone(),
+                                    ownership: entry.ownership,
+                                });
+                            }
                         }
                     }
                 }

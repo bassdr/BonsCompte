@@ -231,25 +231,51 @@
   <div class="projects-grid">
     {#each projects as project (project.id)}
       {@const debtLines = getDebtSummaryLines(project)}
-      <a href={resolve(`/projects/${project.id}`)} class="project-card">
-        <div class="project-header">
-          <h3>{project.name}</h3>
-          <span class="role-badge role-{project.role}">{$_(`roles.${project.role}`)}</span>
-        </div>
-        {#if project.description}
-          <p class="project-description">{project.description}</p>
-        {/if}
-        {#if debtLines.length > 0}
-          <div class="project-debt-lines">
-            {#each debtLines as line, i (i)}
-              <div class="debt-line debt-{line.type}">{line.text}</div>
-            {/each}
+      {@const isPendingBlocked =
+        project.member_status === 'pending' && project.pending_member_access === 'none'}
+      {@const isPendingReadOnly =
+        project.member_status === 'pending' && project.pending_member_access === 'read_only'}
+      {#if isPendingBlocked}
+        <!-- Pending with no access - show as non-clickable card -->
+        <div class="project-card project-card-pending">
+          <div class="project-header">
+            <h3>{project.name}</h3>
+            <span class="status-badge status-pending">{$_('projects.pendingApproval')}</span>
           </div>
-        {/if}
-        <div class="project-meta">
-          {project.owner_name} · {formatRelativeTime(project.created_at)}
+          <p class="pending-message">{$_('projects.pendingApprovalMessage')}</p>
+          <div class="project-meta">
+            {project.owner_name} · {formatRelativeTime(project.created_at)}
+          </div>
         </div>
-      </a>
+      {:else}
+        <!-- Active, recovered, or pending with read-only access -->
+        <a href={resolve(`/projects/${project.id}`)} class="project-card">
+          <div class="project-header">
+            <h3>{project.name}</h3>
+            <div class="badges">
+              {#if isPendingReadOnly}
+                <span class="status-badge status-pending-readonly"
+                  >{$_('projects.pendingReadOnly')}</span
+                >
+              {/if}
+              <span class="role-badge role-{project.role}">{$_(`roles.${project.role}`)}</span>
+            </div>
+          </div>
+          {#if project.description}
+            <p class="project-description">{project.description}</p>
+          {/if}
+          {#if debtLines.length > 0}
+            <div class="project-debt-lines">
+              {#each debtLines as line, i (i)}
+                <div class="debt-line debt-{line.type}">{line.text}</div>
+              {/each}
+            </div>
+          {/if}
+          <div class="project-meta">
+            {project.owner_name} · {formatRelativeTime(project.created_at)}
+          </div>
+        </a>
+      {/if}
     {/each}
   </div>
 {/if}
@@ -415,6 +441,47 @@
   .role-reader {
     background: #e0e0e0;
     color: #666;
+  }
+
+  .badges {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .status-badge {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+
+  .status-pending {
+    background: #ff9800;
+    color: white;
+  }
+
+  .status-pending-readonly {
+    background: #ffc107;
+    color: #333;
+  }
+
+  .project-card-pending {
+    opacity: 0.8;
+    cursor: default;
+    border: 2px dashed #ff9800;
+  }
+
+  .project-card-pending:hover {
+    transform: none;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  }
+
+  .pending-message {
+    color: #666;
+    font-style: italic;
+    margin: 0.75rem 0;
+    font-size: 0.9rem;
   }
 
   .project-description {

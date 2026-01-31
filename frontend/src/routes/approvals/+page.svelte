@@ -6,8 +6,12 @@
     castVote,
     getPendingRecoveries,
     voteOnRecovery,
+    getPendingMembersToApprove,
+    approveMember,
+    rejectMember,
     type ProjectApproval,
-    type PendingRecoveryIntent
+    type PendingRecoveryIntent,
+    type PendingMemberToApprove
   } from '$lib/api';
   import { _ } from 'svelte-i18n';
   import { goto } from '$app/navigation';
@@ -16,19 +20,22 @@
   let myApprovals = $state<ProjectApproval[]>([]);
   let actionableApprovals = $state<ProjectApproval[]>([]);
   let pendingRecoveries = $state<PendingRecoveryIntent[]>([]);
+  let pendingMembers = $state<PendingMemberToApprove[]>([]);
   let loading = $state(true);
   let errorKey = $state('');
   let votingInProgress = $state<Set<number>>(new Set());
   let recoveryVotingInProgress = $state<Set<string>>(new Set());
+  let memberActionInProgress = $state<Set<number>>(new Set());
 
   async function loadData() {
     try {
       loading = true;
       errorKey = '';
-      [myApprovals, actionableApprovals, pendingRecoveries] = await Promise.all([
+      [myApprovals, actionableApprovals, pendingRecoveries, pendingMembers] = await Promise.all([
         getMyPendingApprovals(),
         getActionableApprovals(),
-        getPendingRecoveries()
+        getPendingRecoveries(),
+        getPendingMembersToApprove()
       ]);
     } catch (e) {
       errorKey = getErrorKey(e, 'approvals.failedToLoad');
@@ -73,6 +80,31 @@
     }
   }
 
+  async function handleMemberAction(
+    projectId: number,
+    userId: number,
+    action: 'approve' | 'reject'
+  ) {
+    const key = projectId * 1000000 + userId;
+    if (memberActionInProgress.has(key)) return;
+
+    memberActionInProgress.add(key);
+
+    try {
+      if (action === 'approve') {
+        await approveMember(projectId, userId);
+      } else {
+        await rejectMember(projectId, userId);
+      }
+      // Refresh data after action
+      await loadData();
+    } catch (e) {
+      errorKey = getErrorKey(e, 'approvals.failedToProcessMember');
+    } finally {
+      memberActionInProgress.delete(key);
+    }
+  }
+
   function viewDetails(id: number) {
     goto(`/approvals/${id}`);
   }
@@ -106,6 +138,64 @@
   {:else if errorKey}
     <div class="error-message">{$_(errorKey)}</div>
   {:else}
+    <!-- Pending Join Requests Section (for admins) -->
+    {#if pendingMembers.length > 0}
+      <section class="section">
+        <h2>{$_('approvals.pendingJoinRequests', { default: 'Pending Join Requests' })}</h2>
+
+        <div class="approvals-grid">
+          {#each pendingMembers as member (member.id)}
+            {@const actionKey = member.project_id * 1000000 + member.user_id}
+            <div class="approval-card member-card">
+              <div class="card-header">
+                <div>
+                  <h3>{member.display_name || member.username}</h3>
+                  <p class="project-name">@{member.username}</p>
+                </div>
+                <span class="event-badge member-badge"
+                  >{$_('approvals.event.join_request', { default: 'Join Request' })}</span
+                >
+              </div>
+
+              <p class="member-project">
+                {$_('approvals.wantsToJoin', {
+                  default: 'Wants to join',
+                  values: { project: member.project_name }
+                })}
+                <strong>{member.project_name}</strong>
+              </p>
+
+              <p class="member-date">
+                {$_('approvals.requestedOn', { default: 'Requested' })}:
+                {new Date(member.joined_at).toLocaleDateString()}
+              </p>
+
+              <div class="action-buttons">
+                <button
+                  class="btn-approve"
+                  onclick={() => handleMemberAction(member.project_id, member.user_id, 'approve')}
+                  disabled={memberActionInProgress.has(actionKey)}
+                >
+                  {$_('approvals.approve', { default: 'Approve' })}
+                </button>
+                <button
+                  class="btn-reject"
+                  onclick={() => handleMemberAction(member.project_id, member.user_id, 'reject')}
+                  disabled={memberActionInProgress.has(actionKey)}
+                >
+                  {$_('approvals.reject', { default: 'Reject' })}
+                </button>
+              </div>
+
+              <a href="/projects/{member.project_id}/settings" class="btn-link">
+                {$_('approvals.viewProjectSettings', { default: 'View Project Settings' })}
+              </a>
+            </div>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
     <!-- Recovery Requests Section (trusted users) -->
     {#if pendingRecoveries.length > 0}
       <section class="section">
@@ -522,6 +612,31 @@
   .recovery-badge {
     background: #fef3c7 !important;
     color: #92400e !important;
+  }
+
+  .member-card {
+    border-left: 4px solid #3b82f6;
+  }
+
+  .member-badge {
+    background: #dbeafe !important;
+    color: #1e40af !important;
+  }
+
+  .member-project {
+    color: #374151;
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .member-project strong {
+    color: #111827;
+  }
+
+  .member-date {
+    font-size: 0.8rem;
+    color: #6b7280;
+    margin-bottom: 1rem;
   }
 
   .recovery-description {

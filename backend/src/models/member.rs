@@ -66,3 +66,17 @@ pub struct UpdateMemberRole {
 pub struct SetMemberParticipant {
     pub participant_id: Option<i64>,
 }
+
+/// Pending member with project name for cross-project listing
+#[derive(Debug, Clone, FromRow, Serialize)]
+pub struct PendingMemberWithProject {
+    pub id: i64,
+    pub project_id: i64,
+    pub project_name: String,
+    pub user_id: i64,
+    pub username: String,
+    pub display_name: Option<String>,
+    pub role: String,
+    pub joined_at: String,
+    pub status: String,
+}

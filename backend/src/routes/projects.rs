@@ -1,6 +1,6 @@
 use axum::{
-    extract::State,
-    routing::{get, post, put},
+    extract::{Path, State},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use rand::Rng;
@@ -28,6 +28,7 @@ pub fn router() -> Router<AppState> {
         )
         .route("/{id}/regenerate-invite", post(regenerate_invite))
         .route("/{id}/settings", put(update_project_settings))
+        .route("/{id}/leave", delete(leave_project))
 }
 
 fn generate_invite_code() -> String {
@@ -560,4 +561,53 @@ async fn join_project(
         status: status.to_string(),
         participant_id,
     }))
+}
+
+/// Leave a project or cancel a pending membership request
+/// Users can leave any project they're a member of (pending or active)
+/// except if they are the project owner
+async fn leave_project(
+    auth: AuthUser,
+    Path(project_id): Path<i64>,
+    State(pool): State<SqlitePool>,
+) -> AppResult<Json<serde_json::Value>> {
+    // Check if user is a member of this project
+    let membership: Option<(i64, String, i64)> = sqlx::query_as(
+        "SELECT pm.id, pm.status, p.created_by
+         FROM project_members pm
+         JOIN projects p ON pm.project_id = p.id
+         WHERE pm.project_id = ? AND pm.user_id = ?",
+    )
+    .bind(project_id)
+    .bind(auth.user_id)
+    .fetch_optional(&pool)
+    .await?;
+
+    let (membership_id, status, owner_id) = match membership {
+        Some(m) => m,
+        None => {
+            return Err(AppError::not_found(ErrorCode::NotFound));
+        }
+    };
+
+    // Don't allow project owner to leave their own project
+    if owner_id == auth.user_id {
+        return Err(AppError::bad_request(ErrorCode::CannotRemoveOwner));
+    }
+
+    // Delete the membership
+    sqlx::query("DELETE FROM project_members WHERE id = ?")
+        .bind(membership_id)
+        .execute(&pool)
+        .await?;
+
+    let message = if status == "pending" {
+        "Membership request cancelled"
+    } else {
+        "Left project successfully"
+    };
+
+    Ok(Json(serde_json::json!({
+        "message": message
+    })))
 }

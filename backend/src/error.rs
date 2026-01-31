@@ -59,6 +59,7 @@ pub enum ErrorCode {
     NotTrustedUser,
     CannotModifySelf,
     CannotRemoveSelf,
+    CannotRemoveOwner,
 
     // Business logic errors
     InvitesDisabled,
@@ -145,6 +146,7 @@ impl ErrorCode {
             Self::NotTrustedUser => "NOT_TRUSTED_USER",
             Self::CannotModifySelf => "CANNOT_MODIFY_SELF",
             Self::CannotRemoveSelf => "CANNOT_REMOVE_SELF",
+            Self::CannotRemoveOwner => "CANNOT_REMOVE_OWNER",
 
             // Business logic
             Self::InvitesDisabled => "INVITES_DISABLED",

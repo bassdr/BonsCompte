@@ -629,6 +629,15 @@
   "approvals.reason_placeholder": "Why are you voting this way?",
   "approvals.failedToLoad": "Failed to load approvals",
   "approvals.failedToVote": "Failed to cast vote",
+  "approvals.failedToProcessMember": "Failed to process member request",
+  "approvals.pendingJoinRequests": "Pending Join Requests",
+  "approvals.event.join_request": "Join Request",
+  "approvals.wantsToJoin": "Wants to join",
+  "approvals.requestedOn": "Requested",
+  "approvals.viewProjectSettings": "View Project Settings",
+
+  "layout.pendingApprovalsNotice": "You have {count} pending approval(s) that need your attention.",
+  "layout.viewApprovals": "View Approvals",
 
   "common.view_details": "View Details",
 

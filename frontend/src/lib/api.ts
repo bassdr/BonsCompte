@@ -960,6 +960,22 @@ export const castVote = (
     body: JSON.stringify({ vote, reason } as CastVoteRequest)
   });
 
+// Pending member join requests (for admins)
+export interface PendingMemberToApprove {
+  id: number;
+  project_id: number;
+  project_name: string;
+  user_id: number;
+  username: string;
+  display_name?: string;
+  role: string;
+  joined_at: string;
+  status: string;
+}
+
+export const getPendingMembersToApprove = (): Promise<PendingMemberToApprove[]> =>
+  authFetch('/approvals/pending-members');
+
 // ========================================
 // Trusted Users (Password Recovery)
 // ========================================

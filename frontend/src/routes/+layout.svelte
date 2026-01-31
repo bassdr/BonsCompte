@@ -22,7 +22,7 @@
     isDontShowAgain,
     setDontShowAgain
   } from '$lib/stores/recoveryStatus';
-  import { getActionableApprovals } from '$lib/api';
+  import { getActionableApprovals, getPendingMembersToApprove } from '$lib/api';
   import { onMount, onDestroy } from 'svelte';
 
   let { children }: { children: Snippet } = $props();
@@ -32,11 +32,17 @@
   setupI18n(initialLocale);
 
   let actionableApprovalsCount = $state(0);
+  let pendingMembersCount = $state(0);
   let approvalCheckInterval: ReturnType<typeof setInterval> | null = null;
   let recoveryCheckInterval: ReturnType<typeof setInterval> | null = null;
   let dismissedForSession = $state(false);
   let showDismissDialog = $state(false);
   let dontShowAgainPermanent = $state(false);
+  let showPendingApprovalsBanner = $state(false);
+  let pendingApprovalsBannerDismissed = $state(false);
+
+  // Total count of items needing attention
+  let totalPendingCount = $derived(actionableApprovalsCount + pendingMembersCount);
 
   // Check if permanently dismissed on mount
   $effect(() => {
@@ -49,11 +55,21 @@
     if (!$isAuthenticated) return;
 
     try {
-      const approvals = await getActionableApprovals();
+      const [approvals, pendingMembers] = await Promise.all([
+        getActionableApprovals(),
+        getPendingMembersToApprove()
+      ]);
       actionableApprovalsCount = approvals.length;
+      pendingMembersCount = pendingMembers.length;
+
+      // Show banner on first check after login if there are pending items
+      if (!pendingApprovalsBannerDismissed && (approvals.length > 0 || pendingMembers.length > 0)) {
+        showPendingApprovalsBanner = true;
+      }
     } catch {
       // Silently fail - approvals might not be accessible
       actionableApprovalsCount = 0;
+      pendingMembersCount = 0;
     }
   }
 
@@ -62,10 +78,27 @@
     if ($isAuthenticated) {
       refreshRecoveryStatus();
       dismissedForSession = false; // Reset session dismiss on login
+      pendingApprovalsBannerDismissed = false; // Reset banner on login
+      // Reset counts immediately - they'll be populated by checkActionableApprovals
+      actionableApprovalsCount = 0;
+      pendingMembersCount = 0;
+      showPendingApprovalsBanner = false;
+      // Fetch fresh data for this user
+      checkActionableApprovals();
     } else {
       resetRecoveryStatus();
+      // Reset all approval state on logout
+      actionableApprovalsCount = 0;
+      pendingMembersCount = 0;
+      showPendingApprovalsBanner = false;
+      pendingApprovalsBannerDismissed = false;
     }
   });
+
+  function dismissPendingApprovalsBanner() {
+    showPendingApprovalsBanner = false;
+    pendingApprovalsBannerDismissed = true;
+  }
 
   onMount(() => {
     // Check immediately on mount
@@ -178,8 +211,8 @@
           class:active={$page.url.pathname.startsWith('/approvals')}
         >
           {$_('nav.approvals', { default: 'Approvals' })}
-          {#if actionableApprovalsCount > 0}
-            <span class="badge">{actionableApprovalsCount}</span>
+          {#if totalPendingCount > 0}
+            <span class="badge">{totalPendingCount}</span>
           {/if}
         </a>
       </div>
@@ -214,6 +247,24 @@
           <a href={resolve('/settings')}>{$_('layout.setupTrustedUsers')}</a>
         </div>
         <button class="dismiss-btn" onclick={handleDismissClick}>×</button>
+      </div>
+    {/if}
+
+    {#if showPendingApprovalsBanner && totalPendingCount > 0}
+      <div class="pending-approvals-banner">
+        <div class="banner-content">
+          <span class="banner-icon">!</span>
+          <span>
+            {$_('layout.pendingApprovalsNotice', {
+              default: 'You have {count} pending approval(s) that need your attention.',
+              values: { count: totalPendingCount }
+            })}
+          </span>
+          <a href={resolve('/approvals')}
+            >{$_('layout.viewApprovals', { default: 'View Approvals' })}</a
+          >
+        </div>
+        <button class="dismiss-btn" onclick={dismissPendingApprovalsBanner}>×</button>
       </div>
     {/if}
 
@@ -392,6 +443,47 @@
     border-bottom: 1px solid #ffc107;
     color: #856404;
     font-size: 0.9rem;
+  }
+
+  .pending-approvals-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 2rem;
+    background: #cfe2ff;
+    border-bottom: 1px solid #3b82f6;
+    color: #1e40af;
+    font-size: 0.9rem;
+  }
+
+  .banner-content {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .banner-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    background: #3b82f6;
+    color: white;
+    border-radius: 50%;
+    font-size: 0.8rem;
+    font-weight: 700;
+  }
+
+  .banner-content a {
+    color: #1e40af;
+    font-weight: 600;
+    text-decoration: underline;
+  }
+
+  .banner-content a:hover {
+    color: #1e3a8a;
   }
 
   .warning-content {

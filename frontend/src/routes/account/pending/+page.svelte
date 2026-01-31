@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getMyPendingApprovals, type ProjectApproval } from '$lib/api';
+  import { goto } from '$app/navigation';
+  import { browser } from '$app/environment';
+  import { getMyPendingApprovals, getProjects, type ProjectApproval } from '$lib/api';
   import { formatDateWithWeekday } from '$lib/format/date';
   import { _ } from 'svelte-i18n';
 
@@ -9,10 +11,30 @@
   let error = $state('');
   let intervalId: ReturnType<typeof setInterval> | null = null;
 
+  async function checkIfApproved(): Promise<boolean> {
+    try {
+      // Try to access a protected resource that requires active status
+      // If it succeeds, the user is approved and should be redirected
+      await getProjects();
+      return true;
+    } catch {
+      // User is still pending
+      return false;
+    }
+  }
+
   async function loadApprovals() {
     try {
       loading = true;
       error = '';
+
+      // First check if user is already approved
+      const isApproved = await checkIfApproved();
+      if (isApproved && browser) {
+        goto('/');
+        return;
+      }
+
       approvals = await getMyPendingApprovals();
 
       // If all approvals are resolved, redirect to home

@@ -629,6 +629,15 @@
   "approvals.reason_placeholder": "Pourquoi votez-vous ainsi ?",
   "approvals.failedToLoad": "Échec du chargement des approbations",
   "approvals.failedToVote": "Échec du vote",
+  "approvals.failedToProcessMember": "Échec du traitement de la demande de membre",
+  "approvals.pendingJoinRequests": "Demandes d'adhésion en attente",
+  "approvals.event.join_request": "Demande d'adhésion",
+  "approvals.wantsToJoin": "Souhaite rejoindre",
+  "approvals.requestedOn": "Demandé le",
+  "approvals.viewProjectSettings": "Voir les paramètres du projet",
+
+  "layout.pendingApprovalsNotice": "Vous avez {count} approbation(s) en attente qui nécessite(nt) votre attention.",
+  "layout.viewApprovals": "Voir les approbations",
 
   "common.view_details": "Voir les détails",
 

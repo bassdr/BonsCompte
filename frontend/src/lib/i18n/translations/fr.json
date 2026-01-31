@@ -159,6 +159,9 @@
   "projects.createdDaysAgo": "créé il y a {days}j",
   "projects.createdMonthsAgo": "créé il y a {months} mois",
   "projects.createdYearsAgo": "créé il y a {years} an(s)",
+  "projects.pendingApproval": "En attente d'approbation",
+  "projects.pendingApprovalMessage": "Votre demande d'accès est en attente d'approbation par un administrateur.",
+  "projects.pendingReadOnly": "En attente (Lecture seule)",
 
   "project.recoveredWarning": "Votre compte a été récupéré. Vous avez un accès en lecture seule jusqu'à ce qu'un administrateur réapprouve votre adhésion.",
 

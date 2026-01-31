@@ -48,8 +48,10 @@
           code === 'NOT_FOUND' ||
           code === 'PROJECT_NOT_FOUND' ||
           code === 'FORBIDDEN' ||
-          code === 'UNAUTHORIZED'
+          code === 'UNAUTHORIZED' ||
+          code === 'ACCOUNT_PENDING_APPROVAL'
         ) {
+          // Redirect to home - they'll see the pending card there
           goto(resolve('/'));
           return;
         }

@@ -774,6 +774,19 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     // doesn't have a CHECK constraint. We just document the valid values here.
     // This migration is a no-op but documents the schema change.
 
+    // Migration 023: Configurable Pending Member Access
+    // =====================
+    // Add a setting to control how pending members can access the project:
+    // - 'none': No access until approved (most restrictive)
+    // - 'read_only': View-only access until approved (default)
+    // - 'auto_approve': Automatically approve on join (bypasses approval)
+    sqlx::query(
+        "ALTER TABLE projects ADD COLUMN pending_member_access TEXT NOT NULL DEFAULT 'read_only'",
+    )
+    .execute(pool)
+    .await
+    .ok();
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

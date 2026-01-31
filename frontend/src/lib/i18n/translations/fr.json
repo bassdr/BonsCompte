@@ -594,6 +594,14 @@
   "projectSettings.horizon6Months": "Dans 6 mois",
   "projectSettings.handleSavePoolWarning.success": "Paramètres d'alerte de la cagnotte mis à jour",
   "projectSettings.handleSavePoolWarning.fail": "Échec de la mise à jour des paramètres d'alerte",
+  "projectSettings.pendingMemberAccess": "Accès des membres en attente",
+  "projectSettings.pendingAccess.none": "Aucun accès (Bloquer jusqu'à approbation)",
+  "projectSettings.pendingAccess.readOnly": "Lecture seule (Par défaut)",
+  "projectSettings.pendingAccess.autoApprove": "Approbation automatique (Pas d'approbation manuelle)",
+  "projectSettings.pendingAccessHint.none": "Les membres en attente ne peuvent pas accéder au projet jusqu'à l'approbation manuelle d'un administrateur.",
+  "projectSettings.pendingAccessHint.read_only": "Les membres en attente peuvent consulter les données mais ne peuvent pas apporter de modifications jusqu'à l'approbation d'un administrateur.",
+  "projectSettings.pendingAccessHint.auto_approve": "Les nouveaux membres sont automatiquement approuvés et obtiennent un accès complet immédiatement.",
+  "projectSettings.pendingAccessNote": "Note : Ce paramètre s'applique aussi aux membres qui doivent être réapprouvés après une récupération de mot de passe.",
 
   "approvals.title": "Approbations",
   "approvals.my_pending": "Mes approbations en attente",
@@ -743,6 +751,7 @@
   "errors.invalidAccountType": "Le type de compte doit être 'utilisateur' ou 'cagnotte'.",
   "errors.invalidVote": "Le vote doit être 'approuver' ou 'rejeter'.",
   "errors.invalidWarningHorizon": "Valeur d'horizon d'alerte invalide.",
+  "errors.invalidPendingAccessSetting": "Paramètre d'accès des membres en attente invalide. Doit être 'none', 'read_only' ou 'auto_approve'.",
   "errors.passwordMismatch": "Les mots de passe ne correspondent pas.",
   "errors.noFieldsToUpdate": "Aucun champ à mettre à jour.",
 

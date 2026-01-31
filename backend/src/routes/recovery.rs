@@ -427,12 +427,71 @@ async fn reset_password(
     .execute(&pool)
     .await?;
 
-    // Set all project memberships to 'recovered' status
-    // Project admins must re-approve the user in each project
+    // Smart password recovery: auto-approve in projects where approving trusted users are admins
+    //
+    // Step 1: First set ALL project memberships to 'recovered' status
     sqlx::query("UPDATE project_members SET status = 'recovered' WHERE user_id = ?")
         .bind(intent.user_id)
         .execute(&pool)
         .await?;
+
+    // Step 2: Get trusted users who approved this recovery
+    let approving_trusted_users: Vec<i64> = sqlx::query_scalar(
+        "SELECT voter_id FROM recovery_votes WHERE recovery_id = ? AND vote = 'approve'",
+    )
+    .bind(intent.id)
+    .fetch_all(&pool)
+    .await?;
+
+    // Step 3: Auto-approve in projects where ≥1 approving trusted user is an admin
+    if !approving_trusted_users.is_empty() {
+        // Find projects where user is member AND ≥1 approving trusted user is admin
+        let placeholders = approving_trusted_users
+            .iter()
+            .map(|_| "?")
+            .collect::<Vec<_>>()
+            .join(",");
+
+        let auto_approve_sql = format!(
+            r#"
+            SELECT DISTINCT pm1.project_id
+            FROM project_members pm1
+            WHERE pm1.user_id = ?
+            AND EXISTS (
+                SELECT 1 FROM project_members pm2
+                WHERE pm2.project_id = pm1.project_id
+                AND pm2.user_id IN ({})
+                AND pm2.role = 'admin'
+                AND pm2.status = 'active'
+            )
+            "#,
+            placeholders
+        );
+
+        let mut query = sqlx::query_scalar::<_, i64>(&auto_approve_sql).bind(intent.user_id);
+        for voter_id in &approving_trusted_users {
+            query = query.bind(voter_id);
+        }
+        let auto_approve_projects: Vec<i64> = query.fetch_all(&pool).await?;
+
+        // Set to 'active' for projects where trusted admins exist
+        if !auto_approve_projects.is_empty() {
+            let project_placeholders = auto_approve_projects
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(",");
+            let update_sql = format!(
+                "UPDATE project_members SET status = 'active' WHERE user_id = ? AND project_id IN ({})",
+                project_placeholders
+            );
+            let mut update_query = sqlx::query(&update_sql).bind(intent.user_id);
+            for pid in &auto_approve_projects {
+                update_query = update_query.bind(pid);
+            }
+            update_query.execute(&pool).await?;
+        }
+    }
 
     Ok(Json(serde_json::json!({
         "message": "Password has been reset successfully. You can now log in with your new password."

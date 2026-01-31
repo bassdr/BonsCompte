@@ -13,6 +13,8 @@ pub struct Project {
     pub require_approval: bool,
     #[sqlx(default)]
     pub pool_warning_horizon: String, // Deprecated: now per-pool in participants table
+    #[sqlx(default)]
+    pub pending_member_access: String, // 'none', 'read_only', 'auto_approve'
 }
 
 #[derive(Debug, Deserialize)]
@@ -37,6 +39,7 @@ pub struct JoinProject {
 pub struct UpdateProjectSettings {
     pub invites_enabled: Option<bool>,
     pub require_approval: Option<bool>,
+    pub pending_member_access: Option<String>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize)]
@@ -51,6 +54,8 @@ pub struct ProjectWithRole {
     pub require_approval: bool,
     #[sqlx(default)]
     pub pool_warning_horizon: String, // Deprecated: now per-pool in participants table
+    #[sqlx(default)]
+    pub pending_member_access: String, // 'none', 'read_only', 'auto_approve'
     pub role: String,
 }
 
@@ -73,6 +78,7 @@ pub struct ProjectListItem {
     pub invites_enabled: bool,
     pub require_approval: bool,
     pub pool_warning_horizon: String, // Deprecated: now per-pool in participants table
+    pub pending_member_access: String, // 'none', 'read_only', 'auto_approve'
     pub role: String,
     /// Display name or username of the project owner
     pub owner_name: String,

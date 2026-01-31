@@ -268,6 +268,7 @@ export interface Project {
   invites_enabled: boolean;
   require_approval: boolean;
   pool_warning_horizon: string; // Deprecated: now per-pool in participants table
+  pending_member_access: 'none' | 'read_only' | 'auto_approve';
 }
 
 export interface PoolSummary {
@@ -591,6 +592,7 @@ export const updateProjectSettings = (
   settings: {
     invites_enabled?: boolean;
     require_approval?: boolean;
+    pending_member_access?: 'none' | 'read_only' | 'auto_approve';
   }
 ): Promise<Project> =>
   authFetch(`/projects/${id}/settings`, {

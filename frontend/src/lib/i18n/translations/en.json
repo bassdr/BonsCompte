@@ -594,6 +594,14 @@
   "projectSettings.horizon6Months": "6 months from now",
   "projectSettings.handleSavePoolWarning.success": "Pool warning settings updated",
   "projectSettings.handleSavePoolWarning.fail": "Failed to update pool warning settings",
+  "projectSettings.pendingMemberAccess": "Pending Member Access",
+  "projectSettings.pendingAccess.none": "No Access (Block until approved)",
+  "projectSettings.pendingAccess.readOnly": "Read-Only (Default)",
+  "projectSettings.pendingAccess.autoApprove": "Auto-Approve (No manual approval)",
+  "projectSettings.pendingAccessHint.none": "Pending members cannot access the project until manually approved by an admin.",
+  "projectSettings.pendingAccessHint.read_only": "Pending members can view data but cannot make changes until approved by an admin.",
+  "projectSettings.pendingAccessHint.auto_approve": "New members are automatically approved and gain full access immediately.",
+  "projectSettings.pendingAccessNote": "Note: This setting also applies to members who need re-approval after password recovery.",
 
   "approvals.title": "Approvals",
   "approvals.my_pending": "My Pending Approvals",
@@ -743,6 +751,7 @@
   "errors.invalidAccountType": "Account type must be 'user' or 'pool'.",
   "errors.invalidVote": "Vote must be 'approve' or 'reject'.",
   "errors.invalidWarningHorizon": "Invalid warning horizon value.",
+  "errors.invalidPendingAccessSetting": "Invalid pending member access setting. Must be 'none', 'read_only', or 'auto_approve'.",
   "errors.passwordMismatch": "Passwords do not match.",
   "errors.noFieldsToUpdate": "No fields to update.",
 

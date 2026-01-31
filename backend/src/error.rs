@@ -37,6 +37,7 @@ pub enum ErrorCode {
     InvalidAccountType,
     InvalidVote,
     InvalidWarningHorizon,
+    InvalidPendingAccessSetting,
     PasswordMismatch,
     NoFieldsToUpdate,
 
@@ -122,6 +123,7 @@ impl ErrorCode {
             Self::InvalidAccountType => "INVALID_ACCOUNT_TYPE",
             Self::InvalidVote => "INVALID_VOTE",
             Self::InvalidWarningHorizon => "INVALID_WARNING_HORIZON",
+            Self::InvalidPendingAccessSetting => "INVALID_PENDING_ACCESS_SETTING",
             Self::PasswordMismatch => "PASSWORD_MISMATCH",
             Self::NoFieldsToUpdate => "NO_FIELDS_TO_UPDATE",
 

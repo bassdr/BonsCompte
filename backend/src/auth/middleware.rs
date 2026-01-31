@@ -184,11 +184,51 @@ where
         match member {
             Some((role_str, participant_id, status)) => {
                 // Check if membership status allows access
-                let is_recovered = status == "recovered";
-                if status != "active" && !is_recovered {
-                    // 'pending' or other non-active statuses block access
-                    return Err(AppError::AccountPendingApproval);
-                }
+                let is_recovered = match status.as_str() {
+                    "active" => false,
+                    "pending" | "recovered" => {
+                        // Check project's pending_member_access setting
+                        let pending_access: String = sqlx::query_scalar(
+                            "SELECT COALESCE(pending_member_access, 'read_only') FROM projects WHERE id = ?",
+                        )
+                        .bind(project_id)
+                        .fetch_one(pool)
+                        .await
+                        .map_err(|e| AppError::Internal(format!("Database error: {}", e)))?;
+
+                        match pending_access.as_str() {
+                            "none" => {
+                                // No access until approved
+                                return Err(AppError::AccountPendingApproval);
+                            }
+                            "read_only" => {
+                                // Allow read-only access (enforced via is_recovered flag)
+                                true
+                            }
+                            "auto_approve" => {
+                                // Auto-promote to active (edge case handling for pending members
+                                // that existed before auto_approve was enabled)
+                                sqlx::query(
+                                    "UPDATE project_members SET status = 'active' WHERE project_id = ? AND user_id = ?",
+                                )
+                                .bind(project_id)
+                                .bind(auth_user.user_id)
+                                .execute(pool)
+                                .await
+                                .ok();
+                                false // Now active, not recovered
+                            }
+                            _ => {
+                                // Unknown setting, default to blocking
+                                return Err(AppError::AccountPendingApproval);
+                            }
+                        }
+                    }
+                    _ => {
+                        // Unknown status, block access
+                        return Err(AppError::AccountPendingApproval);
+                    }
+                };
 
                 let role = role_str
                     .parse::<Role>()

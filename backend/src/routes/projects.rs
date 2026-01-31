@@ -53,6 +53,7 @@ struct ProjectListRow {
     invites_enabled: bool,
     require_approval: bool,
     pool_warning_horizon: String,
+    pending_member_access: String,
     role: String,
     owner_name: String,
     user_participant_id: Option<i64>,
@@ -69,7 +70,9 @@ async fn list_projects(
     // Include both 'active' and 'recovered' members (recovered have read-only access)
     let rows: Vec<ProjectListRow> = sqlx::query_as(
         "SELECT p.id, p.name, p.description, p.invite_code, p.created_by, p.created_at,
-                p.invites_enabled, p.require_approval, p.pool_warning_horizon, pm.role,
+                p.invites_enabled, p.require_approval, p.pool_warning_horizon,
+                COALESCE(p.pending_member_access, 'read_only') as pending_member_access,
+                pm.role,
                 COALESCE(u.display_name, u.username) as owner_name,
                 pm.participant_id as user_participant_id,
                 pm.status as member_status
@@ -131,6 +134,7 @@ async fn list_projects(
             invites_enabled: row.invites_enabled,
             require_approval: row.require_approval,
             pool_warning_horizon: row.pool_warning_horizon,
+            pending_member_access: row.pending_member_access,
             role: row.role,
             owner_name: row.owner_name,
             user_balance,
@@ -334,27 +338,63 @@ async fn update_project_settings(
         .fetch_one(&pool)
         .await?;
 
-    // Build dynamic update
+    // Validate pending_member_access if provided
+    if let Some(ref pending_access) = input.pending_member_access {
+        if !matches!(
+            pending_access.as_str(),
+            "none" | "read_only" | "auto_approve"
+        ) {
+            return Err(AppError::bad_request(
+                ErrorCode::InvalidPendingAccessSetting,
+            ));
+        }
+    }
+
+    // Build dynamic update - we need to track bool and string binds separately
+    // since they go into different bind positions
     let mut updates = Vec::new();
     let mut bool_binds: Vec<bool> = Vec::new();
+    let mut string_binds: Vec<String> = Vec::new();
 
     if let Some(invites_enabled) = input.invites_enabled {
-        updates.push("invites_enabled = ?");
+        updates.push(("invites_enabled = ?", "bool"));
         bool_binds.push(invites_enabled);
     }
     if let Some(require_approval) = input.require_approval {
-        updates.push("require_approval = ?");
+        updates.push(("require_approval = ?", "bool"));
         bool_binds.push(require_approval);
+    }
+    if let Some(pending_member_access) = input.pending_member_access {
+        updates.push(("pending_member_access = ?", "string"));
+        string_binds.push(pending_member_access);
     }
 
     if updates.is_empty() {
         return Err(AppError::bad_request(ErrorCode::NoFieldsToUpdate));
     }
 
-    let sql = format!("UPDATE projects SET {} WHERE id = ?", updates.join(", "));
+    let update_clauses: Vec<&str> = updates.iter().map(|(clause, _)| *clause).collect();
+    let sql = format!(
+        "UPDATE projects SET {} WHERE id = ?",
+        update_clauses.join(", ")
+    );
+
+    // Build the query with binds in correct order
     let mut query = sqlx::query(&sql);
-    for bind in &bool_binds {
-        query = query.bind(bind);
+    let mut bool_idx = 0;
+    let mut string_idx = 0;
+    for (_, bind_type) in &updates {
+        match *bind_type {
+            "bool" => {
+                query = query.bind(bool_binds[bool_idx]);
+                bool_idx += 1;
+            }
+            "string" => {
+                query = query.bind(&string_binds[string_idx]);
+                string_idx += 1;
+            }
+            _ => {}
+        }
     }
     query = query.bind(member.project_id);
     query.execute(&pool).await?;
@@ -486,11 +526,11 @@ async fn join_project(
         // If token doesn't match, silently ignore (allow joining without participant link)
     }
 
-    // Determine status based on require_approval
-    let status = if project.require_approval {
-        "pending"
-    } else {
+    // Determine status based on require_approval and pending_member_access
+    let status = if !project.require_approval || project.pending_member_access == "auto_approve" {
         "active"
+    } else {
+        "pending"
     };
 
     // Add as editor member

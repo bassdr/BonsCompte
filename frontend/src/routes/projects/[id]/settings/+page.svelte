@@ -50,6 +50,7 @@
   // Invite settings
   let invitesEnabled = $state(true);
   let requireApproval = $state(false);
+  let pendingMemberAccess = $state<'none' | 'read_only' | 'auto_approve'>('read_only');
   let savingSettings = $state(false);
 
   // Pool warning settings (tracks which pool is being saved)
@@ -96,6 +97,7 @@
       description = $currentProject.description || '';
       invitesEnabled = $currentProject.invites_enabled;
       requireApproval = $currentProject.require_approval;
+      pendingMemberAccess = $currentProject.pending_member_access || 'read_only';
     }
   });
 
@@ -170,7 +172,8 @@
     try {
       await updateProjectSettings(projectId, {
         invites_enabled: invitesEnabled,
-        require_approval: requireApproval
+        require_approval: requireApproval,
+        pending_member_access: pendingMemberAccess
       });
       success = $_('projectSettings.handleSaveSettings.success');
       await loadProject(projectId);
@@ -224,7 +227,8 @@
 
     try {
       await approveMember(projectId, userId);
-      await loadPendingMembers();
+      // Reload both pending members and the full project to update the members list
+      await Promise.all([loadPendingMembers(), loadProject(projectId)]);
       success = $_('projectSettings.handleApproveMember.success');
     } catch (e) {
       errorKey = getErrorKey(e, 'projectSettings.handleApproveMember.fail');
@@ -241,7 +245,8 @@
 
     try {
       await rejectMember(projectId, userId);
-      await loadPendingMembers();
+      // Reload both pending members and the full project to update the members list
+      await Promise.all([loadPendingMembers(), loadProject(projectId)]);
       success = $_('projectSettings.handleRejectMember.success');
     } catch (e) {
       errorKey = getErrorKey(e, 'projectSettings.handleRejectMember.fail');
@@ -570,6 +575,18 @@
         <input type="checkbox" bind:checked={requireApproval} />
         <span class="toggle-text">{$_('projectSettings.requireApproval')}</span>
       </label>
+    </div>
+    <div class="setting-row">
+      <label for="pending-access">{$_('projectSettings.pendingMemberAccess')}</label>
+      <select id="pending-access" bind:value={pendingMemberAccess} class="setting-select">
+        <option value="none">{$_('projectSettings.pendingAccess.none')}</option>
+        <option value="read_only">{$_('projectSettings.pendingAccess.readOnly')}</option>
+        <option value="auto_approve">{$_('projectSettings.pendingAccess.autoApprove')}</option>
+      </select>
+      <p class="setting-hint">{$_(`projectSettings.pendingAccessHint.${pendingMemberAccess}`)}</p>
+      {#if !requireApproval}
+        <p class="setting-hint">{$_('projectSettings.pendingAccessNote')}</p>
+      {/if}
     </div>
     <button class="btn-secondary" onclick={handleSaveSettings} disabled={savingSettings}>
       {savingSettings ? $_('common.saving') : $_('projectSettings.saveSettings')}
@@ -1095,6 +1112,18 @@
 
   .toggle-text {
     font-size: 0.95rem;
+  }
+
+  .setting-select {
+    max-width: 300px;
+    margin-bottom: 0.5rem;
+  }
+
+  .setting-hint {
+    font-size: 0.85rem;
+    color: #666;
+    margin-top: 0.5rem;
+    font-style: italic;
   }
 
   .muted {

@@ -587,6 +587,9 @@ export const joinProject = (
     body: JSON.stringify({ invite_code: inviteCode, participant_token: participantToken })
   });
 
+export const leaveProject = (id: number): Promise<{ message: string }> =>
+  authFetch(`/projects/${id}/leave`, { method: 'DELETE' });
+
 export const updateProjectSettings = (
   id: number,
   settings: {

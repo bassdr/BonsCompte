@@ -162,6 +162,10 @@
   "projects.pendingApproval": "En attente d'approbation",
   "projects.pendingApprovalMessage": "Votre demande d'accès est en attente d'approbation par un administrateur.",
   "projects.pendingReadOnly": "En attente (Lecture seule)",
+  "projects.cancelRequest": "Annuler la demande",
+  "projects.cancelling": "Annulation...",
+  "projects.cancelRequestConfirm": "Êtes-vous sûr de vouloir annuler votre demande pour rejoindre « {name} » ?",
+  "projects.failedToCancel": "Échec de l'annulation de la demande",
 
   "project.recoveredWarning": "Votre compte a été récupéré. Vous avez un accès en lecture seule jusqu'à ce qu'un administrateur réapprouve votre adhésion.",
 
@@ -774,6 +778,7 @@
   "errors.notTrustedUser": "Vous n'êtes pas un utilisateur de confiance pour ce compte.",
   "errors.cannotModifySelf": "Vous ne pouvez pas modifier votre propre compte de cette manière.",
   "errors.cannotRemoveSelf": "Vous ne pouvez pas vous retirer vous-même.",
+  "errors.cannotRemoveOwner": "Les propriétaires de projet ne peuvent pas quitter leur propre projet. Transférez la propriété ou supprimez le projet à la place.",
 
   "errors.invitesDisabled": "Les invitations sont désactivées pour ce projet.",
   "errors.alreadyMember": "Vous êtes déjà membre de ce projet.",

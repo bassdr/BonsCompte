@@ -162,6 +162,10 @@
   "projects.pendingApproval": "Pending Approval",
   "projects.pendingApprovalMessage": "Your access request is pending admin approval.",
   "projects.pendingReadOnly": "Pending (Read-Only)",
+  "projects.cancelRequest": "Cancel Request",
+  "projects.cancelling": "Cancelling...",
+  "projects.cancelRequestConfirm": "Are you sure you want to cancel your request to join \"{name}\"?",
+  "projects.failedToCancel": "Failed to cancel request",
 
   "project.recoveredWarning": "Your account was recovered. You have read-only access until an admin re-approves your membership.",
 
@@ -774,6 +778,7 @@
   "errors.notTrustedUser": "You are not a trusted user for this account.",
   "errors.cannotModifySelf": "You cannot modify your own account this way.",
   "errors.cannotRemoveSelf": "You cannot remove yourself.",
+  "errors.cannotRemoveOwner": "Project owners cannot leave their own project. Transfer ownership or delete the project instead.",
 
   "errors.invitesDisabled": "Invites are disabled for this project.",
   "errors.alreadyMember": "You are already a member of this project.",

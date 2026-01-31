@@ -1,5 +1,11 @@
 <script lang="ts">
-  import { getProjects, createProject, joinProject, type ProjectWithRole } from '$lib/api';
+  import {
+    getProjects,
+    createProject,
+    joinProject,
+    leaveProject,
+    type ProjectWithRole
+  } from '$lib/api';
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
   import { _ } from '$lib/i18n';
@@ -20,6 +26,9 @@
   let showJoinForm = $state(false);
   let inviteCode = $state('');
   let joining = $state(false);
+
+  // Cancel request
+  let cancellingProjectId = $state<number | null>(null);
 
   async function loadProjects() {
     loading = true;
@@ -80,6 +89,25 @@
       errorKey = getErrorKey(e, 'projects.failedToJoin');
     } finally {
       joining = false;
+    }
+  }
+
+  async function handleCancelRequest(projectId: number, projectName: string) {
+    if (!confirm($_('projects.cancelRequestConfirm', { values: { name: projectName } }))) {
+      return;
+    }
+
+    cancellingProjectId = projectId;
+    errorKey = '';
+
+    try {
+      await leaveProject(projectId);
+      // Reload projects to update the list
+      await loadProjects();
+    } catch (e) {
+      errorKey = getErrorKey(e, 'projects.failedToCancel');
+    } finally {
+      cancellingProjectId = null;
     }
   }
 
@@ -246,6 +274,15 @@
           <div class="project-meta">
             {project.owner_name} · {formatRelativeTime(project.created_at)}
           </div>
+          <button
+            class="btn-cancel"
+            onclick={() => handleCancelRequest(project.id, project.name)}
+            disabled={cancellingProjectId === project.id}
+          >
+            {cancellingProjectId === project.id
+              ? $_('projects.cancelling')
+              : $_('projects.cancelRequest')}
+          </button>
         </div>
       {:else}
         <!-- Active, recovered, or pending with read-only access -->
@@ -467,7 +504,6 @@
   }
 
   .project-card-pending {
-    opacity: 0.8;
     cursor: default;
     border: 2px dashed #ff9800;
   }
@@ -475,6 +511,28 @@
   .project-card-pending:hover {
     transform: none;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  }
+
+  .btn-cancel {
+    margin-top: 0.75rem;
+    padding: 0.5rem 1rem;
+    background: transparent;
+    color: #c62828;
+    border: 1px solid #c62828;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-cancel:hover:not(:disabled) {
+    background: #c62828;
+    color: white;
+  }
+
+  .btn-cancel:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .pending-message {

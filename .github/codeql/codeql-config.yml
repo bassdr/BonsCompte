@@ -1,0 +1,16 @@
+# CodeQL configuration for BonsCompte
+# See: https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/customizing-your-advanced-setup-for-code-scanning
+
+name: "BonsCompte CodeQL Config"
+
+# Exclude admin CLI tool from cleartext logging checks
+# The admin tool intentionally uses println! for console output
+paths-ignore:
+  - 'backend/src/admin.rs'
+
+# You can also use query filters to be more specific:
+# query-filters:
+#   - exclude:
+#       id: rust/cleartext-logging
+#       paths:
+#         - 'backend/src/admin.rs'

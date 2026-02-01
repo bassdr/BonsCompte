@@ -73,8 +73,11 @@ backend/src/
 │   ├── members.rs       # User-project membership with roles
 │   ├── payments.rs      # Payments with contributions + recurrence
 │   └── debts.rs         # GET with ?date= for future projection
-└── services/
-    └── debt_calculator.rs  # Balance calculation, recurring payment expansion
+├── services/
+│   └── debt_calculator.rs  # Balance calculation, recurring payment expansion
+└── bin/                 # Additional binary utilities
+    ├── admin.rs         # Admin CLI tool (cargo run --bin bonscompte-admin)
+    └── recalculate_contributions.rs  # Recalculate contributions with 4-decimal precision
 ```
 
 ### Key Backend Patterns
@@ -86,6 +89,8 @@ backend/src/
   ```
 
 - **Auth middleware**: `AuthUser` extractor for authenticated routes, `ProjectMember` for project-scoped routes (validates membership + extracts role)
+
+- **Contribution amounts**: Stored with 4-decimal precision to avoid rounding errors. When splitting a payment by weight, each contribution is calculated as `(amount * weight / total_weight * 10000.0).round() / 10000.0`. The frontend formats to 2 decimals for display. To recalculate existing contributions after precision changes, run `cargo run --bin recalculate-contributions`.
 
 - **Migrations**: Inline SQL in `db.rs`, runs `.ok()` on ALTER TABLE to handle re-runs
 

@@ -39,7 +39,9 @@
 
   // Total count of items needing attention from store
   let totalPendingCount = $derived(
-    $pendingApprovals.actionableCount + $pendingApprovals.pendingMembersCount
+    $pendingApprovals.actionableCount +
+      $pendingApprovals.pendingMembersCount +
+      $pendingApprovals.pendingRecoveriesCount
   );
 
   // Check if permanently dismissed on mount

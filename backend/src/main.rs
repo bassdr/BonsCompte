@@ -177,9 +177,7 @@ async fn main() {
 
     // Auth routes with optional rate limiting (5 requests per 60s to prevent brute-force)
     let auth_routes = if rate_limit_enabled {
-        routes::auth::router().layer(GovernorLayer {
-            config: auth_rate_limit,
-        })
+        routes::auth::router().layer(GovernorLayer::new(auth_rate_limit))
     } else {
         routes::auth::router()
     };
@@ -205,9 +203,7 @@ async fn main() {
 
     // Conditionally apply general rate limiting (100 requests per second)
     if rate_limit_enabled {
-        app = app.layer(GovernorLayer {
-            config: api_rate_limit,
-        });
+        app = app.layer(GovernorLayer::new(api_rate_limit));
     }
 
     let app = app

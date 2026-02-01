@@ -16,6 +16,7 @@
   import { _ } from 'svelte-i18n';
   import { goto } from '$app/navigation';
   import { getErrorKey } from '$lib/errors';
+  import { pendingApprovals } from '$lib/stores/pendingApprovals';
 
   let myApprovals = $state<ProjectApproval[]>([]);
   let actionableApprovals = $state<ProjectApproval[]>([]);
@@ -57,6 +58,8 @@
       await castVote(approvalId, vote);
       // Refresh data after voting
       await loadData();
+      // Also refresh the global store so the banner/badge update immediately
+      pendingApprovals.refresh();
     } catch (e) {
       errorKey = getErrorKey(e, 'approvals.failedToVote');
     } finally {
@@ -73,6 +76,8 @@
       await voteOnRecovery(token, vote);
       // Refresh data after voting
       await loadData();
+      // Also refresh the global store so the banner/badge update immediately
+      pendingApprovals.refresh();
     } catch (e) {
       errorKey = getErrorKey(e, 'approvals.failedToVote');
     } finally {
@@ -98,6 +103,8 @@
       }
       // Refresh data after action
       await loadData();
+      // Also refresh the global store so the banner/badge update immediately
+      pendingApprovals.refresh();
     } catch (e) {
       errorKey = getErrorKey(e, 'approvals.failedToProcessMember');
     } finally {

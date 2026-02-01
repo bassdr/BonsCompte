@@ -60,6 +60,7 @@ pub enum ErrorCode {
     CannotModifySelf,
     CannotRemoveSelf,
     CannotRemoveOwner,
+    MembershipPending,
 
     // Business logic errors
     InvitesDisabled,
@@ -147,6 +148,7 @@ impl ErrorCode {
             Self::CannotModifySelf => "CANNOT_MODIFY_SELF",
             Self::CannotRemoveSelf => "CANNOT_REMOVE_SELF",
             Self::CannotRemoveOwner => "CANNOT_REMOVE_OWNER",
+            Self::MembershipPending => "MEMBERSHIP_PENDING",
 
             // Business logic
             Self::InvitesDisabled => "INVITES_DISABLED",
@@ -219,6 +221,9 @@ pub enum AppError {
 
     #[error("Account pending approval")]
     AccountPendingApproval,
+
+    #[error("Project membership pending approval")]
+    MembershipPendingApproval { project_id: i64 },
 
     #[error("Account revoked")]
     AccountRevoked,
@@ -301,6 +306,15 @@ impl IntoResponse for AppError {
                 ErrorCode::AccountPending.as_str(),
                 self.to_string(),
             ),
+            AppError::MembershipPendingApproval { project_id } => {
+                // Return project_id in the response so frontend can redirect to the right page
+                let body = Json(json!({
+                    "code": ErrorCode::MembershipPending.as_str(),
+                    "error": "Project membership pending approval",
+                    "project_id": project_id
+                }));
+                return (StatusCode::FORBIDDEN, body).into_response();
+            }
             AppError::AccountRevoked => (
                 StatusCode::FORBIDDEN,
                 ErrorCode::AccountRevoked.as_str(),

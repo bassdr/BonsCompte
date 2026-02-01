@@ -50,7 +50,7 @@ hex = "0.4"
 # Rate limiting
 tower = "0.5"
 governor = "0.8"
-tower_governor = "0.6"
+tower_governor = "0.8"
 
 [dev-dependencies]
 axum-test = "16"

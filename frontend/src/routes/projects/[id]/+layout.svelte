@@ -58,9 +58,10 @@
           code === 'PROJECT_NOT_FOUND' ||
           code === 'FORBIDDEN' ||
           code === 'UNAUTHORIZED' ||
-          code === 'ACCOUNT_PENDING_APPROVAL'
+          code === 'ACCOUNT_PENDING_APPROVAL' ||
+          code === 'MEMBERSHIP_PENDING'
         ) {
-          // Redirect to home - they'll see the pending card there
+          // Redirect to home - they'll see the pending/recovered card there
           goto(resolve('/'));
           return;
         }

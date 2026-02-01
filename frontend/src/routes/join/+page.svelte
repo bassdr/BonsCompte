@@ -30,7 +30,8 @@
       const response = await joinProject(inviteCode, participantToken);
 
       if (response.status === 'pending') {
-        success = $t('join.pendingApproval', { values: { name: response.project.name } });
+        // Redirect to project-specific pending page
+        await goto(`/projects/${response.project.id}/pending`);
       } else {
         // Go to joined project
         await goto(`/projects/${response.project.id}`);

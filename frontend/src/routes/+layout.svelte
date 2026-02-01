@@ -22,7 +22,7 @@
     isDontShowAgain,
     setDontShowAgain
   } from '$lib/stores/recoveryStatus';
-  import { getActionableApprovals, getPendingMembersToApprove } from '$lib/api';
+  import { pendingApprovals } from '$lib/stores/pendingApprovals';
   import { onMount, onDestroy } from 'svelte';
 
   let { children }: { children: Snippet } = $props();
@@ -31,18 +31,16 @@
   const initialLocale = getInitialLocale();
   setupI18n(initialLocale);
 
-  let actionableApprovalsCount = $state(0);
-  let pendingMembersCount = $state(0);
   let approvalCheckInterval: ReturnType<typeof setInterval> | null = null;
   let recoveryCheckInterval: ReturnType<typeof setInterval> | null = null;
   let dismissedForSession = $state(false);
   let showDismissDialog = $state(false);
   let dontShowAgainPermanent = $state(false);
-  let showPendingApprovalsBanner = $state(false);
-  let pendingApprovalsBannerDismissed = $state(false);
 
-  // Total count of items needing attention
-  let totalPendingCount = $derived(actionableApprovalsCount + pendingMembersCount);
+  // Total count of items needing attention from store
+  let totalPendingCount = $derived(
+    $pendingApprovals.actionableCount + $pendingApprovals.pendingMembersCount
+  );
 
   // Check if permanently dismissed on mount
   $effect(() => {
@@ -51,61 +49,31 @@
     }
   });
 
-  async function checkActionableApprovals() {
-    if (!$isAuthenticated) return;
-
-    try {
-      const [approvals, pendingMembers] = await Promise.all([
-        getActionableApprovals(),
-        getPendingMembersToApprove()
-      ]);
-      actionableApprovalsCount = approvals.length;
-      pendingMembersCount = pendingMembers.length;
-
-      // Show banner on first check after login if there are pending items
-      if (!pendingApprovalsBannerDismissed && (approvals.length > 0 || pendingMembers.length > 0)) {
-        showPendingApprovalsBanner = true;
-      }
-    } catch {
-      // Silently fail - approvals might not be accessible
-      actionableApprovalsCount = 0;
-      pendingMembersCount = 0;
-    }
-  }
-
   // Check recovery status when authentication state changes
   $effect(() => {
     if ($isAuthenticated) {
       refreshRecoveryStatus();
       dismissedForSession = false; // Reset session dismiss on login
-      pendingApprovalsBannerDismissed = false; // Reset banner on login
-      // Reset counts immediately - they'll be populated by checkActionableApprovals
-      actionableApprovalsCount = 0;
-      pendingMembersCount = 0;
-      showPendingApprovalsBanner = false;
-      // Fetch fresh data for this user
-      checkActionableApprovals();
+      // Reset and fetch fresh approval data for this user
+      pendingApprovals.resetForNewUser();
+      pendingApprovals.refresh();
     } else {
       resetRecoveryStatus();
       // Reset all approval state on logout
-      actionableApprovalsCount = 0;
-      pendingMembersCount = 0;
-      showPendingApprovalsBanner = false;
-      pendingApprovalsBannerDismissed = false;
+      pendingApprovals.reset();
     }
   });
 
-  function dismissPendingApprovalsBanner() {
-    showPendingApprovalsBanner = false;
-    pendingApprovalsBannerDismissed = true;
-  }
-
   onMount(() => {
     // Check immediately on mount
-    checkActionableApprovals();
+    if ($isAuthenticated) {
+      pendingApprovals.refresh();
+    }
 
     // Check every 30 seconds
-    approvalCheckInterval = setInterval(checkActionableApprovals, 30000);
+    approvalCheckInterval = setInterval(() => {
+      if ($isAuthenticated) pendingApprovals.refresh();
+    }, 30000);
     // Check recovery status every 10 seconds (catches changes from settings page)
     recoveryCheckInterval = setInterval(() => {
       if ($isAuthenticated) refreshRecoveryStatus();
@@ -250,7 +218,7 @@
       </div>
     {/if}
 
-    {#if showPendingApprovalsBanner && totalPendingCount > 0}
+    {#if $pendingApprovals.showBanner && totalPendingCount > 0}
       <div class="pending-approvals-banner">
         <div class="banner-content">
           <span class="banner-icon">!</span>
@@ -264,7 +232,7 @@
             >{$_('layout.viewApprovals', { default: 'View Approvals' })}</a
           >
         </div>
-        <button class="dismiss-btn" onclick={dismissPendingApprovalsBanner}>×</button>
+        <button class="dismiss-btn" onclick={() => pendingApprovals.dismissBanner()}>×</button>
       </div>
     {/if}
 

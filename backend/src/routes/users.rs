@@ -23,6 +23,7 @@ use crate::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_users))
+        .route("/me", get(get_current_user).delete(delete_account))
         .route("/me/password", put(change_password))
         .route("/me/profile", put(update_profile))
         .route(
@@ -35,7 +36,6 @@ pub fn router() -> Router<AppState> {
         )
         .route("/me/trusted-users/{id}", delete(remove_trusted_user))
         .route("/me/recovery-status", get(get_recovery_status))
-        .route("/me", delete(delete_account))
         .route("/{id}", get(get_user))
         .route("/{id}/approve", put(approve_user))
         .route("/{id}/revoke", put(revoke_user))
@@ -97,6 +97,21 @@ async fn get_user(
 ) -> AppResult<Json<UserResponse>> {
     let user: Option<User> = sqlx::query_as("SELECT * FROM users WHERE id = ?")
         .bind(id)
+        .fetch_optional(&pool)
+        .await?;
+
+    let user = user.ok_or_else(|| AppError::not_found(ErrorCode::UserNotFound))?;
+
+    Ok(Json(UserResponse::from(user)))
+}
+
+/// Get current user info - accessible even for pending users
+async fn get_current_user(
+    auth: AuthUser,
+    State(pool): State<SqlitePool>,
+) -> AppResult<Json<UserResponse>> {
+    let user: Option<User> = sqlx::query_as("SELECT * FROM users WHERE id = ?")
+        .bind(auth.user_id)
         .fetch_optional(&pool)
         .await?;
 

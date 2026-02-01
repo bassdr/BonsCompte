@@ -114,11 +114,18 @@ async function authFetch(path: string, opts: AuthFetchOptions = {}) {
   if (res.status === 403) {
     const text = await res.text();
     try {
-      const data: ApiError = JSON.parse(text);
+      const data = JSON.parse(text) as ApiError & { project_id?: number };
       if (data.code === 'ACCOUNT_PENDING' || data.code === 'PENDING_APPROVAL') {
         // Redirect to quarantine page, don't clear token
         if (browser) {
           window.location.href = '/account/pending';
+        }
+        throw new ApiRequestError(data.code, data.error, res.status);
+      }
+      if (data.code === 'MEMBERSHIP_PENDING' && data.project_id) {
+        // Redirect to project-specific pending page, don't clear token
+        if (browser) {
+          window.location.href = `/projects/${data.project_id}/pending`;
         }
         throw new ApiRequestError(data.code, data.error, res.status);
       }
@@ -247,6 +254,17 @@ export const updateProfile = (data: UpdateProfileRequest): Promise<User> =>
     method: 'PUT',
     body: JSON.stringify(data)
   });
+
+// Get current user (accessible even for pending users)
+export interface CurrentUser {
+  id: number;
+  username: string;
+  display_name: string | null;
+  user_state: string;
+  preferences: UserPreferences;
+}
+
+export const getCurrentUser = (): Promise<CurrentUser> => authFetch('/users/me');
 
 // User preferences
 export const getPreferences = (): Promise<UserPreferences> => authFetch('/users/me/preferences');

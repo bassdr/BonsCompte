@@ -198,8 +198,8 @@ where
 
                         match pending_access.as_str() {
                             "none" => {
-                                // No access until approved
-                                return Err(AppError::AccountPendingApproval);
+                                // No access until approved - use project-specific error
+                                return Err(AppError::MembershipPendingApproval { project_id });
                             }
                             "read_only" => {
                                 // Allow read-only access (enforced via is_recovered flag)

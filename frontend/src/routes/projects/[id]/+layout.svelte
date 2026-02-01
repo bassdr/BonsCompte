@@ -23,7 +23,16 @@
   let loading = $state(true);
   let errorKey = $state('');
 
+  // Check if we're on the pending page - don't load project data in that case
+  let isPendingPage = $derived($page.url.pathname.endsWith('/pending'));
+
   $effect(() => {
+    // Skip loading project data on the pending page
+    if (isPendingPage) {
+      loading = false;
+      return;
+    }
+
     const projectId = parseInt($page.params.id ?? '');
     if (!isNaN(projectId)) {
       loadProjectData(projectId);
@@ -371,7 +380,10 @@
   });
 </script>
 
-{#if loading}
+{#if isPendingPage}
+  <!-- Pending page - render directly without project layout -->
+  {@render children()}
+{:else if loading}
   <div class="loading">{$_('common.loading')}</div>
 {:else if errorKey}
   <div class="error">

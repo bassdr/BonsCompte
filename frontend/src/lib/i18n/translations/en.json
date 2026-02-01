@@ -639,6 +639,14 @@
   "layout.pendingApprovalsNotice": "You have {count} pending approval(s) that need your attention.",
   "layout.viewApprovals": "View Approvals",
 
+  "projectPending.title": "Membership Pending",
+  "projectPending.description": "Your request to join this project is pending approval from an administrator. You will be redirected automatically once approved.",
+  "projectPending.autoRefresh": "This page will automatically check for approval every 5 seconds.",
+  "projectPending.cancelRequest": "Cancel Request",
+  "projectPending.cancelling": "Cancelling...",
+  "projectPending.cancelFailed": "Failed to cancel membership request",
+  "projectPending.backToProjects": "Back to Projects",
+
   "common.view_details": "View Details",
 
   "weekdays.sun": "Sun",

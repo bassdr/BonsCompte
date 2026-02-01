@@ -639,6 +639,14 @@
   "layout.pendingApprovalsNotice": "Vous avez {count} approbation(s) en attente qui nécessite(nt) votre attention.",
   "layout.viewApprovals": "Voir les approbations",
 
+  "projectPending.title": "Adhésion en attente",
+  "projectPending.description": "Votre demande d'adhésion à ce projet est en attente d'approbation par un administrateur. Vous serez redirigé automatiquement une fois approuvé.",
+  "projectPending.autoRefresh": "Cette page vérifiera automatiquement l'approbation toutes les 5 secondes.",
+  "projectPending.cancelRequest": "Annuler la demande",
+  "projectPending.cancelling": "Annulation...",
+  "projectPending.cancelFailed": "Échec de l'annulation de la demande d'adhésion",
+  "projectPending.backToProjects": "Retour aux projets",
+
   "common.view_details": "Voir les détails",
 
   "weekdays.sun": "Dim",

@@ -69,6 +69,10 @@ impl HistoryService {
         }
 
         hasher.update(created_at.as_bytes());
+        // codeql[rust/cleartext-logging] Intentional: actor_user_id is part of audit trail hash.
+        // This data is stored in the access-controlled history_log table (only accessible to
+        // project members) and is necessary for maintaining an immutable audit trail.
+        // The user ID is not sensitive PII - it's an internal identifier for accountability.
         hasher.update(
             actor_user_id
                 .map(|id| id.to_string())

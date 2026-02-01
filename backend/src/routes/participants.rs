@@ -17,11 +17,6 @@ use crate::{
     AppState,
 };
 
-/// Maximum length for participant name to prevent memory exhaustion attacks
-const MAX_PARTICIPANT_NAME_LENGTH: usize = 100;
-/// Maximum length for warning horizon values to prevent memory exhaustion attacks
-const MAX_WARNING_HORIZON_LENGTH: usize = 30;
-
 #[derive(Deserialize)]
 struct ParticipantPath {
     participant_id: i64,
@@ -87,11 +82,7 @@ async fn create_participant(
         return Err(AppError::forbidden(ErrorCode::EditorRequired));
     }
 
-    // Validate name length BEFORE any allocation to prevent memory exhaustion
-    if input.name.len() > MAX_PARTICIPANT_NAME_LENGTH {
-        return Err(AppError::bad_request(ErrorCode::ParticipantNameTooLong));
-    }
-
+    // Note: name length is bounded at deserialization via BoundedString type
     let default_weight = input.default_weight.unwrap_or(1.0);
     let account_type = input.account_type.as_deref().unwrap_or("user");
 
@@ -106,7 +97,7 @@ async fn create_participant(
         "INSERT INTO participants (project_id, name, default_weight, account_type) VALUES (?, ?, ?, ?)"
     )
     .bind(member.project_id)
-    .bind(&input.name)
+    .bind(input.name.as_str())
     .bind(default_weight)
     .bind(account_type)
     .execute(&pool)
@@ -144,12 +135,7 @@ async fn update_participant(
         return Err(AppError::forbidden(ErrorCode::EditorRequired));
     }
 
-    // Validate name length BEFORE any allocation to prevent memory exhaustion
-    if let Some(ref name) = input.name {
-        if name.len() > MAX_PARTICIPANT_NAME_LENGTH {
-            return Err(AppError::bad_request(ErrorCode::ParticipantNameTooLong));
-        }
-    }
+    // Note: name length is bounded at deserialization via BoundedString type
 
     // Verify participant belongs to project
     let existing: Option<Participant> =
@@ -163,14 +149,14 @@ async fn update_participant(
 
     // Validate account_type if provided
     if let Some(ref account_type) = input.account_type {
-        if account_type != "user" && account_type != "pool" {
+        if account_type.as_str() != "user" && account_type.as_str() != "pool" {
             return Err(AppError::BadRequest(
                 "account_type must be 'user' or 'pool'".to_string(),
             ));
         }
 
         // If changing to pool, check that user is not linked
-        if account_type == "pool" && existing.account_type != "pool" {
+        if account_type.as_str() == "pool" && existing.account_type != "pool" {
             // Prevent linked users from becoming pools
             if existing.user_id.is_some() {
                 return Err(AppError::BadRequest(
@@ -189,20 +175,20 @@ async fn update_participant(
     let mut weight_val = 0.0f64;
     let mut account_type_val = String::new();
 
-    if let Some(name) = &input.name {
+    if let Some(ref name) = input.name {
         updates.push("name = ?");
         has_name = true;
-        name_val = name.clone();
+        name_val = name.to_string();
     }
     if let Some(weight) = input.default_weight {
         updates.push("default_weight = ?");
         has_weight = true;
         weight_val = weight;
     }
-    if let Some(account_type) = &input.account_type {
+    if let Some(ref account_type) = input.account_type {
         updates.push("account_type = ?");
         has_account_type = true;
-        account_type_val = account_type.clone();
+        account_type_val = account_type.to_string();
     }
 
     if updates.is_empty() {
@@ -519,6 +505,7 @@ async fn update_pool_warning_settings(
 
     // Valid warning horizon values
     // Empty string or null means "disable" (set to NULL in DB)
+    // Note: Input length is already bounded at deserialization via BoundedString<30>
     let valid_horizons = [
         "end_of_current_month",
         "end_of_next_month",
@@ -526,16 +513,11 @@ async fn update_pool_warning_settings(
         "6_months",
     ];
 
-    // Validate and convert input in a single flow to ensure CodeQL can track bounds
-    // Result is Option<Option<String>> where:
+    // Convert input to Option<Option<String>> where:
     // - None = field not provided, don't update
     // - Some(None) = disable (set to NULL)
     // - Some(Some(value)) = set to value
     let account_update: Option<Option<String>> = if let Some(v) = input.warning_horizon_account {
-        // Validate length BEFORE any allocation to prevent memory exhaustion
-        if v.len() > MAX_WARNING_HORIZON_LENGTH {
-            return Err(AppError::bad_request(ErrorCode::InvalidWarningHorizon));
-        }
         if v.is_empty() {
             Some(None) // empty string means disable
         } else {
@@ -543,17 +525,13 @@ async fn update_pool_warning_settings(
             if !valid_horizons.contains(&v.as_str()) {
                 return Err(AppError::bad_request(ErrorCode::InvalidWarningHorizon));
             }
-            Some(Some(v)) // size is bounded by MAX_WARNING_HORIZON_LENGTH
+            Some(Some(v.into_inner())) // size is bounded by BoundedString<30>
         }
     } else {
         None
     };
 
     let users_update: Option<Option<String>> = if let Some(v) = input.warning_horizon_users {
-        // Validate length BEFORE any allocation to prevent memory exhaustion
-        if v.len() > MAX_WARNING_HORIZON_LENGTH {
-            return Err(AppError::bad_request(ErrorCode::InvalidWarningHorizon));
-        }
         if v.is_empty() {
             Some(None) // empty string means disable
         } else {
@@ -561,7 +539,7 @@ async fn update_pool_warning_settings(
             if !valid_horizons.contains(&v.as_str()) {
                 return Err(AppError::bad_request(ErrorCode::InvalidWarningHorizon));
             }
-            Some(Some(v)) // size is bounded by MAX_WARNING_HORIZON_LENGTH
+            Some(Some(v.into_inner())) // size is bounded by BoundedString<30>
         }
     } else {
         None

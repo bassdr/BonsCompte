@@ -18,10 +18,8 @@ use crate::{
     AppState,
 };
 
-/// Maximum length for project name to prevent memory exhaustion attacks
-const MAX_PROJECT_NAME_LENGTH: usize = 100;
-/// Maximum length for project description to prevent memory exhaustion attacks
-const MAX_PROJECT_DESCRIPTION_LENGTH: usize = 500;
+// Note: Project name and description length are bounded at deserialization
+// via BoundedString types in the CreateProject and UpdateProject models
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -167,17 +165,7 @@ async fn create_project(
     State(state): State<AppState>,
     Json(input): Json<CreateProject>,
 ) -> AppResult<Json<Project>> {
-    // Validate name length BEFORE any allocation to prevent memory exhaustion
-    if input.name.len() > MAX_PROJECT_NAME_LENGTH {
-        return Err(AppError::bad_request(ErrorCode::ProjectNameTooLong));
-    }
-
-    // Validate description length if provided
-    if let Some(ref description) = input.description {
-        if description.len() > MAX_PROJECT_DESCRIPTION_LENGTH {
-            return Err(AppError::bad_request(ErrorCode::ProjectDescriptionTooLong));
-        }
-    }
+    // Note: name and description length are bounded at deserialization via BoundedString types
 
     // Check project creation limit if configured
     if let Some(max_projects) = state.config.max_projects_per_user {
@@ -201,8 +189,8 @@ async fn create_project(
     let result = sqlx::query(
         "INSERT INTO projects (name, description, invite_code, created_by) VALUES (?, ?, ?, ?)",
     )
-    .bind(&input.name)
-    .bind(&input.description)
+    .bind(input.name.as_str())
+    .bind(input.description.as_ref().map(|s| s.as_str()))
     .bind(&invite_code)
     .bind(auth.user_id)
     .execute(&mut *tx)
@@ -262,17 +250,7 @@ async fn update_project(
 ) -> AppResult<Json<Project>> {
     let member = admin.0;
 
-    // Validate lengths BEFORE any allocation to prevent memory exhaustion
-    if let Some(ref name) = input.name {
-        if name.len() > MAX_PROJECT_NAME_LENGTH {
-            return Err(AppError::bad_request(ErrorCode::ProjectNameTooLong));
-        }
-    }
-    if let Some(ref description) = input.description {
-        if description.len() > MAX_PROJECT_DESCRIPTION_LENGTH {
-            return Err(AppError::bad_request(ErrorCode::ProjectDescriptionTooLong));
-        }
-    }
+    // Note: name and description length are bounded at deserialization via BoundedString types
 
     // Capture before state for history
     let before: Project = sqlx::query_as("SELECT * FROM projects WHERE id = ?")
@@ -280,17 +258,17 @@ async fn update_project(
         .fetch_one(&pool)
         .await?;
 
-    // Build dynamic update - sizes are now bounded
+    // Build dynamic update - sizes are bounded by BoundedString types
     let mut updates = Vec::new();
     let mut binds: Vec<String> = Vec::new();
 
-    if let Some(name) = &input.name {
+    if let Some(ref name) = input.name {
         updates.push("name = ?");
-        binds.push(name.clone());
+        binds.push(name.to_string());
     }
-    if let Some(desc) = &input.description {
+    if let Some(ref desc) = input.description {
         updates.push("description = ?");
-        binds.push(desc.clone());
+        binds.push(desc.to_string());
     }
 
     if updates.is_empty() {
@@ -403,9 +381,9 @@ async fn update_project_settings(
         updates.push(("require_approval = ?", "bool"));
         bool_binds.push(require_approval);
     }
-    if let Some(pending_member_access) = input.pending_member_access {
+    if let Some(ref pending_member_access) = input.pending_member_access {
         updates.push(("pending_member_access = ?", "string"));
-        string_binds.push(pending_member_access);
+        string_binds.push(pending_member_access.to_string());
     }
 
     if updates.is_empty() {
@@ -474,9 +452,9 @@ async fn join_project(
     State(pool): State<SqlitePool>,
     Json(input): Json<JoinProject>,
 ) -> AppResult<Json<JoinProjectResponse>> {
-    // Find project by invite code
+    // Find project by invite code (bounded at deserialization via BoundedString)
     let project: Option<Project> = sqlx::query_as("SELECT * FROM projects WHERE invite_code = ?")
-        .bind(&input.invite_code)
+        .bind(input.invite_code.as_str())
         .fetch_optional(&pool)
         .await?;
 
@@ -520,7 +498,7 @@ async fn join_project(
             "SELECT id, participant_id, used_by FROM participant_invites
              WHERE invite_token = ? AND project_id = ?",
         )
-        .bind(token)
+        .bind(token.as_str())
         .bind(project.id)
         .fetch_optional(&mut *tx)
         .await?;

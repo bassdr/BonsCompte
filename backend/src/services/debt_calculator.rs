@@ -242,7 +242,7 @@ pub async fn calculate_debts_at_date(
             .fetch_all(pool)
             .await?
     } else {
-        sqlx::query_as("SELECT * FROM payments WHERE project_id = ? AND status = 'final'")
+        sqlx::query_as("SELECT * FROM payments WHERE project_id = ? AND is_final = 1")
             .bind(project_id)
             .fetch_all(pool)
             .await?

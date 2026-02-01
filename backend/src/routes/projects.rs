@@ -18,6 +18,11 @@ use crate::{
     AppState,
 };
 
+/// Maximum length for project name to prevent memory exhaustion attacks
+const MAX_PROJECT_NAME_LENGTH: usize = 100;
+/// Maximum length for project description to prevent memory exhaustion attacks
+const MAX_PROJECT_DESCRIPTION_LENGTH: usize = 500;
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_projects).post(create_project))
@@ -162,6 +167,18 @@ async fn create_project(
     State(state): State<AppState>,
     Json(input): Json<CreateProject>,
 ) -> AppResult<Json<Project>> {
+    // Validate name length BEFORE any allocation to prevent memory exhaustion
+    if input.name.len() > MAX_PROJECT_NAME_LENGTH {
+        return Err(AppError::bad_request(ErrorCode::ProjectNameTooLong));
+    }
+
+    // Validate description length if provided
+    if let Some(ref description) = input.description {
+        if description.len() > MAX_PROJECT_DESCRIPTION_LENGTH {
+            return Err(AppError::bad_request(ErrorCode::ProjectDescriptionTooLong));
+        }
+    }
+
     // Check project creation limit if configured
     if let Some(max_projects) = state.config.max_projects_per_user {
         let project_count: i64 =
@@ -245,13 +262,25 @@ async fn update_project(
 ) -> AppResult<Json<Project>> {
     let member = admin.0;
 
+    // Validate lengths BEFORE any allocation to prevent memory exhaustion
+    if let Some(ref name) = input.name {
+        if name.len() > MAX_PROJECT_NAME_LENGTH {
+            return Err(AppError::bad_request(ErrorCode::ProjectNameTooLong));
+        }
+    }
+    if let Some(ref description) = input.description {
+        if description.len() > MAX_PROJECT_DESCRIPTION_LENGTH {
+            return Err(AppError::bad_request(ErrorCode::ProjectDescriptionTooLong));
+        }
+    }
+
     // Capture before state for history
     let before: Project = sqlx::query_as("SELECT * FROM projects WHERE id = ?")
         .bind(member.project_id)
         .fetch_one(&pool)
         .await?;
 
-    // Build dynamic update
+    // Build dynamic update - sizes are now bounded
     let mut updates = Vec::new();
     let mut binds: Vec<String> = Vec::new();
 

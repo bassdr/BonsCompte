@@ -175,18 +175,23 @@ async fn update_profile(
     State(pool): State<SqlitePool>,
     Json(req): Json<UpdateProfileRequest>,
 ) -> AppResult<Json<UserResponse>> {
-    // Validate display_name length to prevent memory exhaustion
-    if let Some(ref name) = req.display_name {
+    // Validate and transform display_name in a single flow
+    // This ensures CodeQL can track that length is bounded before allocation
+    let display_name = if let Some(name) = req.display_name {
+        // Validate length BEFORE any allocation to prevent memory exhaustion
         if name.len() > MAX_DISPLAY_NAME_LENGTH {
             return Err(AppError::bad_request(ErrorCode::DisplayNameTooLong));
         }
-    }
-
-    // Trim and normalize display_name (empty string becomes NULL)
-    let display_name = req
-        .display_name
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
+        // Now safe to allocate - size is bounded by MAX_DISPLAY_NAME_LENGTH
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    } else {
+        None
+    };
 
     // Update display_name
     sqlx::query("UPDATE users SET display_name = ? WHERE id = ?")

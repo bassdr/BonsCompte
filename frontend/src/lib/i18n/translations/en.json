@@ -782,6 +782,10 @@
   "errors.passwordMismatch": "Passwords do not match.",
   "errors.noFieldsToUpdate": "No fields to update.",
   "errors.displayNameTooLong": "Display name is too long (maximum 100 characters).",
+  "errors.usernameTooLong": "Username is too long (maximum 50 characters).",
+  "errors.projectNameTooLong": "Project name is too long (maximum 100 characters).",
+  "errors.projectDescriptionTooLong": "Project description is too long (maximum 500 characters).",
+  "errors.participantNameTooLong": "Participant name is too long (maximum 100 characters).",
 
   "errors.notFound": "The requested resource was not found.",
   "errors.userNotFound": "User not found.",

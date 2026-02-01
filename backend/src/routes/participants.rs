@@ -17,6 +17,8 @@ use crate::{
     AppState,
 };
 
+/// Maximum length for participant name to prevent memory exhaustion attacks
+const MAX_PARTICIPANT_NAME_LENGTH: usize = 100;
 /// Maximum length for warning horizon values to prevent memory exhaustion attacks
 const MAX_WARNING_HORIZON_LENGTH: usize = 30;
 
@@ -85,6 +87,11 @@ async fn create_participant(
         return Err(AppError::forbidden(ErrorCode::EditorRequired));
     }
 
+    // Validate name length BEFORE any allocation to prevent memory exhaustion
+    if input.name.len() > MAX_PARTICIPANT_NAME_LENGTH {
+        return Err(AppError::bad_request(ErrorCode::ParticipantNameTooLong));
+    }
+
     let default_weight = input.default_weight.unwrap_or(1.0);
     let account_type = input.account_type.as_deref().unwrap_or("user");
 
@@ -135,6 +142,13 @@ async fn update_participant(
     // Check editor permission
     if !member.can_edit() {
         return Err(AppError::forbidden(ErrorCode::EditorRequired));
+    }
+
+    // Validate name length BEFORE any allocation to prevent memory exhaustion
+    if let Some(ref name) = input.name {
+        if name.len() > MAX_PARTICIPANT_NAME_LENGTH {
+            return Err(AppError::bad_request(ErrorCode::ParticipantNameTooLong));
+        }
     }
 
     // Verify participant belongs to project

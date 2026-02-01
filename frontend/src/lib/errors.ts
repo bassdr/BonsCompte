@@ -35,6 +35,10 @@ export type BackendErrorCode =
   | 'PASSWORD_MISMATCH'
   | 'NO_FIELDS_TO_UPDATE'
   | 'DISPLAY_NAME_TOO_LONG'
+  | 'USERNAME_TOO_LONG'
+  | 'PROJECT_NAME_TOO_LONG'
+  | 'PROJECT_DESCRIPTION_TOO_LONG'
+  | 'PARTICIPANT_NAME_TOO_LONG'
   // Not found
   | 'NOT_FOUND'
   | 'USER_NOT_FOUND'
@@ -120,6 +124,10 @@ const errorCodeToTranslationKey: Record<BackendErrorCode, string> = {
   PASSWORD_MISMATCH: 'passwordMismatch',
   NO_FIELDS_TO_UPDATE: 'noFieldsToUpdate',
   DISPLAY_NAME_TOO_LONG: 'displayNameTooLong',
+  USERNAME_TOO_LONG: 'usernameTooLong',
+  PROJECT_NAME_TOO_LONG: 'projectNameTooLong',
+  PROJECT_DESCRIPTION_TOO_LONG: 'projectDescriptionTooLong',
+  PARTICIPANT_NAME_TOO_LONG: 'participantNameTooLong',
 
   // Not found
   NOT_FOUND: 'notFound',

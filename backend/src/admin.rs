@@ -7,6 +7,7 @@
 //!   bonscompte-admin approve <username>          # Approve a user (sets state to active)
 //!   bonscompte-admin revoke <username>           # Revoke a user's access
 //!   bonscompte-admin list-users                  # List all users
+//!   bonscompte-admin merge-users <source> <target> # Merge source user into target user
 
 use clap::{Parser, Subcommand};
 
@@ -39,6 +40,13 @@ enum Commands {
     },
     /// List all users with their states
     ListUsers,
+    /// Merge two users into one (keeps projects from both)
+    MergeUsers {
+        /// Username to merge FROM (will be deactivated)
+        source: String,
+        /// Username to merge INTO (will receive all projects)
+        target: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -403,6 +411,258 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
             }
+        }
+
+        Commands::MergeUsers { source, target } => {
+            // Validate source and target are different
+            if source == target {
+                eprintln!("Error: Source and target users must be different");
+                std::process::exit(1);
+            }
+
+            // Get source user
+            let source_user: Option<(i64, String, Option<String>)> =
+                sqlx::query_as("SELECT id, username, display_name FROM users WHERE username = ?")
+                    .bind(&source)
+                    .fetch_optional(&pool)
+                    .await?;
+
+            let (source_id, source_username, source_display) = match source_user {
+                Some(u) => u,
+                None => {
+                    eprintln!("Error: Source user '{}' not found", source);
+                    std::process::exit(1);
+                }
+            };
+
+            // Get target user
+            let target_user: Option<(i64, String, Option<String>)> =
+                sqlx::query_as("SELECT id, username, display_name FROM users WHERE username = ?")
+                    .bind(&target)
+                    .fetch_optional(&pool)
+                    .await?;
+
+            let (target_id, target_username, target_display) = match target_user {
+                Some(u) => u,
+                None => {
+                    eprintln!("Error: Target user '{}' not found", target);
+                    std::process::exit(1);
+                }
+            };
+
+            println!("=== Merge Users ===");
+            println!(
+                "Source: {} (id={}, display={})",
+                source_username,
+                source_id,
+                source_display.clone().unwrap_or_else(|| "-".to_string())
+            );
+            println!(
+                "Target: {} (id={}, display={})",
+                target_username,
+                target_id,
+                target_display.unwrap_or_else(|| "-".to_string())
+            );
+            println!();
+
+            // Start transaction
+            let mut tx = pool.begin().await?;
+
+            // 1. Transfer project memberships (skip if target already member)
+            let source_memberships: Vec<(i64, String, Option<i64>, String)> = sqlx::query_as(
+                r#"
+                SELECT pm.project_id, pm.role, pm.participant_id, pm.status
+                FROM project_members pm
+                WHERE pm.user_id = ?
+                "#,
+            )
+            .bind(source_id)
+            .fetch_all(&mut *tx)
+            .await?;
+
+            let mut memberships_transferred = 0;
+            let mut memberships_skipped = 0;
+
+            for (project_id, role, participant_id, status) in source_memberships {
+                // Check if target is already a member
+                let existing: Option<(i64,)> = sqlx::query_as(
+                    "SELECT id FROM project_members WHERE project_id = ? AND user_id = ?",
+                )
+                .bind(project_id)
+                .bind(target_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+
+                if existing.is_some() {
+                    // Target already member - just delete source membership
+                    sqlx::query("DELETE FROM project_members WHERE project_id = ? AND user_id = ?")
+                        .bind(project_id)
+                        .bind(source_id)
+                        .execute(&mut *tx)
+                        .await?;
+                    memberships_skipped += 1;
+
+                    // If source had a linked participant, transfer it to target
+                    if let Some(pid) = participant_id {
+                        // Check if target already has a participant in this project
+                        let target_has_participant: Option<(i64,)> = sqlx::query_as(
+                            "SELECT participant_id FROM project_members WHERE project_id = ? AND user_id = ? AND participant_id IS NOT NULL",
+                        )
+                        .bind(project_id)
+                        .bind(target_id)
+                        .fetch_optional(&mut *tx)
+                        .await?;
+
+                        if target_has_participant.is_none() {
+                            // Transfer participant link to target
+                            sqlx::query(
+                                "UPDATE project_members SET participant_id = ? WHERE project_id = ? AND user_id = ?",
+                            )
+                            .bind(pid)
+                            .bind(project_id)
+                            .bind(target_id)
+                            .execute(&mut *tx)
+                            .await?;
+
+                            // Update participant's linked_user_id
+                            sqlx::query("UPDATE participants SET linked_user_id = ? WHERE id = ?")
+                                .bind(target_id)
+                                .bind(pid)
+                                .execute(&mut *tx)
+                                .await?;
+                        }
+                    }
+                } else {
+                    // Transfer membership to target
+                    sqlx::query(
+                        "UPDATE project_members SET user_id = ? WHERE project_id = ? AND user_id = ?",
+                    )
+                    .bind(target_id)
+                    .bind(project_id)
+                    .bind(source_id)
+                    .execute(&mut *tx)
+                    .await?;
+
+                    // Update participant's linked_user_id if exists
+                    if let Some(pid) = participant_id {
+                        sqlx::query("UPDATE participants SET linked_user_id = ? WHERE id = ?")
+                            .bind(target_id)
+                            .bind(pid)
+                            .execute(&mut *tx)
+                            .await?;
+                    }
+
+                    memberships_transferred += 1;
+                }
+
+                // Get project name for logging
+                let project_name: Option<(String,)> =
+                    sqlx::query_as("SELECT name FROM projects WHERE id = ?")
+                        .bind(project_id)
+                        .fetch_optional(&mut *tx)
+                        .await?;
+
+                println!(
+                    "  Project '{}' (id={}): role={}, status={} -> {}",
+                    project_name.map(|p| p.0).unwrap_or_else(|| "?".to_string()),
+                    project_id,
+                    role,
+                    status,
+                    if existing.is_some() {
+                        "skipped (target already member)"
+                    } else {
+                        "transferred"
+                    }
+                );
+            }
+
+            // 2. Transfer trusted users relationships
+            // Source as trustee (people who trust source)
+            let trustees_updated = sqlx::query(
+                "UPDATE trusted_users SET trusted_user_id = ? WHERE trusted_user_id = ? AND user_id != ?",
+            )
+            .bind(target_id)
+            .bind(source_id)
+            .bind(target_id) // Don't create self-trust
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+
+            // Source as truster (people source trusts) - transfer to target
+            let trusters_updated = sqlx::query(
+                "UPDATE trusted_users SET user_id = ? WHERE user_id = ? AND trusted_user_id != ?",
+            )
+            .bind(target_id)
+            .bind(source_id)
+            .bind(target_id) // Don't create self-trust
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+
+            // Delete any remaining trusted_users entries for source (including duplicates)
+            sqlx::query("DELETE FROM trusted_users WHERE user_id = ? OR trusted_user_id = ?")
+                .bind(source_id)
+                .bind(source_id)
+                .execute(&mut *tx)
+                .await?;
+
+            // 3. Transfer any remaining participants linked to source
+            let participants_updated =
+                sqlx::query("UPDATE participants SET linked_user_id = ? WHERE linked_user_id = ?")
+                    .bind(target_id)
+                    .bind(source_id)
+                    .execute(&mut *tx)
+                    .await?
+                    .rows_affected();
+
+            // 4. Transfer project ownership (created_by)
+            let projects_updated =
+                sqlx::query("UPDATE projects SET created_by = ? WHERE created_by = ?")
+                    .bind(target_id)
+                    .bind(source_id)
+                    .execute(&mut *tx)
+                    .await?
+                    .rows_affected();
+
+            // 5. Deactivate source user (revoke access)
+            let new_version: i64 =
+                sqlx::query_scalar("SELECT token_version FROM users WHERE id = ?")
+                    .bind(source_id)
+                    .fetch_one(&mut *tx)
+                    .await?;
+
+            sqlx::query("UPDATE users SET user_state = ?, token_version = ? WHERE id = ?")
+                .bind(UserState::Revoked.as_str())
+                .bind(new_version + 1)
+                .bind(source_id)
+                .execute(&mut *tx)
+                .await?;
+
+            // Commit transaction
+            tx.commit().await?;
+
+            println!();
+            println!("=== Merge Complete ===");
+            println!("Memberships transferred: {}", memberships_transferred);
+            println!(
+                "Memberships skipped (target already member): {}",
+                memberships_skipped
+            );
+            println!(
+                "Trusted user relationships updated: {}",
+                trustees_updated + trusters_updated
+            );
+            println!("Participants re-linked: {}", participants_updated);
+            println!("Projects ownership transferred: {}", projects_updated);
+            println!();
+            println!(
+                "Source user '{}' has been revoked and can no longer log in.",
+                source_username
+            );
+            println!(
+                "Target user '{}' now has access to all projects from both accounts.",
+                target_username
+            );
         }
     }
 

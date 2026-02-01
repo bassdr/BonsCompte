@@ -17,6 +17,9 @@ use crate::{
     AppState,
 };
 
+/// Maximum length for warning horizon values to prevent memory exhaustion attacks
+const MAX_WARNING_HORIZON_LENGTH: usize = 30;
+
 #[derive(Deserialize)]
 struct ParticipantPath {
     participant_id: i64,
@@ -498,6 +501,18 @@ async fn update_pool_warning_settings(
         return Err(AppError::BadRequest(
             "Warning settings can only be configured for pool accounts".to_string(),
         ));
+    }
+
+    // Validate input lengths to prevent memory exhaustion attacks
+    if let Some(ref v) = input.warning_horizon_account {
+        if v.len() > MAX_WARNING_HORIZON_LENGTH {
+            return Err(AppError::bad_request(ErrorCode::InvalidWarningHorizon));
+        }
+    }
+    if let Some(ref v) = input.warning_horizon_users {
+        if v.len() > MAX_WARNING_HORIZON_LENGTH {
+            return Err(AppError::bad_request(ErrorCode::InvalidWarningHorizon));
+        }
     }
 
     // Validate warning horizon values

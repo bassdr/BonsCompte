@@ -178,9 +178,9 @@ dependencies = [
 
 [[package]]
 name = "axum"
-version = "0.8.7"
+version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b098575ebe77cb6d14fc7f32749631a6e44edbef6b796f89b020e99ba20d425"
+checksum = "8b52af3cb4058c895d37317bb27508dccc8e5f2d39454016b297bf4a400597b8"
 dependencies = [
  "axum-core 0.5.5",
  "axum-macros",
@@ -252,13 +252,14 @@ dependencies = [
 
 [[package]]
 name = "axum-extra"
-version = "0.10.3"
+version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9963ff19f40c6102c76756ef0a46004c0d58957d87259fc9208ff8441c12ab96"
+checksum = "fef252edff26ddba56bbcdf2ee3307b8129acb86f5749b68990c168a6fcc9c76"
 dependencies = [
- "axum 0.8.7",
+ "axum 0.8.8",
  "axum-core 0.5.5",
  "bytes",
+ "futures-core",
  "futures-util",
  "headers",
  "http 1.4.0",
@@ -266,8 +267,6 @@ dependencies = [
  "http-body-util",
  "mime",
  "pin-project-lite",
- "rustversion",
- "serde_core",
  "tower-layer",
  "tower-service",
  "tracing",
@@ -358,7 +357,7 @@ name = "bonscompte-backend"
 version = "0.1.0"
 dependencies = [
  "argon2",
- "axum 0.8.7",
+ "axum 0.8.8",
  "axum-extra",
  "axum-test",
  "chrono",
@@ -2500,7 +2499,7 @@ version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57a2ccff6830fa835371af7541e561a90e4c07b84f72991ebac4b3cb6790dc0d"
 dependencies = [
- "axum 0.8.7",
+ "axum 0.8.8",
  "forwarded-header-value",
  "governor",
  "http 1.4.0",

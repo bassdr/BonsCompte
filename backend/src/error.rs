@@ -41,6 +41,10 @@ pub enum ErrorCode {
     PasswordMismatch,
     NoFieldsToUpdate,
     DisplayNameTooLong,
+    UsernameTooLong,
+    ProjectNameTooLong,
+    ProjectDescriptionTooLong,
+    ParticipantNameTooLong,
 
     // Not found errors
     NotFound,
@@ -130,6 +134,10 @@ impl ErrorCode {
             Self::PasswordMismatch => "PASSWORD_MISMATCH",
             Self::NoFieldsToUpdate => "NO_FIELDS_TO_UPDATE",
             Self::DisplayNameTooLong => "DISPLAY_NAME_TOO_LONG",
+            Self::UsernameTooLong => "USERNAME_TOO_LONG",
+            Self::ProjectNameTooLong => "PROJECT_NAME_TOO_LONG",
+            Self::ProjectDescriptionTooLong => "PROJECT_DESCRIPTION_TOO_LONG",
+            Self::ParticipantNameTooLong => "PARTICIPANT_NAME_TOO_LONG",
 
             // Not found
             Self::NotFound => "NOT_FOUND",

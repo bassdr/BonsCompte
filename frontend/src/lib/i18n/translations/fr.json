@@ -782,6 +782,10 @@
   "errors.passwordMismatch": "Les mots de passe ne correspondent pas.",
   "errors.noFieldsToUpdate": "Aucun champ à mettre à jour.",
   "errors.displayNameTooLong": "Le nom d'affichage est trop long (maximum 100 caractères).",
+  "errors.usernameTooLong": "Le nom d'utilisateur est trop long (maximum 50 caractères).",
+  "errors.projectNameTooLong": "Le nom du projet est trop long (maximum 100 caractères).",
+  "errors.projectDescriptionTooLong": "La description du projet est trop longue (maximum 500 caractères).",
+  "errors.participantNameTooLong": "Le nom du participant est trop long (maximum 100 caractères).",
 
   "errors.notFound": "La ressource demandée n'a pas été trouvée.",
   "errors.userNotFound": "Utilisateur non trouvé.",

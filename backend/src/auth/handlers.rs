@@ -11,11 +11,22 @@ use super::{
     password::{hash_password, verify_password},
 };
 
+/// Maximum length for username to prevent memory exhaustion attacks
+const MAX_USERNAME_LENGTH: usize = 50;
+/// Maximum length for display name to prevent memory exhaustion attacks
+const MAX_DISPLAY_NAME_LENGTH: usize = 100;
+
 pub async fn register(
     State(pool): State<SqlitePool>,
     State(jwt_secret): State<String>,
     Json(input): Json<CreateUser>,
 ) -> AppResult<Json<AuthResponse>> {
+    // Validate username length BEFORE any allocation to prevent memory exhaustion
+    if input.username.len() > MAX_USERNAME_LENGTH {
+        return Err(AppError::bad_request(ErrorCode::UsernameTooLong));
+    }
+
+    // Now safe to allocate - size is bounded
     let username = input.username.trim().to_string();
 
     tracing::info!(
@@ -43,6 +54,13 @@ pub async fn register(
         return Err(AppError::bad_request(ErrorCode::PasswordTooWeak));
     }
 
+    // Validate display_name length if provided
+    if let Some(ref display_name) = input.display_name {
+        if display_name.len() > MAX_DISPLAY_NAME_LENGTH {
+            return Err(AppError::bad_request(ErrorCode::DisplayNameTooLong));
+        }
+    }
+
     // Check if user exists
     let existing: Option<User> = sqlx::query_as("SELECT * FROM users WHERE username = ?")
         .bind(&username)
@@ -62,11 +80,18 @@ pub async fn register(
     // Hash password and create user
     let password_hash = hash_password(&input.password)?;
 
+    // Normalize display_name (trim, empty becomes NULL)
+    let display_name = input
+        .display_name
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
+
     let result = sqlx::query(
         "INSERT INTO users (username, display_name, password_hash, user_state, token_version) VALUES (?, ?, ?, 'active', 1)"
     )
     .bind(&username)
-    .bind(&input.display_name)
+    .bind(display_name)
     .bind(&password_hash)
     .execute(&pool)
     .await?;

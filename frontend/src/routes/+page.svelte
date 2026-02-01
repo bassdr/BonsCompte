@@ -259,41 +259,57 @@
   <div class="projects-grid">
     {#each projects as project (project.id)}
       {@const debtLines = getDebtSummaryLines(project)}
-      {@const isPendingBlocked =
-        project.member_status === 'pending' && project.pending_member_access === 'none'}
-      {@const isPendingReadOnly =
-        project.member_status === 'pending' && project.pending_member_access === 'read_only'}
-      {#if isPendingBlocked}
-        <!-- Pending with no access - show as non-clickable card -->
+      {@const isPending = project.member_status === 'pending'}
+      {@const isRecovered = project.member_status === 'recovered'}
+      {@const isBlocked = (isPending || isRecovered) && project.pending_member_access === 'none'}
+      {@const isReadOnly =
+        (isPending || isRecovered) && project.pending_member_access === 'read_only'}
+      {#if isBlocked}
+        <!-- Pending/recovered with no access - show as non-clickable card -->
         <div class="project-card project-card-pending">
           <div class="project-header">
             <h3>{project.name}</h3>
-            <span class="status-badge status-pending">{$_('projects.pendingApproval')}</span>
+            <span class="status-badge status-pending">
+              {isRecovered
+                ? $_('projects.recoveredApproval', { default: 'Awaiting Re-approval' })
+                : $_('projects.pendingApproval')}
+            </span>
           </div>
-          <p class="pending-message">{$_('projects.pendingApprovalMessage')}</p>
+          <p class="pending-message">
+            {isRecovered
+              ? $_('projects.recoveredApprovalMessage', {
+                  default:
+                    'After your password recovery, an administrator needs to re-approve your access to this project.'
+                })
+              : $_('projects.pendingApprovalMessage')}
+          </p>
           <div class="project-meta">
             {project.owner_name} · {formatRelativeTime(project.created_at)}
           </div>
-          <button
-            class="btn-cancel"
-            onclick={() => handleCancelRequest(project.id, project.name)}
-            disabled={cancellingProjectId === project.id}
-          >
-            {cancellingProjectId === project.id
-              ? $_('projects.cancelling')
-              : $_('projects.cancelRequest')}
-          </button>
+          {#if isPending}
+            <button
+              class="btn-cancel"
+              onclick={() => handleCancelRequest(project.id, project.name)}
+              disabled={cancellingProjectId === project.id}
+            >
+              {cancellingProjectId === project.id
+                ? $_('projects.cancelling')
+                : $_('projects.cancelRequest')}
+            </button>
+          {/if}
         </div>
       {:else}
-        <!-- Active, recovered, or pending with read-only access -->
+        <!-- Active, or pending/recovered with read-only access -->
         <a href={resolve(`/projects/${project.id}`)} class="project-card">
           <div class="project-header">
             <h3>{project.name}</h3>
             <div class="badges">
-              {#if isPendingReadOnly}
-                <span class="status-badge status-pending-readonly"
-                  >{$_('projects.pendingReadOnly')}</span
-                >
+              {#if isReadOnly}
+                <span class="status-badge status-pending-readonly">
+                  {isRecovered
+                    ? $_('projects.recoveredReadOnly', { default: 'Recovery Read-Only' })
+                    : $_('projects.pendingReadOnly')}
+                </span>
               {/if}
               <span class="role-badge role-{project.role}">{$_(`roles.${project.role}`)}</span>
             </div>

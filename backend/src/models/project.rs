@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
+use super::bounded::{ProjectDescription, ProjectName, ShortString};
+
 #[derive(Debug, Clone, FromRow, Serialize)]
 pub struct Project {
     pub id: i64,
@@ -19,27 +21,33 @@ pub struct Project {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateProject {
-    pub name: String,
-    pub description: Option<String>,
+    /// Project name bounded to 100 chars at deserialization
+    pub name: ProjectName,
+    /// Project description bounded to 500 chars at deserialization
+    pub description: Option<ProjectDescription>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateProject {
-    pub name: Option<String>,
-    pub description: Option<String>,
+    /// Project name bounded to 100 chars at deserialization
+    pub name: Option<ProjectName>,
+    /// Project description bounded to 500 chars at deserialization
+    pub description: Option<ProjectDescription>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct JoinProject {
-    pub invite_code: String,
-    pub participant_token: Option<String>,
+    /// Invite code bounded to 50 chars at deserialization
+    pub invite_code: ShortString,
+    pub participant_token: Option<ShortString>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateProjectSettings {
     pub invites_enabled: Option<bool>,
     pub require_approval: Option<bool>,
-    pub pending_member_access: Option<String>,
+    /// Bounded to 50 chars at deserialization
+    pub pending_member_access: Option<ShortString>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize)]

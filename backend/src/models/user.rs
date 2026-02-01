@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use std::str::FromStr;
 
+use super::bounded::{DisplayName, Username};
+
 /// User account state for security workflow
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -74,14 +76,17 @@ impl User {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateUser {
-    pub username: String,
+    /// Username bounded to 50 chars at deserialization
+    pub username: Username,
     pub password: String,
-    pub display_name: Option<String>,
+    /// Display name bounded to 100 chars at deserialization
+    pub display_name: Option<DisplayName>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
-    pub username: String,
+    /// Username bounded to 50 chars at deserialization
+    pub username: Username,
     pub password: String,
 }
 

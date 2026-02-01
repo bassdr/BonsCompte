@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
+use super::bounded::{ParticipantName, ShortString, WarningHorizon};
+
 #[derive(Debug, Clone, FromRow, Serialize)]
 pub struct Participant {
     pub id: i64,
@@ -16,20 +18,24 @@ pub struct Participant {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateParticipant {
-    pub name: String,
+    pub name: ParticipantName,
     pub default_weight: Option<f64>,
-    pub account_type: Option<String>, // defaults to "user"
+    pub account_type: Option<ShortString>, // defaults to "user"
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateParticipant {
-    pub name: Option<String>,
+    pub name: Option<ParticipantName>,
     pub default_weight: Option<f64>,
-    pub account_type: Option<String>,
+    pub account_type: Option<ShortString>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdatePoolWarningSettings {
-    pub warning_horizon_account: Option<String>, // null or empty = disable, value = set
-    pub warning_horizon_users: Option<String>,   // null or empty = disable, value = set
+    /// Warning horizon for pool account total. Bounded to 30 chars at deserialization.
+    /// null or empty = disable, value = set
+    pub warning_horizon_account: Option<WarningHorizon>,
+    /// Warning horizon for user ownership. Bounded to 30 chars at deserialization.
+    /// null or empty = disable, value = set
+    pub warning_horizon_users: Option<WarningHorizon>,
 }

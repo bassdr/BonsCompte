@@ -1,4 +1,5 @@
 pub mod approval;
+pub mod bounded;
 pub mod contribution;
 pub mod history;
 pub mod member;
@@ -10,6 +11,7 @@ pub mod trusted_user;
 pub mod user;
 
 pub use approval::*;
+pub use bounded::*;
 pub use contribution::*;
 pub use history::*;
 pub use member::*;

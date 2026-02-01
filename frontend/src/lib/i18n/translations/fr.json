@@ -781,6 +781,7 @@
   "errors.invalidPendingAccessSetting": "Paramètre d'accès des membres en attente invalide. Doit être 'none', 'read_only' ou 'auto_approve'.",
   "errors.passwordMismatch": "Les mots de passe ne correspondent pas.",
   "errors.noFieldsToUpdate": "Aucun champ à mettre à jour.",
+  "errors.displayNameTooLong": "Le nom d'affichage est trop long (maximum 100 caractères).",
 
   "errors.notFound": "La ressource demandée n'a pas été trouvée.",
   "errors.userNotFound": "Utilisateur non trouvé.",

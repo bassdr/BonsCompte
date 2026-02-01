@@ -781,6 +781,7 @@
   "errors.invalidPendingAccessSetting": "Invalid pending member access setting. Must be 'none', 'read_only', or 'auto_approve'.",
   "errors.passwordMismatch": "Passwords do not match.",
   "errors.noFieldsToUpdate": "No fields to update.",
+  "errors.displayNameTooLong": "Display name is too long (maximum 100 characters).",
 
   "errors.notFound": "The requested resource was not found.",
   "errors.userNotFound": "User not found.",

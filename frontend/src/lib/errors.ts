@@ -34,6 +34,7 @@ export type BackendErrorCode =
   | 'INVALID_WARNING_HORIZON'
   | 'PASSWORD_MISMATCH'
   | 'NO_FIELDS_TO_UPDATE'
+  | 'DISPLAY_NAME_TOO_LONG'
   // Not found
   | 'NOT_FOUND'
   | 'USER_NOT_FOUND'
@@ -118,6 +119,7 @@ const errorCodeToTranslationKey: Record<BackendErrorCode, string> = {
   INVALID_WARNING_HORIZON: 'invalidWarningHorizon',
   PASSWORD_MISMATCH: 'passwordMismatch',
   NO_FIELDS_TO_UPDATE: 'noFieldsToUpdate',
+  DISPLAY_NAME_TOO_LONG: 'displayNameTooLong',
 
   // Not found
   NOT_FOUND: 'notFound',

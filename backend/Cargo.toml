@@ -53,5 +53,5 @@ governor = "0.10"
 tower_governor = "0.8"
 
 [dev-dependencies]
-axum-test = "16"
+axum-test = "18"
 tempfile = "3"

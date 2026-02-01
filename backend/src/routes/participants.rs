@@ -517,21 +517,8 @@ async fn update_pool_warning_settings(
         ));
     }
 
-    // Validate input lengths to prevent memory exhaustion attacks
-    if let Some(ref v) = input.warning_horizon_account {
-        if v.len() > MAX_WARNING_HORIZON_LENGTH {
-            return Err(AppError::bad_request(ErrorCode::InvalidWarningHorizon));
-        }
-    }
-    if let Some(ref v) = input.warning_horizon_users {
-        if v.len() > MAX_WARNING_HORIZON_LENGTH {
-            return Err(AppError::bad_request(ErrorCode::InvalidWarningHorizon));
-        }
-    }
-
-    // Validate warning horizon values
+    // Valid warning horizon values
     // Empty string or null means "disable" (set to NULL in DB)
-    // Valid values: end_of_current_month, end_of_next_month, 3_months, 6_months
     let valid_horizons = [
         "end_of_current_month",
         "end_of_next_month",
@@ -539,38 +526,46 @@ async fn update_pool_warning_settings(
         "6_months",
     ];
 
-    // Convert input to Option<Option<String>> where:
+    // Validate and convert input in a single flow to ensure CodeQL can track bounds
+    // Result is Option<Option<String>> where:
     // - None = field not provided, don't update
     // - Some(None) = disable (set to NULL)
     // - Some(Some(value)) = set to value
-    let account_update: Option<Option<String>> = input.warning_horizon_account.map(|v| {
-        if v.is_empty() {
-            None // empty string means disable
-        } else {
-            Some(v)
-        }
-    });
-
-    let users_update: Option<Option<String>> = input.warning_horizon_users.map(|v| {
-        if v.is_empty() {
-            None // empty string means disable
-        } else {
-            Some(v)
-        }
-    });
-
-    // Validate non-empty values
-    if let Some(Some(ref horizon)) = account_update {
-        if !valid_horizons.contains(&horizon.as_str()) {
+    let account_update: Option<Option<String>> = if let Some(v) = input.warning_horizon_account {
+        // Validate length BEFORE any allocation to prevent memory exhaustion
+        if v.len() > MAX_WARNING_HORIZON_LENGTH {
             return Err(AppError::bad_request(ErrorCode::InvalidWarningHorizon));
         }
-    }
+        if v.is_empty() {
+            Some(None) // empty string means disable
+        } else {
+            // Validate value before accepting
+            if !valid_horizons.contains(&v.as_str()) {
+                return Err(AppError::bad_request(ErrorCode::InvalidWarningHorizon));
+            }
+            Some(Some(v)) // size is bounded by MAX_WARNING_HORIZON_LENGTH
+        }
+    } else {
+        None
+    };
 
-    if let Some(Some(ref horizon)) = users_update {
-        if !valid_horizons.contains(&horizon.as_str()) {
+    let users_update: Option<Option<String>> = if let Some(v) = input.warning_horizon_users {
+        // Validate length BEFORE any allocation to prevent memory exhaustion
+        if v.len() > MAX_WARNING_HORIZON_LENGTH {
             return Err(AppError::bad_request(ErrorCode::InvalidWarningHorizon));
         }
-    }
+        if v.is_empty() {
+            Some(None) // empty string means disable
+        } else {
+            // Validate value before accepting
+            if !valid_horizons.contains(&v.as_str()) {
+                return Err(AppError::bad_request(ErrorCode::InvalidWarningHorizon));
+            }
+            Some(Some(v)) // size is bounded by MAX_WARNING_HORIZON_LENGTH
+        }
+    } else {
+        None
+    };
 
     // Build dynamic update
     let mut updates = Vec::new();

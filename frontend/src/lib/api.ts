@@ -124,8 +124,10 @@ async function authFetch(path: string, opts: AuthFetchOptions = {}) {
       }
       if (data.code === 'MEMBERSHIP_PENDING' && data.project_id) {
         // Redirect to project-specific pending page, don't clear token
-        if (browser) {
-          window.location.href = `/projects/${data.project_id}/pending`;
+        // But don't redirect if we're already on the pending page (avoid infinite loop)
+        const pendingPath = `/projects/${data.project_id}/pending`;
+        if (browser && !window.location.pathname.endsWith('/pending')) {
+          window.location.href = pendingPath;
         }
         throw new ApiRequestError(data.code, data.error, res.status);
       }

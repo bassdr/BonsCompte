@@ -305,16 +305,10 @@
     {/if}
 
     <!-- My Pending Approvals Section -->
-    <section class="section">
-      <h2>{$_('approvals.my_pending', { default: 'My Pending Approvals' })}</h2>
+    {#if myApprovals.length > 0}
+      <section class="section">
+        <h2>{$_('approvals.my_pending', { default: 'My Pending Approvals' })}</h2>
 
-      {#if myApprovals.length === 0}
-        <div class="empty-state">
-          <p>
-            {$_('approvals.no_pending_approvals', { default: 'You have no pending approvals.' })}
-          </p>
-        </div>
-      {:else}
         <div class="approvals-grid">
           {#each myApprovals as approval (approval.id)}
             <div class="approval-card">
@@ -344,22 +338,14 @@
             </div>
           {/each}
         </div>
-      {/if}
-    </section>
+      </section>
+    {/if}
 
     <!-- Actionable Approvals Section -->
-    <section class="section">
-      <h2>{$_('approvals.can_vote_on', { default: 'Approvals You Can Vote On' })}</h2>
+    {#if actionableApprovals.length > 0}
+      <section class="section">
+        <h2>{$_('approvals.can_vote_on', { default: 'Approvals You Can Vote On' })}</h2>
 
-      {#if actionableApprovals.length === 0}
-        <div class="empty-state">
-          <p>
-            {$_('approvals.no_actionable_approvals', {
-              default: 'There are no approvals that need your vote.'
-            })}
-          </p>
-        </div>
-      {:else}
         <div class="approvals-grid">
           {#each actionableApprovals as approval (approval.id)}
             <div class="approval-card">
@@ -409,8 +395,19 @@
             </div>
           {/each}
         </div>
-      {/if}
-    </section>
+      </section>
+    {/if}
+
+    <!-- Empty state when no sections have content -->
+    {#if pendingMembers.length === 0 && pendingRecoveries.length === 0 && myApprovals.length === 0 && actionableApprovals.length === 0}
+      <div class="empty-state">
+        <p>
+          {$_('approvals.nothingPending', {
+            default: 'Nothing requires your attention right now.'
+          })}
+        </p>
+      </div>
+    {/if}
   {/if}
 </div>
 

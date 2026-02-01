@@ -40,6 +40,7 @@ pub enum ErrorCode {
     InvalidPendingAccessSetting,
     PasswordMismatch,
     NoFieldsToUpdate,
+    DisplayNameTooLong,
 
     // Not found errors
     NotFound,
@@ -128,6 +129,7 @@ impl ErrorCode {
             Self::InvalidPendingAccessSetting => "INVALID_PENDING_ACCESS_SETTING",
             Self::PasswordMismatch => "PASSWORD_MISMATCH",
             Self::NoFieldsToUpdate => "NO_FIELDS_TO_UPDATE",
+            Self::DisplayNameTooLong => "DISPLAY_NAME_TOO_LONG",
 
             // Not found
             Self::NotFound => "NOT_FOUND",

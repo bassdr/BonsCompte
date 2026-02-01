@@ -20,6 +20,9 @@ use crate::{
     AppState,
 };
 
+/// Maximum length for display name to prevent memory exhaustion attacks
+const MAX_DISPLAY_NAME_LENGTH: usize = 100;
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_users))
@@ -172,6 +175,13 @@ async fn update_profile(
     State(pool): State<SqlitePool>,
     Json(req): Json<UpdateProfileRequest>,
 ) -> AppResult<Json<UserResponse>> {
+    // Validate display_name length to prevent memory exhaustion
+    if let Some(ref name) = req.display_name {
+        if name.len() > MAX_DISPLAY_NAME_LENGTH {
+            return Err(AppError::bad_request(ErrorCode::DisplayNameTooLong));
+        }
+    }
+
     // Trim and normalize display_name (empty string becomes NULL)
     let display_name = req
         .display_name

@@ -14,7 +14,11 @@ path = "src/main.rs"
 
 [[bin]]
 name = "bonscompte-admin"
-path = "src/admin.rs"
+path = "src/bin/admin.rs"
+
+[[bin]]
+name = "recalculate-contributions"
+path = "src/bin/recalculate_contributions.rs"
 
 [dependencies]
 # Web framework

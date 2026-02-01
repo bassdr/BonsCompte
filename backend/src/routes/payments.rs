@@ -231,7 +231,8 @@ async fn create_payment(
     // Calculate and insert contributions
     let mut contributions = Vec::new();
     for contrib in &input.contributions {
-        let share_amount = (input.amount * contrib.weight / total_weight * 100.0).round() / 100.0;
+        let share_amount =
+            (input.amount * contrib.weight / total_weight * 10000.0).round() / 10000.0;
 
         // Get participant name
         let participant_name: String =
@@ -461,7 +462,8 @@ async fn update_payment(
     // Insert new contributions
     let mut contributions = Vec::new();
     for contrib in &input.contributions {
-        let share_amount = (input.amount * contrib.weight / total_weight * 100.0).round() / 100.0;
+        let share_amount =
+            (input.amount * contrib.weight / total_weight * 10000.0).round() / 10000.0;
 
         let participant_name: String =
             sqlx::query_scalar("SELECT name FROM participants WHERE id = ?")

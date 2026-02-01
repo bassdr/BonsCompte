@@ -1,21 +1,58 @@
 version: 2
 updates:
-- package-ecosystem: "github-actions"
-  directory: "/"
-  schedule:
-    interval: "weekly"
-- package-ecosystem: "npm"
-  directory: "/frontend/"
-  schedule:
-    interval: "weekly"
-  open-pull-requests-limit: 10
-- package-ecosystem: "cargo"
-  directory: "/backend/"
-  schedule:
-    interval: "weekly"
-  open-pull-requests-limit: 10
-- package-ecosystem: "npm"
-  directory: "/"
-  schedule:
-    interval: "weekly"
-  open-pull-requests-limit: 10
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "npm"
+    directory: "/frontend/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      # Group all minor and patch updates together
+      frontend-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Group dev dependencies separately
+      frontend-dev:
+        patterns:
+          - "*"
+        dependency-type: "development"
+
+  - package-ecosystem: "cargo"
+    directory: "/backend/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      # Group all minor and patch updates together
+      backend-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Group dev dependencies separately
+      backend-dev:
+        patterns:
+          - "*"
+        dependency-type: "development"
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    groups:
+      root-all:
+        patterns:
+          - "*"

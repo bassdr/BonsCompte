@@ -13,15 +13,16 @@ RUN apt-get update && apt-get install -y \
 COPY Cargo.toml Cargo.lock ./
 
 # Create dummy source files to cache dependencies
-RUN mkdir src && \
+RUN mkdir -p src/bin && \
     echo "fn main() {}" > src/main.rs && \
-    echo "fn main() {}" > src/admin.rs && \
+    echo "fn main() {}" > src/bin/admin.rs && \
+    echo "fn main() {}" > src/bin/recalculate_contributions.rs && \
     echo "" > src/lib.rs
 RUN cargo build --release && rm -rf src
 
 # Copy source and rebuild
 COPY . .
-RUN touch src/lib.rs src/main.rs src/admin.rs && cargo build --release
+RUN touch src/lib.rs src/main.rs src/bin/admin.rs src/bin/recalculate_contributions.rs && cargo build --release
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -38,9 +39,10 @@ RUN useradd -m -u 1000 appuser
 
 WORKDIR /app
 
-# Copy binaries (server and admin CLI)
+# Copy binaries (server and CLI utilities)
 COPY --from=builder /app/target/release/bonscompte-backend /usr/local/bin/
 COPY --from=builder /app/target/release/bonscompte-admin /usr/local/bin/
+COPY --from=builder /app/target/release/recalculate-contributions /usr/local/bin/
 COPY --from=builder /app/migrations ./migrations
 
 # Create data directory for SQLite

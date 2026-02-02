@@ -1443,11 +1443,9 @@ pub async fn calculate_cashflow_projection(
                     .payer_id
                     .map(|id| pool_participants.contains(&id))
                     .unwrap_or(false);
-                // codeql[rust/cleartext-logging] Intentional: receiver_account_id is business data
-                // returned in API responses. This participant ID is access-controlled to project
-                // members and is necessary for settlement calculations. Not sensitive PII.
                 let receiver_is_pool = occurrence
                     .receiver_account_id
+                    // codeql[rust/cleartext-logging] Intentional: participant ID is business data, not sensitive
                     .map(|id| pool_participants.contains(&id))
                     .unwrap_or(false);
 
@@ -1827,11 +1825,9 @@ fn calculate_balance_events(
                 .payer_id
                 .map(|id| pool_participants.contains(&id))
                 .unwrap_or(false);
-            // codeql[rust/cleartext-logging] Intentional: receiver_account_id is business data
-            // returned in API responses. This participant ID is access-controlled to project
-            // members and is necessary for balance calculations. Not sensitive PII.
             let receiver_is_pool = occurrence
                 .receiver_account_id
+                // codeql[rust/cleartext-logging] Intentional: participant ID is business data, not sensitive
                 .map(|id| pool_participants.contains(&id))
                 .unwrap_or(false);
 

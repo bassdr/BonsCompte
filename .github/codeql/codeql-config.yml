@@ -3,12 +3,5 @@
 
 name: "BonsCompte CodeQL Config"
 
-# Exclude CLI utilities from cleartext logging checks
-# These tools intentionally use println! for console output
-query-filters:
-  - exclude:
-      id: rust/cleartext-logging
-      paths:
-        - '**/bin/admin.rs'
-        - '**/bin/recalculate_contributions.rs'
-        - 'backend/src/bin/**'
+# Note: Path-based exclusions are handled in the workflow using filter-sarif Action
+# query-filters only supports filtering by query metadata (tags, severity, etc.)

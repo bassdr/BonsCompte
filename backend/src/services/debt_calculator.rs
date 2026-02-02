@@ -1445,7 +1445,6 @@ pub async fn calculate_cashflow_projection(
                     .unwrap_or(false);
                 let receiver_is_pool = occurrence
                     .receiver_account_id
-                    // codeql[rust/cleartext-logging] Intentional: participant ID is business data, not sensitive
                     .map(|id| pool_participants.contains(&id))
                     .unwrap_or(false);
 
@@ -1827,7 +1826,6 @@ fn calculate_balance_events(
                 .unwrap_or(false);
             let receiver_is_pool = occurrence
                 .receiver_account_id
-                // codeql[rust/cleartext-logging] Intentional: participant ID is business data, not sensitive
                 .map(|id| pool_participants.contains(&id))
                 .unwrap_or(false);
 

@@ -128,7 +128,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!();
                     println!("⚠️  Users with multiple recovery attempts:");
                     for (username, count) in per_user {
-                        // codeql[rust/cleartext-logging] - Admin CLI intentionally displays usernames
                         println!("   {} - {} attempts", username, count);
                     }
                 }
@@ -175,7 +174,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .await
                         .unwrap_or((0, 0));
 
-                        // codeql[rust/cleartext-logging] - Admin CLI intentionally displays user information
                         println!(
                             "{:<5} {:<20} {:<20} {:<10} {:<20} {}",
                             id,
@@ -235,7 +233,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 println!("✓ Recovery request approved for user '{}'", username);
                 println!("  The user can now set a new password at:");
-                // codeql[rust/cleartext-logging] - This is a URL template, not an actual token
                 println!("  /recovery/reset/<token>");
                 println!();
                 println!("Note: User's project memberships will be set to 'recovered' status");
@@ -343,7 +340,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("User '{}' approved", username);
             println!("Previous state: {}", current_state);
             println!("New state: active");
-            // codeql[rust/cleartext-logging] - Token version is just an integer counter, not sensitive
             println!("Token version: {} (unchanged)", current_version);
             println!("Project memberships activated: {}", rows_updated);
         }
@@ -382,7 +378,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("User '{}' revoked", username);
             println!("Previous state: {}", current_state);
             println!("New state: revoked");
-            // codeql[rust/cleartext-logging] - Token version is just an integer counter, not sensitive
             println!(
                 "Token version: {} -> {} (all tokens invalidated)",
                 current_version, new_version
@@ -405,7 +400,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
                 println!("{}", "-".repeat(90));
                 for (id, username, display_name, state, token_version, created_at) in users {
-                    // codeql[rust/cleartext-logging] - Admin CLI intentionally displays user information
                     println!(
                         "{:<5} {:<20} {:<20} {:<18} {:<8} {}",
                         id,

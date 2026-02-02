@@ -71,7 +71,6 @@ impl HistoryService {
         hasher.update(created_at.as_bytes());
         hasher.update(
             actor_user_id
-                // codeql[rust/cleartext-logging] Intentional: user ID is for audit trail, not sensitive PII
                 .map(|id| id.to_string())
                 .unwrap_or_default()
                 .as_bytes(),

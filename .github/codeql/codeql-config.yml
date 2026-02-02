@@ -5,14 +5,10 @@ name: "BonsCompte CodeQL Config"
 
 # Exclude CLI utilities from cleartext logging checks
 # These tools intentionally use println! for console output
-paths-ignore:
-  - 'backend/src/bin/admin.rs'
-  - 'backend/src/bin/recalculate_contributions.rs'
-
-# You can also use query filters to be more specific:
-# query-filters:
-#   - exclude:
-#       id: rust/cleartext-logging
-#       paths:
-#         - 'backend/src/bin/admin.rs'
-#         - 'backend/src/bin/recalculate_contributions.rs'
+query-filters:
+  - exclude:
+      id: rust/cleartext-logging
+      paths:
+        - '**/bin/admin.rs'
+        - '**/bin/recalculate_contributions.rs'
+        - 'backend/src/bin/**'

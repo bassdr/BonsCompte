@@ -486,14 +486,6 @@
         >
           {$_('overview.title')}
         </a>
-        <!-- Not yet functionnal
-        <a
-          href={resolve(`/projects/${$page.params.id}/cashflow`)}
-          class:active={$page.url.pathname.includes('/cashflow')}
-        >
-          {$_('cashflow.title')}
-        </a>
-        -->
         <a
           href={resolve(`/projects/${$page.params.id}/transactions`)}
           class:active={$page.url.pathname.includes('/transactions')}

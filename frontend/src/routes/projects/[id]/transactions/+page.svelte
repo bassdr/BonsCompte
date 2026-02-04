@@ -1,6 +1,9 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
+  import Image from '@lucide/svelte/icons/image';
+  import Pencil from '@lucide/svelte/icons/pencil';
+  import Trash2 from '@lucide/svelte/icons/trash-2';
   import { getPayments, deletePayment, type PaymentWithContributions } from '$lib/api';
   import { participants, canEdit } from '$lib/stores/project';
   import { _ } from '$lib/i18n';
@@ -370,7 +373,7 @@
                   <button
                     class="icon-btn"
                     title={$_('transactions.viewReceipt')}
-                    onclick={() => openImageModal(p.receipt_image!)}>&#x1F9FE;</button
+                    onclick={() => openImageModal(p.receipt_image!)}><Image size={18} /></button
                   >
                 {/if}
               </div>
@@ -381,14 +384,14 @@
                 <button
                   class="edit-btn"
                   onclick={() => editTransaction(p)}
-                  title={$_('transactions.editTransaction')}>&#x2699;</button
+                  title={$_('transactions.editTransaction')}><Pencil size={18} /></button
                 >
                 <button
                   class="delete-btn"
                   onclick={() => handleDelete(p.id)}
                   title={$_('transactions.deleteTransaction')}
                 >
-                  &times;
+                  <Trash2 size={18} />
                 </button>
               {/if}
             </span>
@@ -653,7 +656,9 @@
     border: none;
     cursor: pointer;
     padding: 0;
-    font-size: 1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .amount-group {
@@ -675,7 +680,9 @@
     cursor: pointer;
     padding: 0.25rem 0.5rem;
     border-radius: 4px;
-    font-size: 1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .edit-btn {

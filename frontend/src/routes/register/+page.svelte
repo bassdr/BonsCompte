@@ -2,6 +2,8 @@
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
   import { page } from '$app/stores';
+  import CircleCheck from '@lucide/svelte/icons/circle-check';
+  import CircleAlert from '@lucide/svelte/icons/circle-alert';
   import { register, addTrustedUser, type TrustedUser } from '$lib/api';
   import { auth } from '$lib/auth';
   import { _ } from '$lib/i18n';
@@ -183,10 +185,13 @@
 
     <div class="trusted-status">
       {#if trustedUsers.length >= 2}
-        <span class="status-good">✓ {$_('register.accountRecoverable')}</span>
+        <span class="status-good"
+          ><CircleCheck size={18} /> {$_('register.accountRecoverable')}</span
+        >
       {:else}
         <span class="status-warning"
-          >⚠ {$_('register.accountNotRecoverable', {
+          ><CircleAlert size={18} />
+          {$_('register.accountNotRecoverable', {
             values: { current: trustedUsers.length, required: 2 }
           })}</span
         >
@@ -354,10 +359,16 @@
 
   .status-good {
     color: #155724;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
   }
 
   .status-warning {
     color: #856404;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
   }
 
   .button-group {

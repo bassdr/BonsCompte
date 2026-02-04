@@ -1,6 +1,9 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
+  import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+  import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+  import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import {
     getDebts,
     getPayments,
@@ -2179,7 +2182,7 @@
           disabled={!previousPaymentDate}
           title={previousPaymentDate
             ? $_('overview.goToDate', { values: { date: formatDate(previousPaymentDate) } })
-            : $_('overview.noPreviousPayment')}>⟨</button
+            : $_('overview.noPreviousPayment')}><ChevronLeft size={20} /></button
         >
 
         <div class="date-display">
@@ -2192,7 +2195,7 @@
           disabled={!nextPaymentDate}
           title={nextPaymentDate
             ? $_('overview.goToDate', { values: { date: formatDate(nextPaymentDate) } })
-            : $_('overview.noNextPayment')}>⟩</button
+            : $_('overview.noNextPayment')}><ChevronRight size={20} /></button
         >
       </div>
     </div>
@@ -2258,7 +2261,7 @@
           disabled={!previousEndPaymentDate}
           title={previousEndPaymentDate
             ? $_('overview.goToDate', { values: { date: formatDate(previousEndPaymentDate) } })
-            : $_('overview.noPreviousPayment')}>⟨</button
+            : $_('overview.noPreviousPayment')}><ChevronLeft size={20} /></button
         >
 
         <div class="date-display">
@@ -2271,7 +2274,7 @@
           disabled={!nextEndPaymentDate}
           title={nextEndPaymentDate
             ? $_('overview.goToDate', { values: { date: formatDate(nextEndPaymentDate) } })
-            : $_('overview.noNextPayment')}>⟩</button
+            : $_('overview.noNextPayment')}><ChevronRight size={20} /></button
         >
       </div>
     </div>
@@ -2328,14 +2331,14 @@
         <div class="pool-total-banner" class:has-warning={hasWarning}>
           {#if isRangeMode && stats.isBelowExpected}
             <div class="pool-warning-badge">
-              <span class="warning-icon">⚠️</span>
+              <TriangleAlert size={18} class="warning-icon" color="currentColor" />
               <span class="warning-text">
                 {hasExpectedMin ? $_('overview.belowExpected') : $_('overview.poolNegativeWarning')}
               </span>
             </div>
           {:else if !isRangeMode && hasExpectedMin && stats.isBelowExpected}
             <div class="pool-warning-badge">
-              <span class="warning-icon">⚠️</span>
+              <TriangleAlert size={18} class="warning-icon" color="currentColor" />
               <span class="warning-text">{$_('overview.belowExpected')}</span>
             </div>
           {/if}
@@ -3193,10 +3196,6 @@
     font-weight: 500;
   }
 
-  .warning-icon {
-    font-size: 1.1rem;
-  }
-
   .warning-text {
     font-size: 0.9rem;
   }
@@ -3263,12 +3262,18 @@
     border: none;
     border-radius: 8px;
     padding: 0.5rem 0.75rem;
-    font-size: 1rem;
     cursor: pointer;
     transition:
       background 0.2s,
       opacity 0.2s;
     flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .nav-btn :global(svg) {
+    transform: scaleY(1.3);
   }
 
   .nav-btn:hover:not(:disabled) {

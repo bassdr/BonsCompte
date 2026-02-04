@@ -172,6 +172,7 @@ async fn main() {
         .nest("/members", routes::members::router())
         .nest("/payments", routes::payments::router())
         .nest("/debts", routes::debts::router())
+        .nest("/cashflow", routes::cashflow::router())
         .nest("/history", routes::history::router());
 
     // Auth routes with optional rate limiting (5 requests per 60s to prevent brute-force)

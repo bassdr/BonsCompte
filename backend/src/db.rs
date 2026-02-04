@@ -787,6 +787,56 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .await
     .ok();
 
+    // =====================
+    // Migration 024: Remove deprecated columns from payments table
+    // =====================
+    // Remove deprecated columns:
+    // - status (replaced by is_final)
+    // - affects_expectation (replaced by affects_payer_expectation and affects_receiver_expectation)
+    //
+    // Note: SQLite 3.35+ supports ALTER TABLE DROP COLUMN natively.
+    // We must drop any indexes on these columns first before dropping them.
+
+    // Check if payments table has deprecated columns
+    let has_deprecated: Option<i64> = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pragma_table_info('payments')
+         WHERE name IN ('status', 'affects_expectation')",
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    if has_deprecated.unwrap_or(0) > 0 {
+        tracing::info!("Removing deprecated columns from payments table");
+
+        // Drop any indexes on deprecated columns (they won't be valid after column removal)
+        sqlx::query("DROP INDEX IF EXISTS idx_payments_status")
+            .execute(pool)
+            .await?;
+
+        // Drop the deprecated columns using SQLite 3.35+ native support
+        sqlx::query("ALTER TABLE payments DROP COLUMN status")
+            .execute(pool)
+            .await?;
+
+        sqlx::query("ALTER TABLE payments DROP COLUMN affects_expectation")
+            .execute(pool)
+            .await?;
+
+        // Verify the columns are gone
+        let still_deprecated: Option<i64> = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('payments')
+             WHERE name IN ('status', 'affects_expectation')",
+        )
+        .fetch_optional(pool)
+        .await?;
+
+        if still_deprecated.unwrap_or(0) == 0 {
+            tracing::info!("Deprecated columns successfully removed from payments table");
+        } else {
+            tracing::warn!("Some deprecated columns still exist after migration attempt");
+        }
+    }
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

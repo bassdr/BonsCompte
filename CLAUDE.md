@@ -140,6 +140,117 @@ frontend/src/
 - **API calls**: All through `lib/api.ts` using `authFetch()` wrapper that handles token + 401 redirect
 - **Routing**: SvelteKit file-based with `[id]` for dynamic segments
 
+### Icons: Lucide SVG (NOT Emojis)
+
+**NEVER use emojis or HTML entities for icons in the frontend. Use Lucide SVG icons instead.**
+
+The project uses `@lucide/svelte` for all UI icons. This provides:
+- Consistent, crisp SVG icons that scale beautifully
+- Proper accessibility support
+- Color inheritance via `currentColor`
+- Smaller bundle than emoji fallbacks
+
+**Installation** (already in package.json):
+```bash
+npm install @lucide/svelte
+```
+
+**Usage Pattern:**
+
+```svelte
+<script lang="ts">
+  import Check from '@lucide/svelte/icons/check';
+  import X from '@lucide/svelte/icons/x';
+  import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+  import ChevronRight from '@lucide/svelte/icons/chevron-right';
+  import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+  import Lock from '@lucide/svelte/icons/lock';
+  import Loader from '@lucide/svelte/icons/loader';
+  import Pencil from '@lucide/svelte/icons/pencil';
+  import Trash2 from '@lucide/svelte/icons/trash-2';
+  import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+  import Image from '@lucide/svelte/icons/image';
+  import CircleCheck from '@lucide/svelte/icons/circle-check';
+  import CircleAlert from '@lucide/svelte/icons/circle-alert';
+</script>
+
+<!-- Basic usage -->
+<button><Check size={16} /> Approve</button>
+
+<!-- Color via currentColor (inherits from parent CSS) -->
+<div class="warning" style="color: #dc3545;">
+  <TriangleAlert size={20} color="currentColor" />
+</div>
+
+<!-- Conditional icons -->
+{#if isApproved}
+  <CircleCheck size={18} color="currentColor" />
+{:else}
+  <CircleAlert size={18} color="currentColor" />
+{/if}
+
+<!-- For spinning/animated icons -->
+<div class="loading">
+  <Loader size={24} class="spin-animation" />
+</div>
+```
+
+**CSS for spinning animations:**
+```css
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin-animation {
+  animation: spin 1s linear infinite;
+}
+```
+
+**CSS for icon button alignment:**
+```css
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;  /* Space between icon and text */
+}
+
+/* For SVG stretching (vertical scaling) */
+button :global(svg) {
+  transform: scaleY(1.3);  /* Stretch vertically by 30% */
+}
+```
+
+**Common Icon Mappings:**
+
+| Purpose | Icon | Import Path | Size |
+|---------|------|------------|------|
+| Checkmark / Approve | `Check` | `check` | 16-24 |
+| Close / Reject | `X` | `x` | 16-24 |
+| Success status | `CircleCheck` | `circle-check` | 18-24 |
+| Warning status | `CircleAlert` | `circle-alert` | 18-24 |
+| Alert / Warning banner | `TriangleAlert` | `triangle-alert` | 18-20 |
+| Loading spinner | `Loader` | `loader` | 20-24 |
+| Lock / Security | `Lock` | `lock` | 20 |
+| Edit / Pencil | `Pencil` | `pencil` | 18 |
+| Delete / Trash | `Trash2` | `trash-2` | 18 |
+| Back / Arrow left | `ArrowLeft` | `arrow-left` | 24 |
+| Navigate left | `ChevronLeft` | `chevron-left` | 16-20 |
+| Navigate right | `ChevronRight` | `chevron-right` | 16-20 |
+| Image / Receipt | `Image` | `image` | 18 |
+
+**Never use:**
+- ❌ `⚠️`, `⚠`, `✓`, `✗`, `×`, `⟨`, `⟩`, `←`, etc.
+- ❌ HTML entities like `&times;`, `&larr;`, etc.
+- ❌ Unicode symbols as emoji fallbacks
+
+**All icon sizes** should be specified explicitly and inherit color via `currentColor` from parent CSS rules.
+
 ### Internationalization (i18n)
 
 The app supports multiple languages (EN/FR) with user preferences for formatting.

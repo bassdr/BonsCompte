@@ -2,6 +2,9 @@
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
+  import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+  import Check from '@lucide/svelte/icons/check';
+  import X from '@lucide/svelte/icons/x';
   import { getMyPendingApprovals, getCurrentUser, type ProjectApproval } from '$lib/api';
   import { formatDateWithWeekday } from '$lib/format/date';
   import { _ } from 'svelte-i18n';
@@ -69,7 +72,7 @@
 
 <div class="container">
   <div class="quarantine-card">
-    <div class="icon-warning">⚠️</div>
+    <div class="icon-warning"><TriangleAlert size={64} color="currentColor" /></div>
     <h1>{$_('approvals.pending.title', { default: 'Account Pending Approval' })}</h1>
 
     <p class="description">
@@ -131,7 +134,12 @@
                     class:approve={vote.vote === 'approve'}
                     class:reject={vote.vote === 'reject'}
                   >
-                    <span class="vote-icon">{vote.vote === 'approve' ? '✓' : '✗'}</span>
+                    <span class="vote-icon"
+                      >{#if vote.vote === 'approve'}<Check
+                          size={16}
+                          color="currentColor"
+                        />{:else}<X size={16} color="currentColor" />{/if}</span
+                    >
                     <span class="voter-name">
                       {vote.voter_display_name || vote.voter_username}
                     </span>
@@ -189,8 +197,9 @@
   }
 
   .icon-warning {
-    font-size: 4rem;
     margin-bottom: 1rem;
+    display: flex;
+    justify-content: center;
   }
 
   h1 {
@@ -283,7 +292,8 @@
   }
 
   .vote-icon {
-    font-weight: bold;
+    display: flex;
+    align-items: center;
   }
 
   .vote-item.approve .vote-icon {

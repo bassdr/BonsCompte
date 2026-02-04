@@ -102,6 +102,101 @@ pub struct DebtSummary {
     pub pool_ownerships: Vec<PoolOwnership>,
 }
 
+// Cashflow Planning Structures
+
+#[derive(Debug, Serialize)]
+pub struct MonthlyBalance {
+    pub month: String, // "2026-01" format
+    pub participant_id: i64,
+    pub participant_name: String,
+    pub net_balance: f64, // Cumulative balance at end of month
+}
+
+#[derive(Debug, Serialize)]
+pub struct RecurringContributionRecommendation {
+    pub participant_id: i64,
+    pub participant_name: String,
+    pub recommended_amount: f64, // Amount per payment at chosen frequency
+    pub frequency_type: String,  // 'weekly', 'monthly', 'yearly'
+    pub frequency_interval: i32, // Every X periods (e.g., 2 for bi-weekly)
+    pub current_trend: f64,      // Monthly rate of change
+    pub calculation_method: String, // "simple_average" or "linear_regression"
+}
+
+#[derive(Debug, Serialize)]
+pub struct PoolOwnershipSnapshot {
+    pub participant_id: i64,
+    pub participant_name: String,
+    pub ownership: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PoolMonthlyBalance {
+    pub month: String,
+    pub total_balance: f64,
+    pub participant_ownerships: Vec<PoolOwnershipSnapshot>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PoolEvolution {
+    pub pool_id: i64,
+    pub pool_name: String,
+    pub monthly_balances: Vec<PoolMonthlyBalance>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RecurringPaymentToConsolidate {
+    pub payment_id: i64,
+    pub description: String,
+    pub amount: f64,
+    pub payer_id: i64,
+    pub payer_name: String,
+    pub recurrence_type: String,
+    pub recurrence_interval: i32,
+}
+
+/// Event-based balance point (one per transaction/event)
+#[derive(Debug, Serialize, Clone)]
+pub struct BalanceEvent {
+    pub date: String,
+    pub participant_id: i64,
+    pub participant_name: String,
+    pub net_balance: f64,
+    pub is_synthetic: bool, // True if from recommended contribution
+}
+
+/// The computed recommendation for a specific payer→receiver pair
+#[derive(Debug, Serialize)]
+pub struct ComputedRecommendation {
+    pub payer_id: i64,
+    pub payer_name: String,
+    pub receiver_id: i64,
+    pub receiver_name: String,
+    pub recommended_amount: f64,
+    pub frequency_type: String,
+    pub frequency_interval: i32,
+    pub current_trend: f64, // Monthly rate of change for payer
+    pub calculation_method: String,
+    pub start_date: String,
+    pub end_date: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CashflowProjection {
+    pub start_date: String,
+    pub end_date: String,
+    pub months: Vec<String>, // ["2026-01", "2026-02", ...]
+    pub monthly_balances: Vec<MonthlyBalance>,
+    pub recommendations: Vec<RecurringContributionRecommendation>,
+    pub pool_evolutions: Vec<PoolEvolution>,
+    pub consolidate_mode: bool,
+    pub payments_to_consolidate: Vec<RecurringPaymentToConsolidate>, // Empty if consolidate_mode=false
+    // New fields for recommendation-driven view
+    pub balance_events: Vec<BalanceEvent>,
+    pub computed_recommendation: Option<ComputedRecommendation>,
+    pub include_recommendation: bool,
+}
+
 /// Calculate debts as of today
 pub async fn calculate_debts(
     pool: &SqlitePool,
@@ -1188,6 +1283,622 @@ fn calculate_direct_settlements(
     });
 
     settlements
+}
+
+/// Calculate cashflow projection over a future time horizon
+#[allow(clippy::too_many_arguments)]
+pub async fn calculate_cashflow_projection(
+    pool: &SqlitePool,
+    project_id: i64,
+    horizon_months: u32,
+    recommendation_mode: &str,
+    frequency_type: &str,
+    frequency_interval: i32,
+    consolidate_mode: bool,
+    // New recommendation configuration
+    rec_payer_id: Option<i64>,
+    rec_receiver_id: Option<i64>,
+    rec_start_date: Option<&str>,
+    rec_end_date: Option<&str>,
+    include_recommendation: bool,
+) -> AppResult<CashflowProjection> {
+    let today = chrono::Utc::now().date_naive();
+    let end_date = today + Months::new(horizon_months);
+
+    // Parse recommendation dates or use defaults
+    let rec_start = rec_start_date.and_then(parse_date).unwrap_or(today);
+    let rec_end = rec_end_date.and_then(parse_date).unwrap_or(end_date);
+
+    // Get all participants
+    let participants: Vec<(i64, String, String)> =
+        sqlx::query_as("SELECT id, name, account_type FROM participants WHERE project_id = ?")
+            .bind(project_id)
+            .fetch_all(pool)
+            .await?;
+
+    let participant_map: HashMap<i64, String> = participants
+        .iter()
+        .map(|(id, name, _)| (*id, name.clone()))
+        .collect();
+
+    let pool_participants: std::collections::HashSet<i64> = participants
+        .iter()
+        .filter(|(_, _, account_type)| account_type == "pool")
+        .map(|(id, _, _)| *id)
+        .collect();
+
+    // Get all payments
+    let payments: Vec<Payment> = sqlx::query_as("SELECT * FROM payments WHERE project_id = ?")
+        .bind(project_id)
+        .fetch_all(pool)
+        .await?;
+
+    // Find the earliest payment date to use as start of timeline
+    // If no payments, use today
+    let start_date = payments
+        .iter()
+        .filter_map(|p| parse_date(&p.payment_date))
+        .min()
+        .unwrap_or(today);
+
+    // Identify recurring payments to pool accounts (for consolidation)
+    let mut payments_to_consolidate: Vec<RecurringPaymentToConsolidate> = Vec::new();
+    let mut payment_ids_to_exclude = std::collections::HashSet::new();
+
+    if consolidate_mode {
+        for payment in &payments {
+            // Check if this is a recurring payment to a pool account
+            if payment.is_recurring
+                && payment.receiver_account_id.is_some()
+                && pool_participants.contains(&payment.receiver_account_id.unwrap())
+            {
+                let payer_id = payment.payer_id.unwrap_or(0);
+                let payer_name = participant_map.get(&payer_id).cloned().unwrap_or_default();
+
+                payments_to_consolidate.push(RecurringPaymentToConsolidate {
+                    payment_id: payment.id,
+                    description: payment.description.clone(),
+                    amount: payment.amount,
+                    payer_id,
+                    payer_name,
+                    recurrence_type: payment.recurrence_type.clone().unwrap_or_default(),
+                    recurrence_interval: payment.recurrence_interval.unwrap_or(1),
+                });
+
+                payment_ids_to_exclude.insert(payment.id);
+            }
+        }
+    }
+
+    // Get contributions
+    let contributions: Vec<(i64, i64, f64)> = sqlx::query_as(
+        "SELECT c.payment_id, c.participant_id, c.amount
+         FROM contributions c
+         JOIN payments p ON c.payment_id = p.id
+         WHERE p.project_id = ?",
+    )
+    .bind(project_id)
+    .fetch_all(pool)
+    .await?;
+
+    // Build contribution map
+    let mut contribution_map: HashMap<i64, Vec<(i64, f64)>> = HashMap::new();
+    for (payment_id, participant_id, amount) in contributions {
+        contribution_map
+            .entry(payment_id)
+            .or_default()
+            .push((participant_id, amount));
+    }
+
+    // Generate all payment occurrences up to end_date
+    // In consolidate mode, exclude recurring pool contributions
+    let mut all_occurrences: Vec<PaymentOccurrence> = Vec::new();
+    for payment in &payments {
+        if consolidate_mode && payment_ids_to_exclude.contains(&payment.id) {
+            continue; // Skip this payment in consolidate mode
+        }
+        let occurrences = generate_payment_occurrences(payment, end_date);
+        all_occurrences.extend(occurrences);
+    }
+
+    // Generate list of months
+    let mut months = Vec::new();
+    let mut current = NaiveDate::from_ymd_opt(start_date.year(), start_date.month(), 1).unwrap();
+    let end_month = NaiveDate::from_ymd_opt(end_date.year(), end_date.month(), 1).unwrap();
+
+    while current <= end_month {
+        months.push(format!("{}-{:02}", current.year(), current.month()));
+        current = current + Months::new(1);
+    }
+
+    // Calculate monthly balances
+    let mut monthly_balances = Vec::new();
+
+    // For each participant (excluding pools), track cumulative balance per month
+    for (participant_id, participant_name, account_type) in &participants {
+        if account_type == "pool" {
+            continue; // Skip pool accounts
+        }
+
+        let mut cumulative_paid = 0.0;
+        let mut cumulative_owed = 0.0;
+
+        for month in &months {
+            // Get all occurrences in this month
+            let month_start = parse_date(&format!("{}-01", month)).unwrap();
+            let month_end = month_start + Months::new(1);
+
+            for occurrence in &all_occurrences {
+                let occ_date = match parse_date(&occurrence.occurrence_date) {
+                    Some(d) => d,
+                    None => continue,
+                };
+
+                if occ_date < month_start || occ_date >= month_end {
+                    continue; // Not in this month
+                }
+
+                // Check if this is a pool transfer (should be excluded from settlements)
+                let payer_is_pool = occurrence
+                    .payer_id
+                    .map(|id| pool_participants.contains(&id))
+                    .unwrap_or(false);
+                let receiver_is_pool = occurrence
+                    .receiver_account_id
+                    .map(|id| pool_participants.contains(&id))
+                    .unwrap_or(false);
+
+                if payer_is_pool || receiver_is_pool {
+                    // Pool transfer - skip for settlement calculations
+                    continue;
+                }
+
+                // Handle user-to-user transfers
+                if let Some(receiver_id) = occurrence.receiver_account_id {
+                    // This is an internal transfer between users
+                    if occurrence.payer_id == Some(*participant_id) {
+                        cumulative_paid += occurrence.amount;
+                    }
+                    if receiver_id == *participant_id {
+                        cumulative_owed += occurrence.amount;
+                    }
+                    continue;
+                }
+
+                // External expense
+                if occurrence.payer_id == Some(*participant_id) {
+                    cumulative_paid += occurrence.amount;
+                }
+
+                // Check if this participant contributed to this payment
+                if let Some(contribs) = contribution_map.get(&occurrence.payment_id) {
+                    for (contrib_participant_id, contrib_amount) in contribs {
+                        if contrib_participant_id == participant_id {
+                            cumulative_owed += contrib_amount;
+                        }
+                    }
+                }
+            }
+
+            let net_balance = cumulative_paid - cumulative_owed;
+            monthly_balances.push(MonthlyBalance {
+                month: month.clone(),
+                participant_id: *participant_id,
+                participant_name: participant_name.clone(),
+                net_balance,
+            });
+        }
+    }
+
+    // Calculate recommendations
+    let mut recommendations = Vec::new();
+
+    for (participant_id, participant_name, account_type) in &participants {
+        if account_type == "pool" {
+            continue; // No recommendations for pool accounts
+        }
+
+        // Get this participant's monthly balances
+        let participant_balances: Vec<f64> = monthly_balances
+            .iter()
+            .filter(|mb| mb.participant_id == *participant_id)
+            .map(|mb| mb.net_balance)
+            .collect();
+
+        if participant_balances.is_empty() {
+            continue;
+        }
+
+        let monthly_trend = if recommendation_mode == "linear_regression" {
+            // Linear regression: calculate slope
+            calculate_linear_regression_slope(&participant_balances)
+        } else {
+            // Simple average: (last - first) / num_months
+            let first = participant_balances.first().copied().unwrap_or(0.0);
+            let last = participant_balances.last().copied().unwrap_or(0.0);
+            let num_months = participant_balances.len() as f64;
+            if num_months > 0.0 {
+                (last - first) / num_months
+            } else {
+                0.0
+            }
+        };
+
+        // Convert monthly trend to desired frequency
+        let recommended_amount =
+            convert_monthly_to_frequency(-monthly_trend, frequency_type, frequency_interval);
+
+        recommendations.push(RecurringContributionRecommendation {
+            participant_id: *participant_id,
+            participant_name: participant_name.clone(),
+            recommended_amount,
+            frequency_type: frequency_type.to_string(),
+            frequency_interval,
+            current_trend: monthly_trend,
+            calculation_method: recommendation_mode.to_string(),
+        });
+    }
+
+    // Calculate pool evolution
+    let mut pool_evolutions = Vec::new();
+
+    for (pool_id, pool_name, account_type) in &participants {
+        if account_type != "pool" {
+            continue;
+        }
+
+        let mut pool_monthly_balances = Vec::new();
+
+        for month in &months {
+            let month_start = parse_date(&format!("{}-01", month)).unwrap();
+            let month_end = month_start + Months::new(1);
+
+            // Calculate ownership for each participant at end of this month
+            let mut ownership_map: HashMap<i64, (f64, f64)> = HashMap::new(); // (contributed, consumed)
+
+            for occurrence in &all_occurrences {
+                let occ_date = match parse_date(&occurrence.occurrence_date) {
+                    Some(d) => d,
+                    None => continue,
+                };
+
+                // Only include occurrences up to end of this month
+                if occ_date >= month_end {
+                    continue;
+                }
+
+                let payer_id = match occurrence.payer_id {
+                    Some(id) => id,
+                    None => continue,
+                };
+
+                // Pool transfer detection
+                let payer_is_pool = payer_id == *pool_id;
+                let receiver_is_pool = occurrence.receiver_account_id == Some(*pool_id);
+
+                if receiver_is_pool {
+                    // User deposited to pool
+                    let entry = ownership_map.entry(payer_id).or_insert((0.0, 0.0));
+                    entry.0 += occurrence.amount; // contributed
+                } else if payer_is_pool {
+                    // Pool paid (withdrawal or expense)
+                    if let Some(receiver_id) = occurrence.receiver_account_id {
+                        // Transfer from pool to user
+                        let entry = ownership_map.entry(receiver_id).or_insert((0.0, 0.0));
+                        entry.1 += occurrence.amount; // consumed
+                    } else {
+                        // Pool paid external expense - split among contributors
+                        if let Some(contribs) = contribution_map.get(&occurrence.payment_id) {
+                            for (contrib_id, contrib_amount) in contribs {
+                                let entry = ownership_map.entry(*contrib_id).or_insert((0.0, 0.0));
+                                entry.1 += contrib_amount; // consumed
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Build ownership snapshots
+            let mut participant_ownerships: Vec<PoolOwnershipSnapshot> = participants
+                .iter()
+                .filter(|(id, _, acct_type)| *id != *pool_id && acct_type != "pool")
+                .filter_map(|(id, name, _)| {
+                    let (contributed, consumed) =
+                        ownership_map.get(id).copied().unwrap_or((0.0, 0.0));
+                    let ownership = contributed - consumed;
+                    if ownership.abs() > 0.01 {
+                        Some(PoolOwnershipSnapshot {
+                            participant_id: *id,
+                            participant_name: name.clone(),
+                            ownership,
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            participant_ownerships.sort_by(|a, b| {
+                b.ownership
+                    .partial_cmp(&a.ownership)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            let total_balance: f64 = participant_ownerships.iter().map(|p| p.ownership).sum();
+
+            pool_monthly_balances.push(PoolMonthlyBalance {
+                month: month.clone(),
+                total_balance,
+                participant_ownerships,
+            });
+        }
+
+        pool_evolutions.push(PoolEvolution {
+            pool_id: *pool_id,
+            pool_name: pool_name.clone(),
+            monthly_balances: pool_monthly_balances,
+        });
+    }
+
+    // Compute the specific recommendation if payer and receiver are specified
+    let computed_recommendation =
+        if let (Some(payer_id), Some(receiver_id)) = (rec_payer_id, rec_receiver_id) {
+            let payer_name = participant_map.get(&payer_id).cloned().unwrap_or_default();
+            let receiver_name = participant_map
+                .get(&receiver_id)
+                .cloned()
+                .unwrap_or_default();
+
+            // Get payer's monthly balances to calculate trend
+            let payer_balances: Vec<f64> = monthly_balances
+                .iter()
+                .filter(|mb| mb.participant_id == payer_id)
+                .map(|mb| mb.net_balance)
+                .collect();
+
+            let monthly_trend = if recommendation_mode == "linear_regression" {
+                calculate_linear_regression_slope(&payer_balances)
+            } else {
+                let first = payer_balances.first().copied().unwrap_or(0.0);
+                let last = payer_balances.last().copied().unwrap_or(0.0);
+                let num = payer_balances.len() as f64;
+                if num > 0.0 {
+                    (last - first) / num
+                } else {
+                    0.0
+                }
+            };
+
+            let recommended_amount =
+                convert_monthly_to_frequency(-monthly_trend, frequency_type, frequency_interval);
+
+            Some(ComputedRecommendation {
+                payer_id,
+                payer_name,
+                receiver_id,
+                receiver_name,
+                recommended_amount,
+                frequency_type: frequency_type.to_string(),
+                frequency_interval,
+                current_trend: monthly_trend,
+                calculation_method: recommendation_mode.to_string(),
+                start_date: rec_start.format("%Y-%m-%d").to_string(),
+                end_date: rec_end.format("%Y-%m-%d").to_string(),
+            })
+        } else {
+            None
+        };
+
+    // Generate synthetic events if recommendation is configured and include_recommendation is true
+    let mut synthetic_events: Vec<PaymentOccurrence> = Vec::new();
+    if include_recommendation {
+        if let Some(ref rec) = computed_recommendation {
+            if rec.recommended_amount > 0.0 {
+                synthetic_events = generate_synthetic_contribution_events(
+                    rec.payer_id,
+                    rec.receiver_id,
+                    rec.recommended_amount,
+                    &rec.frequency_type,
+                    rec.frequency_interval,
+                    rec_start,
+                    rec_end,
+                );
+            }
+        }
+    }
+
+    // Calculate event-based balance points
+    let mut combined_occurrences = all_occurrences.clone();
+    combined_occurrences.extend(synthetic_events.clone());
+    combined_occurrences.sort_by(|a, b| a.occurrence_date.cmp(&b.occurrence_date));
+
+    let balance_events = calculate_balance_events(
+        &combined_occurrences,
+        &participants,
+        &pool_participants,
+        &contribution_map,
+        &synthetic_events,
+    );
+
+    Ok(CashflowProjection {
+        start_date: start_date.format("%Y-%m-%d").to_string(),
+        end_date: end_date.format("%Y-%m-%d").to_string(),
+        months,
+        monthly_balances,
+        recommendations,
+        pool_evolutions,
+        consolidate_mode,
+        payments_to_consolidate,
+        balance_events,
+        computed_recommendation,
+        include_recommendation,
+    })
+}
+
+/// Convert monthly amount to desired frequency
+fn convert_monthly_to_frequency(monthly_amount: f64, freq_type: &str, freq_interval: i32) -> f64 {
+    let base_amount = match freq_type {
+        "weekly" => monthly_amount / 4.33,
+        "monthly" => monthly_amount,
+        "yearly" => monthly_amount * 12.0,
+        "daily" => monthly_amount / 30.0,
+        _ => monthly_amount,
+    };
+    base_amount * (freq_interval as f64)
+}
+
+/// Generate synthetic contribution events based on recommendation config
+fn generate_synthetic_contribution_events(
+    payer_id: i64,
+    receiver_id: i64,
+    amount: f64,
+    frequency_type: &str,
+    frequency_interval: i32,
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+) -> Vec<PaymentOccurrence> {
+    let mut events = Vec::new();
+    let mut current = start_date;
+
+    while current <= end_date {
+        events.push(PaymentOccurrence {
+            payment_id: -1, // Synthetic marker
+            description: "Recommended contribution".to_string(),
+            amount,
+            occurrence_date: current.format("%Y-%m-%d").to_string(),
+            payer_id: Some(payer_id),
+            is_recurring: true,
+            receiver_account_id: Some(receiver_id),
+            is_final: true,                      // Synthetic events are always final
+            affects_balance: true,               // Synthetic contributions affect balance
+            affects_payer_expectation: false,    // Not an expectation rule
+            affects_receiver_expectation: false, // Not an expectation rule
+        });
+
+        // Advance date based on frequency
+        current = match frequency_type {
+            "weekly" => current + chrono::Days::new((frequency_interval * 7) as u64),
+            "monthly" => current + Months::new(frequency_interval as u32),
+            "yearly" => current + Months::new((frequency_interval * 12) as u32),
+            "daily" => current + chrono::Days::new(frequency_interval as u64),
+            _ => current + Months::new(frequency_interval as u32),
+        };
+    }
+
+    events
+}
+
+/// Calculate event-based balance points (one per transaction date)
+fn calculate_balance_events(
+    occurrences: &[PaymentOccurrence],
+    participants: &[(i64, String, String)],
+    pool_participants: &std::collections::HashSet<i64>,
+    contribution_map: &HashMap<i64, Vec<(i64, f64)>>,
+    synthetic_occurrences: &[PaymentOccurrence],
+) -> Vec<BalanceEvent> {
+    let mut balance_events = Vec::new();
+
+    // Build set of synthetic occurrence dates for marking
+    let synthetic_dates: std::collections::HashSet<String> = synthetic_occurrences
+        .iter()
+        .map(|o| o.occurrence_date.clone())
+        .collect();
+
+    // For each participant (excluding pools), track cumulative balance
+    for (participant_id, participant_name, account_type) in participants {
+        if account_type == "pool" {
+            continue;
+        }
+
+        let mut cumulative_paid = 0.0;
+        let mut cumulative_owed = 0.0;
+
+        for occurrence in occurrences {
+            let occ_date = match parse_date(&occurrence.occurrence_date) {
+                Some(d) => d,
+                None => continue,
+            };
+
+            // Check if pool transfer (skip for settlements)
+            let payer_is_pool = occurrence
+                .payer_id
+                .map(|id| pool_participants.contains(&id))
+                .unwrap_or(false);
+            let receiver_is_pool = occurrence
+                .receiver_account_id
+                .map(|id| pool_participants.contains(&id))
+                .unwrap_or(false);
+
+            if payer_is_pool || receiver_is_pool {
+                continue;
+            }
+
+            // Handle user-to-user transfers
+            if let Some(receiver_id) = occurrence.receiver_account_id {
+                if occurrence.payer_id == Some(*participant_id) {
+                    cumulative_paid += occurrence.amount;
+                }
+                if receiver_id == *participant_id {
+                    cumulative_owed += occurrence.amount;
+                }
+                continue;
+            }
+
+            // External expense
+            if occurrence.payer_id == Some(*participant_id) {
+                cumulative_paid += occurrence.amount;
+            }
+
+            // Contributions
+            if let Some(contribs) = contribution_map.get(&occurrence.payment_id) {
+                for (contrib_id, contrib_amount) in contribs {
+                    if contrib_id == participant_id {
+                        cumulative_owed += contrib_amount;
+                    }
+                }
+            }
+
+            let net_balance = cumulative_paid - cumulative_owed;
+            let is_synthetic = occurrence.payment_id == -1
+                || synthetic_dates.contains(&occurrence.occurrence_date);
+
+            balance_events.push(BalanceEvent {
+                date: occ_date.format("%Y-%m-%d").to_string(),
+                participant_id: *participant_id,
+                participant_name: participant_name.clone(),
+                net_balance,
+                is_synthetic,
+            });
+        }
+    }
+
+    balance_events
+}
+
+/// Calculate slope using linear regression
+fn calculate_linear_regression_slope(values: &[f64]) -> f64 {
+    let n = values.len() as f64;
+    if n < 2.0 {
+        return 0.0;
+    }
+
+    let x_mean = (n - 1.0) / 2.0; // Mean of indices 0, 1, 2, ..., n-1
+    let y_mean = values.iter().sum::<f64>() / n;
+
+    let mut numerator = 0.0;
+    let mut denominator = 0.0;
+
+    for (i, &y) in values.iter().enumerate() {
+        let x = i as f64;
+        numerator += (x - x_mean) * (y - y_mean);
+        denominator += (x - x_mean).powi(2);
+    }
+
+    if denominator.abs() < 0.0001 {
+        return 0.0;
+    }
+
+    numerator / denominator
 }
 
 #[cfg(test)]

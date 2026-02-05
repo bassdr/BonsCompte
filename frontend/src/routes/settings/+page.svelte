@@ -1,5 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import CircleCheck from '@lucide/svelte/icons/circle-check';
+  import CircleAlert from '@lucide/svelte/icons/circle-alert';
   import {
     changePassword,
     deleteAccount,
@@ -400,7 +402,10 @@
 
     {#if recoveryStatus}
       <div class="recovery-status" class:recoverable={recoveryStatus.recoverable}>
-        <span class="status-icon">{recoveryStatus.recoverable ? '✓' : '⚠'}</span>
+        {#if recoveryStatus.recoverable}<CircleCheck
+            size={24}
+            color="currentColor"
+          />{:else}<CircleAlert size={24} color="currentColor" />{/if}
         <span>
           {recoveryStatus.recoverable
             ? $_('settings.trustedUsers.statusRecoverable')
@@ -924,10 +929,6 @@
   .recovery-status.recoverable {
     background: #d4edda;
     color: #155724;
-  }
-
-  .recovery-status .status-icon {
-    font-size: 1.1rem;
   }
 
   @media (max-width: 480px) {

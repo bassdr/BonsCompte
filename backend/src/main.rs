@@ -1,4 +1,4 @@
-use axum::{http::Method, middleware, routing::get, Router};
+use axum::{extract::DefaultBodyLimit, http::Method, middleware, routing::get, Router};
 use std::{net::SocketAddr, sync::Arc};
 use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
 use tower_http::cors::{Any, CorsLayer};
@@ -205,7 +205,9 @@ async fn main() {
         app = app.layer(GovernorLayer::new(api_rate_limit));
     }
 
+    // Allow up to 6 MiB bodies (receipt images can be up to 5 MB, base64 adds ~33% overhead)
     let app = app
+        .layer(DefaultBodyLimit::max(6 * 1024 * 1024))
         // Global middleware
         .layer(TraceLayer::new_for_http())
         // Block scanner probes before logging to reduce noise

@@ -269,6 +269,7 @@
   "transactions.descriptionPlaceholder": "À quoi sert cette transaction ?",
   "transactions.receiptImage": "Image du reçu",
   "transactions.imageFormatsHint": "(JPEG, PNG, GIF, WebP - max 5 Mo)",
+  "transactions.chooseFile": "Choisir un fichier",
   "transactions.receiptPreview": "Aperçu du reçu",
   "transactions.internalTransferTo": "Transfert interne vers",
   "transactions.splitBetween": "Réparti entre",

@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import Check from '@lucide/svelte/icons/check';
+  import X from '@lucide/svelte/icons/x';
   import {
     getMyPendingApprovals,
     getActionableApprovals,
@@ -378,14 +380,16 @@
                   onclick={() => handleVote(approval.id, 'approve')}
                   disabled={votingInProgress.has(approval.id)}
                 >
-                  ✓ {$_('approvals.approve', { default: 'Approve' })}
+                  <Check size={16} />
+                  {$_('approvals.approve', { default: 'Approve' })}
                 </button>
                 <button
                   class="btn-reject"
                   onclick={() => handleVote(approval.id, 'reject')}
                   disabled={votingInProgress.has(approval.id)}
                 >
-                  ✗ {$_('approvals.reject', { default: 'Reject' })}
+                  <X size={16} />
+                  {$_('approvals.reject', { default: 'Reject' })}
                 </button>
               </div>
 
@@ -520,6 +524,10 @@
     cursor: pointer;
     font-weight: 500;
     transition: background 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
   }
 
   .btn-approve:hover:not(:disabled) {
@@ -541,6 +549,10 @@
     cursor: pointer;
     font-weight: 500;
     transition: background 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
   }
 
   .btn-reject:hover:not(:disabled) {

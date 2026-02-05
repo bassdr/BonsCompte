@@ -2,6 +2,8 @@
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import Check from '@lucide/svelte/icons/check';
+  import X from '@lucide/svelte/icons/x';
   import { getApproval, castVote, type ProjectApproval } from '$lib/api';
   import { formatDateWithWeekday } from '$lib/format/date';
   import { _ } from 'svelte-i18n';
@@ -131,7 +133,10 @@
               >
                 <div class="vote-header">
                   <span class="vote-icon">
-                    {vote.vote === 'approve' ? '✓' : '✗'}
+                    {#if vote.vote === 'approve'}<Check size={24} color="currentColor" />{:else}<X
+                        size={24}
+                        color="currentColor"
+                      />{/if}
                   </span>
                   <div class="voter-info">
                     <div class="voter-name">
@@ -179,10 +184,12 @@
 
           <div class="action-buttons">
             <button class="btn-approve" onclick={() => handleVote('approve')} disabled={voting}>
-              ✓ {$_('approvals.approve', { default: 'Approve' })}
+              <Check size={16} />
+              {$_('approvals.approve', { default: 'Approve' })}
             </button>
             <button class="btn-reject" onclick={() => handleVote('reject')} disabled={voting}>
-              ✗ {$_('approvals.reject', { default: 'Reject' })}
+              <X size={16} />
+              {$_('approvals.reject', { default: 'Reject' })}
             </button>
           </div>
         </div>
@@ -359,8 +366,8 @@
   }
 
   .vote-icon {
-    font-size: 1.5rem;
-    font-weight: bold;
+    display: flex;
+    align-items: center;
   }
 
   .vote-card.approve .vote-icon {
@@ -467,8 +474,11 @@
     border-radius: 4px;
     cursor: pointer;
     font-weight: 500;
-    font-size: 1rem;
     transition: background 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
   }
 
   .btn-approve:hover:not(:disabled) {
@@ -489,8 +499,11 @@
     border-radius: 4px;
     cursor: pointer;
     font-weight: 500;
-    font-size: 1rem;
     transition: background 0.2s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
   }
 
   .btn-reject:hover:not(:disabled) {

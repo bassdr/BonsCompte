@@ -2,6 +2,10 @@
   import { page } from '$app/stores';
   import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
+  import Loader from '@lucide/svelte/icons/loader';
+  import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+  import Lock from '@lucide/svelte/icons/lock';
+  import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import {
     loadProject,
     clearProject,
@@ -396,14 +400,14 @@
   <div class="project-layout">
     <header class="project-header">
       <div class="project-title">
-        <a href={resolve('/')} class="back-link">&larr;</a>
+        <a href={resolve('/')} class="back-link"><ArrowLeft size={24} /></a>
         <h1>{$currentProject.name}</h1>
       </div>
 
       <!-- Pool Warning Banners (always visible, independent of range mode) -->
       {#if loadingWarningDebts}
         <div class="pool-warning-banner loading">
-          <span class="warning-icon">⏳</span>
+          <span class="warning-icon loading-spin"><Loader size={20} color="currentColor" /></span>
           <span class="warning-text">{$_('common.loading')}</span>
         </div>
       {:else}
@@ -414,7 +418,7 @@
             warnStats.userWarnings.length > 0}
           {#if hasAnyWarning}
             <div class="pool-warning-banner" title={$_('overview.warningPeriod')}>
-              <span class="warning-icon">⚠️</span>
+              <span class="warning-icon"><TriangleAlert size={20} color="currentColor" /></span>
               <div class="warning-content">
                 {#if warnStats.expectedMinNegative && warnStats.expectedMinFirstNegativeDate}
                   <span class="warning-text">
@@ -475,7 +479,7 @@
       <!-- Recovered account warning banner -->
       {#if $isRecovered}
         <div class="recovered-warning-banner">
-          <span class="warning-icon">🔒</span>
+          <span class="warning-icon"><Lock size={20} color="currentColor" /></span>
           <span class="warning-text">{$_('project.recoveredWarning')}</span>
         </div>
       {/if}
@@ -562,7 +566,6 @@
     border-radius: 8px;
     text-decoration: none;
     color: #666;
-    font-size: 1.2rem;
   }
 
   .back-link:hover {
@@ -609,6 +612,19 @@
 
   .pool-warning-banner .warning-icon {
     flex-shrink: 0;
+  }
+
+  .loading-spin {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .pool-warning-banner .warning-content {

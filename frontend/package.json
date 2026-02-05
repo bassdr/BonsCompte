@@ -57,6 +57,7 @@
     "vitest": "^4.0.16"
   },
   "dependencies": {
+    "@lucide/svelte": "^0.563.1",
     "chart.js": "^4.4.1",
     "chartjs-adapter-date-fns": "^3.0.0",
     "chartjs-plugin-annotation": "^3.1.0",

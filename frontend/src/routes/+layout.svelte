@@ -5,6 +5,8 @@
   import { resolve } from '$app/paths';
   import { browser } from '$app/environment';
   import type { Snippet } from 'svelte';
+  import Loader from '@lucide/svelte/icons/loader';
+  import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import {
     setupI18n,
     getInitialLocale,
@@ -168,7 +170,7 @@
 </svelte:head>
 
 {#if $isLoading || !$isLocaleLoaded}
-  <div class="loading">&#x27F3;</div>
+  <div class="loading"><span class="loading-spinner"><Loader size={24} /></span></div>
 {:else}
   {#if $isAuthenticated}
     <nav class="navbar">
@@ -205,7 +207,7 @@
     {#if $recoveryStatus && !$recoveryStatus.recoverable && !dismissedForSession && !dontShowAgainPermanent}
       <div class="recovery-warning-banner">
         <div class="warning-content">
-          <span class="warning-icon">⚠</span>
+          <span class="warning-icon"><TriangleAlert size={20} color="currentColor" /></span>
           <span>
             {$_('layout.recoveryWarning', {
               values: {
@@ -294,6 +296,19 @@
     height: 100vh;
     font-size: 1.2rem;
     color: #666;
+  }
+
+  .loading-spinner {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .navbar {
@@ -464,7 +479,7 @@
   }
 
   .warning-icon {
-    font-size: 1.1rem;
+    flex-shrink: 0;
   }
 
   .warning-content a {

@@ -269,6 +269,7 @@
   "transactions.descriptionPlaceholder": "What was this for?",
   "transactions.receiptImage": "Receipt Image",
   "transactions.imageFormatsHint": "(JPEG, PNG, GIF, WebP - max 5MB)",
+  "transactions.chooseFile": "Choose file",
   "transactions.receiptPreview": "Receipt preview",
   "transactions.internalTransferTo": "Internal Transfer to",
   "transactions.splitBetween": "Split between",

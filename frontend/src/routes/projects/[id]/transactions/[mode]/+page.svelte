@@ -49,6 +49,7 @@
   // Receipt image state
   let receiptImage = $state<string | null>(null);
   let receiptPreview = $state<string | null>(null);
+  let receiptInputEl = $state<HTMLInputElement | undefined>(undefined);
 
   // Recurrence state
   let isRecurring = $state(false);
@@ -1232,7 +1233,8 @@
 
           <!-- Receipt Image -->
           <div class="field">
-            <label for="receipt-input">
+            <!-- svelte-ignore a11y_label_has_associated_control -->
+            <label>
               {$_('transactions.receiptImage')}
               <span class="hint">{$_('transactions.imageFormatsHint')}</span>
             </label>
@@ -1241,8 +1243,12 @@
                 type="file"
                 accept="image/jpeg,image/png,image/gif,image/webp"
                 onchange={handleFileChange}
-                id="receipt-input"
+                bind:this={receiptInputEl}
+                class="visually-hidden"
               />
+              <button type="button" class="choose-file-btn" onclick={() => receiptInputEl?.click()}>
+                {$_('transactions.chooseFile')}
+              </button>
               {#if receiptPreview}
                 <div class="receipt-preview">
                   <img src={receiptPreview} alt={$_('transactions.receiptPreview')} />
@@ -1729,7 +1735,7 @@
     width: auto;
   }
 
-  input,
+  input:not([type='file']),
   select {
     width: 100%;
     padding: 0.75rem;
@@ -1738,13 +1744,41 @@
     font-size: 1rem;
   }
 
-  input:focus,
+  input:not([type='file']):focus,
   select:focus {
     outline: none;
     border-color: var(--accent, #7b61ff);
   }
 
   /* Receipt upload */
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .choose-file-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.5rem 1rem;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background: #f5f5f5;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: #333;
+  }
+
+  .choose-file-btn:hover {
+    background: #e8e8e8;
+  }
+
   .receipt-upload {
     display: flex;
     flex-direction: column;

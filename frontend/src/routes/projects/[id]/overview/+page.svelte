@@ -16,6 +16,7 @@
   import { participants } from '$lib/stores/project';
   import { formatDateWithWeekday, formatMonthYear as formatMonthYearI18n } from '$lib/format/date';
   import { formatCurrency } from '$lib/format/currency';
+  import DateInput from '$lib/components/DateInput.svelte';
   import { SvelteSet, SvelteMap, SvelteDate } from 'svelte/reactivity';
   import type { PairwisePaymentBreakdown } from '$lib/api';
   import { Chart, registerables } from 'chart.js';
@@ -373,6 +374,27 @@
 
   let targetDate = $state(getLocalDateString());
   let endDate = $state<string | null>(null);
+
+  // Compute buttons for date pickers based on current values
+  // For "From" picker: hide Today if already today
+  let fromDateButtons = $derived.by((): ('clear' | 'today')[] => {
+    const today = getLocalDateString();
+    return targetDate === today ? [] : ['today'];
+  });
+
+  // For "To" picker: hide Today if "From" date is today or in the future, OR if "To" is already today
+  let toDateButtons = $derived.by((): ('clear' | 'today')[] => {
+    const today = getLocalDateString();
+    const fromDate = parseLocalDate(targetDate);
+    const todayDate = parseLocalDate(today);
+    // Hide Today button if:
+    // - From date is today or in the future, OR
+    // - To date is already today
+    if (fromDate >= todayDate || endDate === today) {
+      return ['clear'];
+    }
+    return ['clear', 'today'];
+  });
 
   // Horizon options for the range selector
   type HorizonOption =
@@ -2186,7 +2208,7 @@
         >
 
         <div class="date-display">
-          <input type="date" bind:value={targetDate} class="date-input" />
+          <DateInput bind:value={targetDate} class="date-input" buttons={fromDateButtons} />
         </div>
 
         <button
@@ -2265,7 +2287,12 @@
         >
 
         <div class="date-display">
-          <input type="date" bind:value={endDate} min={targetDate} class="date-input" />
+          <DateInput
+            bind:value={endDate}
+            min={targetDate}
+            class="date-input"
+            buttons={toDateButtons}
+          />
         </div>
 
         <button
@@ -3246,6 +3273,9 @@
     flex-direction: column;
     align-items: center;
     gap: 0.75rem;
+    position: relative;
+    z-index: 10;
+    overflow: visible;
   }
 
   .date-nav-row {
@@ -3292,20 +3322,6 @@
     gap: 0.25rem;
     padding: 0 0.5rem;
     min-width: 0;
-  }
-
-  .date-input {
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    padding: 0.5rem;
-    font-size: 1rem;
-    background: white;
-    cursor: pointer;
-  }
-
-  .date-input:focus {
-    outline: none;
-    border-color: var(--accent, #7b61ff);
   }
 
   .date-label {
@@ -3449,10 +3465,6 @@
 
     .date-display {
       max-width: 100%;
-    }
-
-    .date-input {
-      max-width: 150px;
     }
 
     .horizon-selector {

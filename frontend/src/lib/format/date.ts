@@ -102,6 +102,25 @@ export function formatDateShort(dateStr: string | Date): string {
   return new Intl.DateTimeFormat(lang, options).format(date);
 }
 
+/**
+ * Get SVAR DatePicker format string based on user's date format preference
+ * SVAR uses strftime-style format strings
+ */
+export function getSVARDateFormat(dateFormat: DateFormatType = 'mdy'): string {
+  switch (dateFormat) {
+    case 'mdy':
+      return '%m/%d/%Y'; // 02/06/2026
+    case 'dmy':
+      return '%d/%m/%Y'; // 06/02/2026
+    case 'ymd':
+      return '%Y/%m/%d'; // 2026/02/06
+    case 'iso':
+      return '%Y-%m-%d'; // 2026-02-06
+    default:
+      return '%m/%d/%Y';
+  }
+}
+
 function getDateFormatOptions(format: DateFormatType): Intl.DateTimeFormatOptions {
   switch (format) {
     case 'mdy':

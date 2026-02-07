@@ -34,7 +34,7 @@ function createAuthStore() {
   return {
     subscribe,
 
-    init() {
+    async init() {
       if (!browser) {
         update((s) => ({ ...s, loading: false }));
         return;
@@ -46,17 +46,16 @@ function createAuthStore() {
           // Decode JWT payload (base64)
           const payload = JSON.parse(atob(token.split('.')[1]));
 
-          // Check if expired
+          // Check if token is not expired
           if (payload.exp * 1000 > Date.now()) {
-            // Note: When loading from JWT, we don't have full user data
-            // Preferences will be loaded from localStorage by the preferences store
+            // Token is valid - set it first to keep user logged in
             set({
               token,
               user: {
                 id: payload.sub,
                 username: payload.username,
                 display_name: null,
-                user_state: 'active', // Default, will be updated when fetching user data
+                user_state: 'active',
                 preferences: {
                   date_format: 'mdy',
                   decimal_separator: '.',
@@ -64,13 +63,44 @@ function createAuthStore() {
                   currency_symbol_position: 'before'
                 }
               },
-              loading: false
+              loading: true // Still loading full user data
             });
-            return;
+
+            // Now try to load full user data from backend
+            try {
+              const { getCurrentUser } = await import('./api');
+              const userData = await getCurrentUser();
+              set({
+                token,
+                user: userData as User,
+                loading: false
+              });
+              return;
+            } catch {
+              // If backend call fails, keep the user logged in with defaults
+              set({
+                token,
+                user: {
+                  id: payload.sub,
+                  username: payload.username,
+                  display_name: null,
+                  user_state: 'active',
+                  preferences: {
+                    date_format: 'mdy',
+                    decimal_separator: '.',
+                    currency_symbol: '$',
+                    currency_symbol_position: 'before'
+                  }
+                },
+                loading: false
+              });
+              return;
+            }
           }
         } catch {
-          // Invalid token
+          // Invalid JWT format - token is corrupted
         }
+        // Token is expired or invalid - remove it
         localStorage.removeItem(TOKEN_KEY);
       }
 

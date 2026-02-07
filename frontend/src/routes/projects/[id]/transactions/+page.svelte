@@ -8,9 +8,10 @@
   import { participants, canEdit } from '$lib/stores/project';
   import { _ } from '$lib/i18n';
   import { formatCurrency } from '$lib/format/currency';
-  import { formatDate } from '$lib/format/date';
+  import { formatDate, getLocalDateString, parseLocalDate } from '$lib/format/date';
   import { SvelteDate } from 'svelte/reactivity';
   import { getErrorKey } from '$lib/errors';
+  import DateInput from '$lib/components/DateInput.svelte';
 
   let transactions: PaymentWithContributions[] = $state([]);
   let loading = $state(true);
@@ -25,6 +26,24 @@
   let filterStatus = $state<string>('');
   let filterDateFrom = $state('');
   let filterDateTo = $state('');
+
+  // Filter date buttons - keep Clear (optional), Today only if not already today
+  let filterFromButtons = $derived.by((): ('clear' | 'today')[] => {
+    const today = getLocalDateString();
+    return filterDateFrom === today ? ['clear'] : ['clear', 'today'];
+  });
+
+  let filterToButtons = $derived.by((): ('clear' | 'today')[] => {
+    const today = getLocalDateString();
+    // Hide Today if already today OR if From date is today or future
+    if (filterDateTo === today) return ['clear'];
+    if (filterDateFrom) {
+      const fromDate = parseLocalDate(filterDateFrom);
+      const todayDate = parseLocalDate(today);
+      if (fromDate >= todayDate) return ['clear'];
+    }
+    return ['clear', 'today'];
+  });
 
   // Pagination state
   let transactionsToShow = $state(30);
@@ -315,13 +334,13 @@
     <!-- Date From -->
     <div class="filter-field">
       <label for="filter-date-from">{$_('transactions.dateFrom')}</label>
-      <input id="filter-date-from" type="date" bind:value={filterDateFrom} />
+      <DateInput id="filter-date-from" bind:value={filterDateFrom} buttons={filterFromButtons} />
     </div>
 
     <!-- Date To -->
     <div class="filter-field">
       <label for="filter-date-to">{$_('transactions.dateTo')}</label>
-      <input id="filter-date-to" type="date" bind:value={filterDateTo} />
+      <DateInput id="filter-date-to" bind:value={filterDateTo} buttons={filterToButtons} />
     </div>
   </div>
 

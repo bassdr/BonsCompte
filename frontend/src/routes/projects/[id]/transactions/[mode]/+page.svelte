@@ -14,6 +14,7 @@
   import { formatCurrency } from '$lib/format/currency';
   import { SvelteDate } from 'svelte/reactivity';
   import { getErrorKey } from '$lib/errors';
+  import DateInput from '$lib/components/DateInput.svelte';
 
   // Mode from URL params
   let mode = $derived($page.params.mode as 'outgoing' | 'incoming' | 'internal' | 'rule');
@@ -62,6 +63,36 @@
   let recurrenceWeekdays = $state<number[][]>([]);
   let recurrenceMonthdays = $state<number[]>([]);
   let recurrenceMonths = $state<number[]>([]);
+
+  // Compute buttons for date pickers - no Clear (mandatory), Today only if not already today
+  let paymentDateButtons = $derived.by((): 'today'[] => {
+    const today = getLocalDateString();
+    return paymentDate === today ? [] : ['today'];
+  });
+
+  // Recurrence end date buttons - keep Clear (optional), Today only if not already today and paymentDate is in past
+  let recurrenceEndDateButtons = $derived.by((): ('clear' | 'today')[] => {
+    const today = getLocalDateString();
+    // Hide Today if recurrenceEndDate is already today OR if paymentDate is today or future
+    if (recurrenceEndDate === today || paymentDate >= today) {
+      return ['clear'];
+    }
+    return ['clear', 'today'];
+  });
+
+  // Split-from-date buttons - no Clear (mandatory), Today only if within min/max range and not already today
+  let splitFromDateButtons = $derived.by((): 'today'[] => {
+    if (!editingPaymentOriginal) return [];
+    const today = getLocalDateString();
+    if (splitFromDate === today) return [];
+    const minDate = editingPaymentOriginal.payment_date.split('T')[0];
+    const maxDate = editingPaymentOriginal.recurrence_end_date?.split('T')[0] || '';
+    // Check if today is within range
+    if (today >= minDate && (maxDate === '' || today <= maxDate)) {
+      return ['today'];
+    }
+    return [];
+  });
 
   // Payment finalization status: true = final (default), false = draft
   let isFinal = $state(true);
@@ -1216,7 +1247,7 @@
 
             <div class="field">
               <label for="payment-date">{$_('transactions.date')}</label>
-              <input id="payment-date" type="date" bind:value={paymentDate} required />
+              <DateInput id="payment-date" bind:value={paymentDate} buttons={paymentDateButtons} />
             </div>
           </div>
 
@@ -1539,11 +1570,11 @@
                 <div class="recurrence-limits">
                   <div class="field">
                     <label for="end-date">{$_('transactions.endDateOptional')}</label>
-                    <input
+                    <DateInput
                       id="end-date"
-                      type="date"
                       bind:value={recurrenceEndDate}
                       min={paymentDate}
+                      buttons={recurrenceEndDateButtons}
                     />
                   </div>
 
@@ -1590,12 +1621,12 @@
               {#if useSplitDate}
                 <div class="split-date-field">
                   <label for="split-from-date">Changes start from</label>
-                  <input
+                  <DateInput
                     id="split-from-date"
-                    type="date"
                     bind:value={splitFromDate}
                     min={editingPaymentOriginal.payment_date.split('T')[0]}
                     max={editingPaymentOriginal.recurrence_end_date?.split('T')[0] || ''}
+                    buttons={splitFromDateButtons}
                   />
                   <p class="split-hint">
                     {#if splitFromDate}
@@ -2058,10 +2089,6 @@
   .split-date-field label {
     font-size: 0.9rem;
     margin-bottom: 0.5rem;
-  }
-
-  .split-date-field input[type='date'] {
-    max-width: 200px;
   }
 
   .split-hint {

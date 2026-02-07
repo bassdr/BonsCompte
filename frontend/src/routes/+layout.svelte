@@ -17,6 +17,9 @@
     isLocaleLoaded
   } from '$lib/i18n';
   import { preferences } from '$lib/stores/preferences';
+  import { Locale, Material } from '@svar-ui/svelte-core';
+  // @ts-expect-error - @svar-ui/core-locales doesn't have types
+  import { en, fr } from '@svar-ui/core-locales';
   import {
     recoveryStatus,
     refreshRecoveryStatus,
@@ -91,6 +94,15 @@
     if (recoveryCheckInterval) {
       clearInterval(recoveryCheckInterval);
     }
+  });
+
+  // Get SVAR locale based on current language
+  let svarLocale = $derived.by(() => {
+    const currentLang = $locale;
+    if (currentLang === 'fr') {
+      return fr;
+    }
+    return en; // Default to English for other languages
   });
 
   function handleDismissClick() {
@@ -283,9 +295,15 @@
     </nav>
   {/if}
 
-  <main>
-    {@render children()}
-  </main>
+  <Material fonts={false}>
+    {#key $locale}
+      <Locale words={svarLocale}>
+        <main>
+          {@render children()}
+        </main>
+      </Locale>
+    {/key}
+  </Material>
 {/if}
 
 <style>
@@ -648,5 +666,61 @@
     main {
       padding: 0.75rem;
     }
+  }
+
+  /* SVAR Theme Customizations */
+  /* Override Material theme variables to match app design */
+  :global(.wx-material-theme) {
+    /* Use app's font instead of Roboto */
+    --wx-font-family:
+      'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+      sans-serif;
+
+    /* Use app's accent color */
+    --wx-color-primary: var(--accent, #7b61ff);
+    --wx-color-primary-selected: rgba(123, 97, 255, 0.15);
+
+    /* Better input styling */
+    --wx-input-border: 1px solid #ddd;
+    --wx-input-border-focus: 1px solid var(--accent, #7b61ff);
+    --wx-input-border-radius: 6px;
+    --wx-input-padding: 8px 12px;
+    --wx-input-height: 40px;
+
+    /* Popup/dropdown styling */
+    --wx-popup-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    --wx-popup-border: 1px solid #ddd;
+    --wx-popup-border-radius: 8px;
+
+    /* Calendar styling */
+    --wx-calendar-padding: 12px;
+    --wx-calendar-cell-size: 32px;
+    --wx-calendar-gap: 2px;
+
+    /* Button styling */
+    --wx-button-border-radius: 4px;
+    --wx-button-padding: 4px 12px;
+    --wx-button-height: 28px;
+    --wx-button-font-size: 13px;
+
+    /* Reset Material's full height */
+    height: auto !important;
+  }
+
+  /* Fix focus ring for inputs */
+  :global(.wx-material-theme input:focus) {
+    box-shadow: 0 0 0 3px rgba(123, 97, 255, 0.1);
+    outline: none;
+  }
+
+  /* Fix SVAR dropdown z-index and overflow */
+  :global(.wx-dropdown) {
+    z-index: 1000 !important;
+    overflow: visible !important;
+  }
+
+  /* Ensure calendar inside dropdown can overflow */
+  :global(.wx-dropdown .wx-calendar) {
+    overflow: visible !important;
   }
 </style>

@@ -58,12 +58,18 @@
   let addingTrustedUser = $state(false);
   let removingTrustedUserId = $state<number | null>(null);
 
-  // Sync preferences state when store changes
+  // Sync preferences state only when user data changes (on login/logout)
+  // Don't update local state while user is editing
+  let syncedPrefs = $preferences;
   $effect(() => {
-    prefsDateFormat = $preferences.date_format;
-    prefsDecimalSeparator = $preferences.decimal_separator;
-    prefsCurrencySymbol = $preferences.currency_symbol;
-    prefsCurrencyPosition = $preferences.currency_symbol_position;
+    // Only update if this is a fresh load (preferences changed from store), not while editing
+    if (syncedPrefs !== $preferences) {
+      syncedPrefs = $preferences;
+      prefsDateFormat = $preferences.date_format;
+      prefsDecimalSeparator = $preferences.decimal_separator;
+      prefsCurrencySymbol = $preferences.currency_symbol;
+      prefsCurrencyPosition = $preferences.currency_symbol_position;
+    }
   });
 
   // Load trusted users on mount

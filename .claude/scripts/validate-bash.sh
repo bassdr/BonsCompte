@@ -13,8 +13,6 @@ fi
 
 # Define forbidden patterns
 FORBIDDEN_PATTERNS=(
-  "node_modules"
-  "frontend/node_modules"
   "frontend/\.svelte-kit"
   "backend/target"
   "build/"

@@ -64,34 +64,72 @@
   let recurrenceMonthdays = $state<number[]>([]);
   let recurrenceMonths = $state<number[]>([]);
 
-  // Compute buttons for date pickers - no Clear (mandatory), Today only if not already today
-  let paymentDateButtons = $derived.by((): 'today'[] => {
+  // Compute disabled buttons for date pickers - Today disabled if already today
+  let paymentDateDisabledButtons = $derived.by((): 'today'[] => {
     const today = getLocalDateString();
-    return paymentDate === today ? [] : ['today'];
+    return paymentDate === today ? ['today'] : [];
   });
 
-  // Recurrence end date buttons - keep Clear (optional), Today only if not already today and paymentDate is in past
-  let recurrenceEndDateButtons = $derived.by((): ('clear' | 'today')[] => {
+  let paymentDateDisabledReasons = $derived.by((): Record<string, string> => {
     const today = getLocalDateString();
-    // Hide Today if recurrenceEndDate is already today OR if paymentDate is today or future
-    if (recurrenceEndDate === today || paymentDate >= today) {
-      return ['clear'];
+    if (paymentDate === today) {
+      return { today: $_('datePicker.alreadyToday', { default: 'Already set to today' }) };
     }
-    return ['clear', 'today'];
+    return {};
   });
 
-  // Split-from-date buttons - no Clear (mandatory), Today only if within min/max range and not already today
-  let splitFromDateButtons = $derived.by((): 'today'[] => {
-    if (!editingPaymentOriginal) return [];
+  // Recurrence end date - Today disabled if already today or paymentDate is in future
+  let recurrenceEndDateDisabledButtons = $derived.by((): 'today'[] => {
     const today = getLocalDateString();
-    if (splitFromDate === today) return [];
-    const minDate = editingPaymentOriginal.payment_date.split('T')[0];
-    const maxDate = editingPaymentOriginal.recurrence_end_date?.split('T')[0] || '';
-    // Check if today is within range
-    if (today >= minDate && (maxDate === '' || today <= maxDate)) {
+    if (recurrenceEndDate === today || paymentDate >= today) {
       return ['today'];
     }
     return [];
+  });
+
+  let recurrenceEndDateDisabledReasons = $derived.by((): Record<string, string> => {
+    const today = getLocalDateString();
+    if (recurrenceEndDate === today) {
+      return { today: $_('datePicker.alreadyToday', { default: 'Already set to today' }) };
+    }
+    if (paymentDate >= today) {
+      return {
+        today: $_('datePicker.startDateInFuture', { default: 'Start date is today or later' })
+      };
+    }
+    return {};
+  });
+
+  // Split-from-date - Today disabled if already today or outside valid range
+  let splitFromDateDisabledButtons = $derived.by((): 'today'[] => {
+    if (!editingPaymentOriginal) return [];
+    const today = getLocalDateString();
+    if (splitFromDate === today) return ['today'];
+    const minDate = editingPaymentOriginal.payment_date.split('T')[0];
+    const maxDate = editingPaymentOriginal.recurrence_end_date?.split('T')[0] || '';
+    // Disable Today if outside range
+    if (today < minDate || (maxDate !== '' && today > maxDate)) {
+      return ['today'];
+    }
+    return [];
+  });
+
+  let splitFromDateDisabledReasons = $derived.by((): Record<string, string> => {
+    if (!editingPaymentOriginal) return {};
+    const today = getLocalDateString();
+    if (splitFromDate === today) {
+      return { today: $_('datePicker.alreadyToday', { default: 'Already set to today' }) };
+    }
+    const minDate = editingPaymentOriginal.payment_date.split('T')[0];
+    const maxDate = editingPaymentOriginal.recurrence_end_date?.split('T')[0] || '';
+    if (today < minDate || (maxDate !== '' && today > maxDate)) {
+      return {
+        today: $_('datePicker.todayOutOfRange', {
+          default: 'Today is outside the valid date range'
+        })
+      };
+    }
+    return {};
   });
 
   // Payment finalization status: true = final (default), false = draft
@@ -1247,7 +1285,13 @@
 
             <div class="field">
               <label for="payment-date">{$_('transactions.date')}</label>
-              <DateInput id="payment-date" bind:value={paymentDate} buttons={paymentDateButtons} />
+              <DateInput
+                id="payment-date"
+                bind:value={paymentDate}
+                buttons={['today']}
+                disabledButtons={paymentDateDisabledButtons}
+                disabledReasons={paymentDateDisabledReasons}
+              />
             </div>
           </div>
 
@@ -1574,7 +1618,9 @@
                       id="end-date"
                       bind:value={recurrenceEndDate}
                       min={paymentDate}
-                      buttons={recurrenceEndDateButtons}
+                      buttons={['clear', 'today']}
+                      disabledButtons={recurrenceEndDateDisabledButtons}
+                      disabledReasons={recurrenceEndDateDisabledReasons}
                     />
                   </div>
 
@@ -1626,7 +1672,9 @@
                     bind:value={splitFromDate}
                     min={editingPaymentOriginal.payment_date.split('T')[0]}
                     max={editingPaymentOriginal.recurrence_end_date?.split('T')[0] || ''}
-                    buttons={splitFromDateButtons}
+                    buttons={['today']}
+                    disabledButtons={splitFromDateDisabledButtons}
+                    disabledReasons={splitFromDateDisabledReasons}
                   />
                   <p class="split-hint">
                     {#if splitFromDate}

@@ -1,17 +1,13 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import Image from '@lucide/svelte/icons/image';
-  import Pencil from '@lucide/svelte/icons/pencil';
-  import Trash2 from '@lucide/svelte/icons/trash-2';
   import { getPayments, deletePayment, type PaymentWithContributions } from '$lib/api';
   import { participants, canEdit } from '$lib/stores/project';
   import { _ } from '$lib/i18n';
-  import { formatCurrency } from '$lib/format/currency';
-  import { formatDate, getLocalDateString, parseLocalDate } from '$lib/format/date';
-  import { SvelteDate } from 'svelte/reactivity';
+  import { getLocalDateString, parseLocalDate } from '$lib/format/date';
   import { getErrorKey } from '$lib/errors';
   import DateInput from '$lib/components/DateInput.svelte';
+  import TransactionCard from '$lib/components/TransactionCard.svelte';
 
   let transactions: PaymentWithContributions[] = $state([]);
   let loading = $state(true);
@@ -27,22 +23,47 @@
   let filterDateFrom = $state('');
   let filterDateTo = $state('');
 
-  // Filter date buttons - keep Clear (optional), Today only if not already today
-  let filterFromButtons = $derived.by((): ('clear' | 'today')[] => {
+  // Filter date buttons - use disabledButtons for Today when appropriate
+  let filterFromDisabledButtons = $derived.by((): 'today'[] => {
     const today = getLocalDateString();
-    return filterDateFrom === today ? ['clear'] : ['clear', 'today'];
+    return filterDateFrom === today ? ['today'] : [];
   });
 
-  let filterToButtons = $derived.by((): ('clear' | 'today')[] => {
+  let filterFromDisabledReasons = $derived.by((): Record<string, string> => {
     const today = getLocalDateString();
-    // Hide Today if already today OR if From date is today or future
-    if (filterDateTo === today) return ['clear'];
+    if (filterDateFrom === today) {
+      return { today: $_('datePicker.alreadyToday', { default: 'Already set to today' }) };
+    }
+    return {};
+  });
+
+  let filterToDisabledButtons = $derived.by((): 'today'[] => {
+    const today = getLocalDateString();
+    // Disable Today if already today OR if From date is today or future
+    if (filterDateTo === today) return ['today'];
     if (filterDateFrom) {
       const fromDate = parseLocalDate(filterDateFrom);
       const todayDate = parseLocalDate(today);
-      if (fromDate >= todayDate) return ['clear'];
+      if (fromDate >= todayDate) return ['today'];
     }
-    return ['clear', 'today'];
+    return [];
+  });
+
+  let filterToDisabledReasons = $derived.by((): Record<string, string> => {
+    const today = getLocalDateString();
+    if (filterDateTo === today) {
+      return { today: $_('datePicker.alreadyToday', { default: 'Already set to today' }) };
+    }
+    if (filterDateFrom) {
+      const fromDate = parseLocalDate(filterDateFrom);
+      const todayDate = parseLocalDate(today);
+      if (fromDate >= todayDate) {
+        return {
+          today: $_('datePicker.fromDateInFuture', { default: 'From date is today or later' })
+        };
+      }
+    }
+    return {};
   });
 
   // Pagination state
@@ -207,36 +228,6 @@
     }
   }
 
-  function isFutureDate(dateStr: string): boolean {
-    const today = new SvelteDate();
-    today.setHours(0, 0, 0, 0);
-    const date = new SvelteDate(dateStr);
-    return date > today;
-  }
-
-  function formatRecurrence(p: PaymentWithContributions): string {
-    if (!p.is_recurring || !p.recurrence_type) return '';
-
-    const interval = p.recurrence_interval ?? 1;
-    const type = p.recurrence_type;
-
-    if (interval === 1) {
-      return $_(`transactions.recurrence.${type}`);
-    }
-
-    // Map recurrence type to plural noun form for translation key
-    const typeToNoun: Record<string, string> = {
-      daily: 'Days',
-      weekly: 'Weeks',
-      monthly: 'Months',
-      yearly: 'Years'
-    };
-
-    return $_(`transactions.recurrence.everyN${typeToNoun[type] ?? type}`, {
-      values: { n: interval }
-    });
-  }
-
   function openImageModal(image: string) {
     modalImage = image;
     showImageModal = true;
@@ -334,13 +325,25 @@
     <!-- Date From -->
     <div class="filter-field">
       <label for="filter-date-from">{$_('transactions.dateFrom')}</label>
-      <DateInput id="filter-date-from" bind:value={filterDateFrom} buttons={filterFromButtons} />
+      <DateInput
+        id="filter-date-from"
+        bind:value={filterDateFrom}
+        buttons={['clear', 'today']}
+        disabledButtons={filterFromDisabledButtons}
+        disabledReasons={filterFromDisabledReasons}
+      />
     </div>
 
     <!-- Date To -->
     <div class="filter-field">
       <label for="filter-date-to">{$_('transactions.dateTo')}</label>
-      <DateInput id="filter-date-to" bind:value={filterDateTo} buttons={filterToButtons} />
+      <DateInput
+        id="filter-date-to"
+        bind:value={filterDateTo}
+        buttons={['clear', 'today']}
+        disabledButtons={filterToDisabledButtons}
+        disabledReasons={filterToDisabledReasons}
+      />
     </div>
   </div>
 
@@ -368,100 +371,35 @@
       </button>
     </div>
   {:else}
-    <ul class="transactions-list">
+    <div class="transactions-list">
       {#each visibleTransactions as p (p.id)}
-        <li>
-          <div class="transaction-header">
-            <div class="transaction-title">
-              <strong>{p.description}</strong>
-              <div class="transaction-icons">
-                {#if p.affects_balance === false}
-                  <span class="badge rule">{$_('transactions.typeRule')}</span>
-                {:else}
-                  {#if p.affects_payer_expectation}
-                    <span class="badge approved">{$_('transactions.statusApproved')}</span>
-                  {/if}
-                  {#if p.affects_receiver_expectation}
-                    <span class="badge earmarked">{$_('transactions.statusEarmarked')}</span>
-                  {/if}
-                {/if}
-                {#if !p.is_final}
-                  <span class="badge draft">{$_('transactions.statusDraft')}</span>
-                {/if}
-                {#if p.receipt_image}
-                  <button
-                    class="icon-btn"
-                    title={$_('transactions.viewReceipt')}
-                    onclick={() => openImageModal(p.receipt_image!)}><Image size={18} /></button
-                  >
-                {/if}
-              </div>
-            </div>
-            <span class="amount-group">
-              <span class="amount">{formatCurrency(p.amount)}</span>
-              {#if $canEdit}
-                <button
-                  class="edit-btn"
-                  onclick={() => editTransaction(p)}
-                  title={$_('transactions.editTransaction')}><Pencil size={18} /></button
-                >
-                <button
-                  class="delete-btn"
-                  onclick={() => handleDelete(p.id)}
-                  title={$_('transactions.deleteTransaction')}
-                >
-                  <Trash2 size={18} />
-                </button>
-              {/if}
-            </span>
-          </div>
-          <div class="transaction-meta">
-            {#if p.affects_balance === false}
-              <!-- Rule (expected minimum, doesn't affect balance) -->
-              {@const appliesTo = $participants.find((pr) => pr.id === p.receiver_account_id)}
-              <span class="rule-badge">{$_('transactions.typeRule')}</span>
-              {appliesTo?.name ?? $_('common.unknown')}
-            {:else if p.payer_id === null && p.receiver_account_id !== null}
-              <!-- External inflow -->
-              {@const receiver = $participants.find((pr) => pr.id === p.receiver_account_id)}
-              <span class="inflow-badge">{$_('transactions.externalInflow')}</span>
-              {$_('transactions.externalIndicator')} → {receiver?.name ?? $_('common.unknown')}
-            {:else if p.receiver_account_id !== null}
-              <!-- Internal transfer -->
-              {@const receiver = $participants.find((pr) => pr.id === p.receiver_account_id)}
-              <span class="transfer-badge">{$_('transactions.transfer')}</span>
-              {p.payer_name ?? $_('common.unknown')} → {receiver?.name ?? $_('common.unknown')}
-            {:else}
-              <!-- External expense -->
-              {$_('transactions.paidBy')}
-              {p.payer_name ?? $_('common.unknown')}
-            {/if}
-            {#if p.is_recurring && p.recurrence_end_date}
-              {$_('transactions.dateRangeFromTo', {
-                values: {
-                  startDate: formatDate(p.payment_date),
-                  endDate: formatDate(p.recurrence_end_date)
-                }
-              })}
-            {:else if isFutureDate(p.payment_date)}
-              {$_('transactions.startingFrom', { values: { date: formatDate(p.payment_date) } })}
-            {:else}
-              {$_('transactions.occurringOn', { values: { date: formatDate(p.payment_date) } })}
-            {/if}
-            {#if p.is_recurring}
-              <span class="recurrence-badge">{formatRecurrence(p)}</span>
-            {/if}
-          </div>
-          <div class="transaction-splits">
-            {#each p.contributions as c (c.participant_id)}
-              <span class="chip">
-                {c.participant_name}: {formatCurrency(c.amount)}
-              </span>
-            {/each}
-          </div>
-        </li>
+        {@const receiver = p.receiver_account_id
+          ? $participants.find((pr) => pr.id === p.receiver_account_id)
+          : null}
+        <TransactionCard
+          description={p.description}
+          amount={p.amount}
+          date={p.payment_date}
+          payerName={p.payer_name}
+          payerId={p.payer_id}
+          receiverName={receiver?.name}
+          receiverAccountId={p.receiver_account_id}
+          isFinal={p.is_final}
+          affectsBalance={p.affects_balance}
+          affectsPayerExpectation={p.affects_payer_expectation}
+          affectsReceiverExpectation={p.affects_receiver_expectation}
+          isRecurring={p.is_recurring}
+          recurrenceType={p.recurrence_type}
+          recurrenceInterval={p.recurrence_interval}
+          recurrenceEndDate={p.recurrence_end_date}
+          contributions={p.contributions}
+          receiptImage={p.receipt_image}
+          onEdit={$canEdit ? () => editTransaction(p) : undefined}
+          onDelete={$canEdit ? () => handleDelete(p.id) : undefined}
+          onViewReceipt={p.receipt_image ? () => openImageModal(p.receipt_image!) : undefined}
+        />
       {/each}
-    </ul>
+    </div>
 
     <!-- Load More Button -->
     {#if hasMoreTransactions}
@@ -519,9 +457,25 @@
     color: var(--accent, #7b61ff);
   }
 
-  /* Filters */
+  /* Filters - needs position and z-index to create stacking context above other cards */
   .filters {
     margin-bottom: 1.5rem;
+    overflow: visible;
+    position: relative;
+    z-index: 10;
+  }
+
+  .filters-grid {
+    overflow: visible;
+  }
+
+  .filter-field {
+    overflow: visible;
+  }
+
+  /* Ensure date picker dropdowns appear above other content */
+  .filter-field :global(.wx-dropdown) {
+    z-index: 100;
   }
 
   .filters-header {
@@ -597,192 +551,9 @@
   }
 
   .transactions-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-
-  .transactions-list li {
-    padding: 1rem;
-    border-bottom: 1px solid #eee;
-  }
-
-  .transactions-list li:last-child {
-    border-bottom: none;
-  }
-
-  .transaction-header {
     display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 0.5rem;
-  }
-
-  .transaction-title {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  .transaction-icons {
-    display: flex;
-    gap: 0.25rem;
-  }
-
-  .badge.draft {
-    background: #f0ad4e;
-    color: white;
-    padding: 0.15rem 0.4rem;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-  }
-
-  .badge.approved {
-    background: #28a745;
-    color: white;
-    padding: 0.15rem 0.4rem;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-  }
-
-  .badge.rule {
-    background: #7b61ff;
-    color: white;
-    padding: 0.15rem 0.4rem;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-  }
-
-  .badge.earmarked {
-    background: #17a2b8;
-    color: white;
-    padding: 0.15rem 0.4rem;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-  }
-
-  .icon-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .amount-group {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .amount {
-    font-weight: 600;
-    color: var(--accent, #7b61ff);
-    font-size: 1.1rem;
-  }
-
-  .edit-btn,
-  .delete-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .edit-btn {
-    color: #666;
-  }
-
-  .edit-btn:hover:not(:disabled) {
-    background: #f0f0f0;
-    color: var(--accent, #7b61ff);
-  }
-
-  .edit-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .delete-btn {
-    color: #c00;
-  }
-
-  .delete-btn:hover {
-    background: #fee;
-  }
-
-  .transaction-meta {
-    font-size: 0.85rem;
-    color: #666;
-    margin-bottom: 0.5rem;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    align-items: center;
-  }
-
-  .transfer-badge {
-    background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
-    color: white;
-    padding: 0.15rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    font-weight: 600;
-  }
-
-  .inflow-badge {
-    background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
-    color: white;
-    padding: 0.15rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    font-weight: 600;
-  }
-
-  .rule-badge {
-    background: linear-gradient(135deg, #7b61ff 0%, #5a45c9 100%);
-    color: white;
-    padding: 0.15rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    font-weight: 600;
-  }
-
-  .recurrence-badge {
-    background: linear-gradient(135deg, #7b61ff 0%, #5a45cc 100%);
-    color: white;
-    padding: 0.15rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    font-weight: 600;
-  }
-
-  .transaction-splits {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .chip {
-    background: #f0f0f0;
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.8rem;
+    flex-direction: column;
+    gap: 0.75rem;
   }
 
   /* Load More */
@@ -851,15 +622,6 @@
 
     .filters-grid {
       grid-template-columns: 1fr;
-    }
-
-    .transaction-header {
-      flex-direction: column;
-      gap: 0.5rem;
-    }
-
-    .amount-group {
-      align-self: flex-start;
     }
   }
 </style>

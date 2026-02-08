@@ -16,6 +16,11 @@
   "common.unknown": "Unknown",
   "common.total": "Total",
 
+  "datePicker.alreadyToday": "Already set to today",
+  "datePicker.fromDateInFuture": "From date is today or later",
+  "datePicker.startDateInFuture": "Start date is today or later",
+  "datePicker.todayOutOfRange": "Today is outside the valid date range",
+
   "nav.projects": "Projects",
   "nav.transactions": "Transactions",
   "nav.settings": "Settings",
@@ -466,7 +471,7 @@
   "history.actions.DELETE": "Deleted",
   "history.actions.UNDO": "Undone",
   "history.entities.all": "All Types",
-  "history.entities.transaction": "Payments",
+  "history.entities.transaction": "Transactions",
   "history.entities.participant": "Participants",
   "history.entities.project_member": "Members",
   "history.entities.project": "Project",

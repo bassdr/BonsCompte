@@ -17,6 +17,7 @@
   import { formatDateWithWeekday, formatMonthYear as formatMonthYearI18n } from '$lib/format/date';
   import { formatCurrency } from '$lib/format/currency';
   import DateInput from '$lib/components/DateInput.svelte';
+  import TransactionCard from '$lib/components/TransactionCard.svelte';
   import { SvelteSet, SvelteMap, SvelteDate } from 'svelte/reactivity';
   import type { PairwisePaymentBreakdown } from '$lib/api';
   import { Chart, registerables } from 'chart.js';
@@ -375,25 +376,48 @@
   let targetDate = $state(getLocalDateString());
   let endDate = $state<string | null>(null);
 
-  // Compute buttons for date pickers based on current values
-  // For "From" picker: hide Today if already today
-  let fromDateButtons = $derived.by((): ('clear' | 'today')[] => {
+  // Compute disabled buttons for date pickers based on current values
+  // For "From" picker: disable Today if already today
+  let fromDateDisabledButtons = $derived.by((): 'today'[] => {
     const today = getLocalDateString();
-    return targetDate === today ? [] : ['today'];
+    return targetDate === today ? ['today'] : [];
   });
 
-  // For "To" picker: hide Today if "From" date is today or in the future, OR if "To" is already today
-  let toDateButtons = $derived.by((): ('clear' | 'today')[] => {
+  let fromDateDisabledReasons = $derived.by((): Record<string, string> => {
+    const today = getLocalDateString();
+    if (targetDate === today) {
+      return { today: $_('datePicker.alreadyToday', { default: 'Already set to today' }) };
+    }
+    return {};
+  });
+
+  // For "To" picker: disable Today if "From" date is today or in the future, OR if "To" is already today
+  let toDateDisabledButtons = $derived.by((): 'today'[] => {
     const today = getLocalDateString();
     const fromDate = parseLocalDate(targetDate);
     const todayDate = parseLocalDate(today);
-    // Hide Today button if:
+    // Disable Today button if:
     // - From date is today or in the future, OR
     // - To date is already today
     if (fromDate >= todayDate || endDate === today) {
-      return ['clear'];
+      return ['today'];
     }
-    return ['clear', 'today'];
+    return [];
+  });
+
+  let toDateDisabledReasons = $derived.by((): Record<string, string> => {
+    const today = getLocalDateString();
+    const fromDate = parseLocalDate(targetDate);
+    const todayDate = parseLocalDate(today);
+    if (endDate === today) {
+      return { today: $_('datePicker.alreadyToday', { default: 'Already set to today' }) };
+    }
+    if (fromDate >= todayDate) {
+      return {
+        today: $_('datePicker.fromDateInFuture', { default: 'From date is today or later' })
+      };
+    }
+    return {};
   });
 
   // Horizon options for the range selector
@@ -1920,60 +1944,6 @@
     return formatDateWithWeekday(dateStr);
   }
 
-  // Calculate days difference
-  function getDaysDiff(dateStr: string): number {
-    const date = parseLocalDate(dateStr);
-    const today = new SvelteDate();
-    today.setHours(0, 0, 0, 0);
-    date.setHours(0, 0, 0, 0);
-    return Math.round((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  }
-
-  // Get relative date label
-  function getRelativeDateLabel(dateStr: string): string {
-    const days = getDaysDiff(dateStr);
-    if (days === 0) return $_('overview.today');
-    if (days === 1) return $_('overview.tomorrow');
-    if (days === -1) return $_('overview.yesterday');
-    if (days > 0 && days <= 7) return $_('overview.inDays', { values: { days } });
-    if (days < 0 && days >= -7) return $_('overview.daysAgo', { values: { days: Math.abs(days) } });
-    return '';
-  }
-
-  // Check if date is in the future
-  function isFutureDate(dateStr: string): boolean {
-    return getDaysDiff(dateStr) > 0;
-  }
-
-  // Format recurrence info for display
-  function formatRecurrence(payment: PaymentWithContributions): string {
-    if (!payment.is_recurring) return '';
-    const type = payment.recurrence_type || 'monthly';
-    const interval = payment.recurrence_interval || 1;
-    const timesPer = payment.recurrence_times_per;
-
-    // Get translated recurrence type (adjective form for single interval)
-    const typeKey = `transactions.recurrence.${type}`;
-    const translatedType = $_(typeKey);
-
-    if (timesPer) {
-      return `${timesPer}×/${translatedType}`;
-    } else if (interval === 1) {
-      return translatedType;
-    } else {
-      // Use proper noun form with correct gender agreement
-      const everyKey =
-        type === 'daily'
-          ? 'transactions.recurrence.everyNDays'
-          : type === 'weekly'
-            ? 'transactions.recurrence.everyNWeeks'
-            : type === 'monthly'
-              ? 'transactions.recurrence.everyNMonths'
-              : 'transactions.recurrence.everyNYears';
-      return $_(everyKey, { values: { n: interval } });
-    }
-  }
-
   let todayStr = $derived(getLocalDateString());
 
   // End date navigation - find previous/next payment dates relative to endDate
@@ -2208,7 +2178,13 @@
         >
 
         <div class="date-display">
-          <DateInput bind:value={targetDate} class="date-input" buttons={fromDateButtons} />
+          <DateInput
+            bind:value={targetDate}
+            class="date-input"
+            buttons={['today']}
+            disabledButtons={fromDateDisabledButtons}
+            disabledReasons={fromDateDisabledReasons}
+          />
         </div>
 
         <button
@@ -2291,7 +2267,9 @@
             bind:value={endDate}
             min={targetDate}
             class="date-input"
-            buttons={toDateButtons}
+            buttons={['clear', 'today']}
+            disabledButtons={toDateDisabledButtons}
+            disabledReasons={toDateDisabledReasons}
           />
         </div>
 
@@ -2522,21 +2500,36 @@
                                           >
                                         </button>
                                         {#if monthExpanded}
-                                          <ul class="breakdown-list">
+                                          <div class="breakdown-list">
                                             {#each monthData.items as item (item.payment_id)}
-                                              <li class="breakdown-item">
-                                                <span class="breakdown-desc"
-                                                  >{item.description}</span
-                                                >
-                                                <span class="breakdown-date"
-                                                  >{item.occurrence_date}</span
-                                                >
-                                                <span class="breakdown-amount"
-                                                  >{formatCurrency(item.amount)}</span
-                                                >
-                                              </li>
+                                              {@const payment = paymentMap.get(item.payment_id)}
+                                              {@const receiver = payment?.receiver_account_id
+                                                ? $participants.find(
+                                                    (pr) => pr.id === payment.receiver_account_id
+                                                  )
+                                                : null}
+                                              <TransactionCard
+                                                description={item.description}
+                                                amount={item.amount}
+                                                date={item.occurrence_date}
+                                                payerName={payment?.payer_name}
+                                                payerId={payment?.payer_id}
+                                                receiverName={receiver?.name}
+                                                receiverAccountId={payment?.receiver_account_id}
+                                                isFinal={payment?.is_final ?? true}
+                                                affectsBalance={payment?.affects_balance ?? true}
+                                                affectsPayerExpectation={payment?.affects_payer_expectation ??
+                                                  false}
+                                                affectsReceiverExpectation={payment?.affects_receiver_expectation ??
+                                                  false}
+                                                isRecurring={payment?.is_recurring ?? false}
+                                                recurrenceType={payment?.recurrence_type}
+                                                recurrenceInterval={payment?.recurrence_interval}
+                                                recurrenceEndDate={payment?.recurrence_end_date}
+                                                contributions={payment?.contributions ?? []}
+                                              />
                                             {/each}
-                                          </ul>
+                                          </div>
                                         {/if}
                                       </div>
                                     {/each}
@@ -2603,21 +2596,36 @@
                                           >
                                         </button>
                                         {#if monthExpanded}
-                                          <ul class="breakdown-list">
+                                          <div class="breakdown-list">
                                             {#each monthData.items as item (item.payment_id)}
-                                              <li class="breakdown-item">
-                                                <span class="breakdown-desc"
-                                                  >{item.description}</span
-                                                >
-                                                <span class="breakdown-date"
-                                                  >{item.occurrence_date}</span
-                                                >
-                                                <span class="breakdown-amount"
-                                                  >{formatCurrency(item.amount)}</span
-                                                >
-                                              </li>
+                                              {@const payment = paymentMap.get(item.payment_id)}
+                                              {@const receiver = payment?.receiver_account_id
+                                                ? $participants.find(
+                                                    (pr) => pr.id === payment.receiver_account_id
+                                                  )
+                                                : null}
+                                              <TransactionCard
+                                                description={item.description}
+                                                amount={item.amount}
+                                                date={item.occurrence_date}
+                                                payerName={payment?.payer_name}
+                                                payerId={payment?.payer_id}
+                                                receiverName={receiver?.name}
+                                                receiverAccountId={payment?.receiver_account_id}
+                                                isFinal={payment?.is_final ?? true}
+                                                affectsBalance={payment?.affects_balance ?? true}
+                                                affectsPayerExpectation={payment?.affects_payer_expectation ??
+                                                  false}
+                                                affectsReceiverExpectation={payment?.affects_receiver_expectation ??
+                                                  false}
+                                                isRecurring={payment?.is_recurring ?? false}
+                                                recurrenceType={payment?.recurrence_type}
+                                                recurrenceInterval={payment?.recurrence_interval}
+                                                recurrenceEndDate={payment?.recurrence_end_date}
+                                                contributions={payment?.contributions ?? []}
+                                              />
                                             {/each}
-                                          </ul>
+                                          </div>
                                         {/if}
                                       </div>
                                     {/each}
@@ -2764,21 +2772,42 @@
                                                   >
                                                 </button>
                                                 {#if monthExpanded}
-                                                  <ul class="breakdown-list">
+                                                  <div class="breakdown-list">
                                                     {#each monthData.items as item (item.payment_id)}
-                                                      <li class="breakdown-item">
-                                                        <span class="breakdown-desc"
-                                                          >{item.description}</span
-                                                        >
-                                                        <span class="breakdown-date"
-                                                          >{item.occurrence_date}</span
-                                                        >
-                                                        <span class="breakdown-amount"
-                                                          >{formatCurrency(item.amount)}</span
-                                                        >
-                                                      </li>
+                                                      {@const payment = paymentMap.get(
+                                                        item.payment_id
+                                                      )}
+                                                      {@const receiver =
+                                                        payment?.receiver_account_id
+                                                          ? $participants.find(
+                                                              (pr) =>
+                                                                pr.id ===
+                                                                payment.receiver_account_id
+                                                            )
+                                                          : null}
+                                                      <TransactionCard
+                                                        description={item.description}
+                                                        amount={item.amount}
+                                                        date={item.occurrence_date}
+                                                        payerName={payment?.payer_name}
+                                                        payerId={payment?.payer_id}
+                                                        receiverName={receiver?.name}
+                                                        receiverAccountId={payment?.receiver_account_id}
+                                                        isFinal={payment?.is_final ?? true}
+                                                        affectsBalance={payment?.affects_balance ??
+                                                          true}
+                                                        affectsPayerExpectation={payment?.affects_payer_expectation ??
+                                                          false}
+                                                        affectsReceiverExpectation={payment?.affects_receiver_expectation ??
+                                                          false}
+                                                        isRecurring={payment?.is_recurring ?? false}
+                                                        recurrenceType={payment?.recurrence_type}
+                                                        recurrenceInterval={payment?.recurrence_interval}
+                                                        recurrenceEndDate={payment?.recurrence_end_date}
+                                                        contributions={payment?.contributions ?? []}
+                                                      />
                                                     {/each}
-                                                  </ul>
+                                                  </div>
                                                 {/if}
                                               </div>
                                             {/each}
@@ -2850,21 +2879,42 @@
                                                   >
                                                 </button>
                                                 {#if monthExpanded}
-                                                  <ul class="breakdown-list">
+                                                  <div class="breakdown-list">
                                                     {#each monthData.items as item (item.payment_id)}
-                                                      <li class="breakdown-item">
-                                                        <span class="breakdown-desc"
-                                                          >{item.description}</span
-                                                        >
-                                                        <span class="breakdown-date"
-                                                          >{item.occurrence_date}</span
-                                                        >
-                                                        <span class="breakdown-amount"
-                                                          >{formatCurrency(item.amount)}</span
-                                                        >
-                                                      </li>
+                                                      {@const payment = paymentMap.get(
+                                                        item.payment_id
+                                                      )}
+                                                      {@const receiver =
+                                                        payment?.receiver_account_id
+                                                          ? $participants.find(
+                                                              (pr) =>
+                                                                pr.id ===
+                                                                payment.receiver_account_id
+                                                            )
+                                                          : null}
+                                                      <TransactionCard
+                                                        description={item.description}
+                                                        amount={item.amount}
+                                                        date={item.occurrence_date}
+                                                        payerName={payment?.payer_name}
+                                                        payerId={payment?.payer_id}
+                                                        receiverName={receiver?.name}
+                                                        receiverAccountId={payment?.receiver_account_id}
+                                                        isFinal={payment?.is_final ?? true}
+                                                        affectsBalance={payment?.affects_balance ??
+                                                          true}
+                                                        affectsPayerExpectation={payment?.affects_payer_expectation ??
+                                                          false}
+                                                        affectsReceiverExpectation={payment?.affects_receiver_expectation ??
+                                                          false}
+                                                        isRecurring={payment?.is_recurring ?? false}
+                                                        recurrenceType={payment?.recurrence_type}
+                                                        recurrenceInterval={payment?.recurrence_interval}
+                                                        recurrenceEndDate={payment?.recurrence_end_date}
+                                                        contributions={payment?.contributions ?? []}
+                                                      />
                                                     {/each}
-                                                  </ul>
+                                                  </div>
                                                 {/if}
                                               </div>
                                             {/each}
@@ -3073,92 +3123,27 @@
                           <div class="transactions">
                             {#each dateData.occurrences as occ (occ.payment_id)}
                               {@const payment = paymentMap.get(occ.payment_id)}
-                              {@const occRelative = getRelativeDateLabel(occ.occurrence_date)}
                               {@const receiver = occ.receiver_account_id
                                 ? $participants.find((pr) => pr.id === occ.receiver_account_id)
                                 : null}
-                              <div class="transaction">
-                                <div class="trans-header">
-                                  <span class="trans-desc">
-                                    {occ.description}
-                                    <span class="trans-badges">
-                                      {#if occ.affects_balance === false}
-                                        <span class="badge rule">{$_('transactions.typeRule')}</span
-                                        >
-                                      {:else}
-                                        {#if occ.affects_payer_expectation}
-                                          <span class="badge approved"
-                                            >{$_('transactions.statusApproved')}</span
-                                          >
-                                        {/if}
-                                        {#if occ.affects_receiver_expectation}
-                                          <span class="badge earmarked"
-                                            >{$_('transactions.statusEarmarked')}</span
-                                          >
-                                        {/if}
-                                      {/if}
-                                      {#if !occ.is_final}
-                                        <span class="badge draft"
-                                          >{$_('transactions.statusDraft')}</span
-                                        >
-                                      {/if}
-                                    </span>
-                                  </span>
-                                  <span class="trans-amount">{formatCurrency(occ.amount)}</span>
-                                </div>
-                                <div class="trans-meta">
-                                  {#if occ.payer_id === null && occ.receiver_account_id !== null}
-                                    <!-- External inflow -->
-                                    <span class="inflow-badge"
-                                      >{$_('transactions.externalInflow')}</span
-                                    >
-                                    {$_('transactions.externalIndicator')} → {receiver?.name ??
-                                      $_('common.unknown')}
-                                  {:else if occ.receiver_account_id !== null && payment}
-                                    <!-- Internal transfer -->
-                                    <span class="transfer-badge">{$_('transactions.transfer')}</span
-                                    >
-                                    {payment.payer_name ?? $_('common.unknown')} → {receiver?.name ??
-                                      $_('common.unknown')}
-                                  {:else if payment}
-                                    <!-- External expense -->
-                                    {$_('overview.paidBy')}
-                                    {payment.payer_name ?? $_('common.unknown')}
-                                  {/if}
-                                  {#if payment}
-                                    {#if payment.is_recurring && payment.recurrence_end_date}
-                                      {$_('overview.from')}
-                                      {formatDate(payment.payment_date)}
-                                      {$_('overview.to')}
-                                      {formatDate(payment.recurrence_end_date)}
-                                    {:else}
-                                      {isFutureDate(occ.occurrence_date)
-                                        ? $_('overview.from')
-                                        : $_('overview.on')}
-                                      {formatDate(occ.occurrence_date)}
-                                    {/if}
-                                    {#if payment.is_recurring}
-                                      <span class="recurrence-badge"
-                                        >{formatRecurrence(payment)}</span
-                                      >
-                                    {/if}
-                                  {:else}
-                                    {$_('overview.on')} {formatDate(occ.occurrence_date)}
-                                  {/if}
-                                  {#if occRelative}
-                                    <span class="trans-relative">({occRelative})</span>
-                                  {/if}
-                                </div>
-                                {#if payment && payment.contributions && payment.contributions.length > 0}
-                                  <div class="trans-splits">
-                                    {#each payment.contributions as c (c.participant_id)}
-                                      <span class="chip">
-                                        {c.participant_name}: {formatCurrency(c.amount)}
-                                      </span>
-                                    {/each}
-                                  </div>
-                                {/if}
-                              </div>
+                              <TransactionCard
+                                description={occ.description}
+                                amount={occ.amount}
+                                date={occ.occurrence_date}
+                                payerName={payment?.payer_name}
+                                payerId={occ.payer_id}
+                                receiverName={receiver?.name}
+                                receiverAccountId={occ.receiver_account_id}
+                                isFinal={occ.is_final}
+                                affectsBalance={occ.affects_balance}
+                                affectsPayerExpectation={occ.affects_payer_expectation}
+                                affectsReceiverExpectation={occ.affects_receiver_expectation}
+                                isRecurring={payment?.is_recurring ?? false}
+                                recurrenceType={payment?.recurrence_type}
+                                recurrenceInterval={payment?.recurrence_interval}
+                                recurrenceEndDate={payment?.recurrence_end_date}
+                                contributions={payment?.contributions ?? []}
+                              />
                             {/each}
                           </div>
                         </div>
@@ -3735,29 +3720,6 @@
     border-left: 2px solid #ddd;
   }
 
-  .breakdown-item {
-    display: flex;
-    gap: 0.5rem;
-    padding: 0.25rem 0;
-    flex-wrap: wrap;
-  }
-
-  .breakdown-desc {
-    flex: 1;
-    min-width: 150px;
-    color: #555;
-  }
-
-  .breakdown-date {
-    color: #888;
-    font-size: 0.75rem;
-  }
-
-  .breakdown-amount {
-    color: var(--accent, #7b61ff);
-    font-weight: 500;
-  }
-
   .no-ownership {
     color: #888;
     font-style: italic;
@@ -4104,142 +4066,10 @@
     gap: 0.75rem;
   }
 
-  .transaction {
+  .breakdown-list {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
-    padding: 0.75rem;
-    background: #fafafa;
-    border-radius: 6px;
-    border-left: 3px solid var(--accent, #7b61ff);
-  }
-
-  .trans-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  .trans-desc {
-    flex: 1;
-    font-weight: 500;
-    font-size: 0.95rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  .trans-amount {
-    font-weight: 600;
-    color: var(--accent, #7b61ff);
-    min-width: fit-content;
-    font-size: 0.95rem;
-  }
-
-  .trans-meta {
-    font-size: 0.85rem;
-    color: #777;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  .trans-relative {
-    color: #999;
-    font-style: italic;
-    font-size: 0.8rem;
-  }
-
-  .trans-splits {
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-    padding-top: 0.25rem;
-  }
-
-  .recurrence-badge {
-    padding: 0.15rem 0.5rem;
-    background: var(--accent, #7b61ff);
-    color: white;
-    border-radius: 12px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-  }
-
-  .trans-badges {
-    display: inline-flex;
-    gap: 0.25rem;
-    margin-left: 0.25rem;
-  }
-
-  .badge.draft {
-    background: #f0ad4e;
-    color: white;
-    padding: 0.15rem 0.4rem;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-  }
-
-  .badge.approved {
-    background: #28a745;
-    color: white;
-    padding: 0.15rem 0.4rem;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-  }
-
-  .badge.rule {
-    background: #7b61ff;
-    color: white;
-    padding: 0.15rem 0.4rem;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-  }
-
-  .badge.earmarked {
-    background: #17a2b8;
-    color: white;
-    padding: 0.15rem 0.4rem;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-  }
-
-  .transfer-badge {
-    background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
-    color: white;
-    padding: 0.15rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    font-weight: 600;
-  }
-
-  .inflow-badge {
-    background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
-    color: white;
-    padding: 0.15rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    font-weight: 600;
-  }
-
-  .chip {
-    padding: 0.25rem 0.5rem;
-    background: #e8e4ff;
-    border-radius: 12px;
-    font-size: 0.8rem;
-    color: #555;
+    gap: 0.75rem;
   }
 
   .participant-chip {

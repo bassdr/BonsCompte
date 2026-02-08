@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { DatePicker } from '@svar-ui/svelte-core';
+  // Use our forked DatePicker with disabledButtons support
+  import { DatePicker } from '$lib/components/svar';
   import { preferences } from '$lib/stores/preferences';
   import { getSVARDateFormat, parseLocalDate, getLocalDateString } from '$lib/format/date';
   import type { DateFormatType } from '$lib/format/date';
@@ -13,6 +14,8 @@
     class?: string;
     placeholder?: string;
     buttons?: ('clear' | 'today')[]; // Which buttons to show
+    disabledButtons?: ('clear' | 'today')[]; // Which buttons to disable (grayed out)
+    disabledReasons?: Record<string, string>; // Tooltip text for disabled buttons
   }
 
   let {
@@ -23,7 +26,9 @@
     max,
     class: className = '',
     placeholder,
-    buttons = ['clear', 'today']
+    buttons = ['clear', 'today'],
+    disabledButtons = [],
+    disabledReasons = {}
   }: Props = $props();
 
   // Convert ISO string to Date for SVAR
@@ -81,6 +86,8 @@
     {placeholder}
     editable={true}
     {buttons}
+    {disabledButtons}
+    {disabledReasons}
     onchange={handleChange}
   />
   {#if errorMessage}

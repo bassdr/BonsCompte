@@ -8,8 +8,10 @@
     type ChainVerification
   } from '$lib/api';
   import { isAdmin } from '$lib/stores/project';
-  import { _ } from '$lib/i18n';
+  import { _, getCurrentLocale } from '$lib/i18n';
   import { formatCurrency } from '$lib/format/currency';
+  import { preferences } from '$lib/stores/preferences';
+  import type { DateFormatType } from '$lib/format/date';
   import { SvelteSet, SvelteDate } from 'svelte/reactivity';
   import { getErrorKey } from '$lib/errors';
 
@@ -41,7 +43,7 @@
   // Entity type options
   let entityTypes = $derived([
     { value: '', label: $_('history.entities.all') },
-    { value: 'payment', label: $_('history.entities.payment') },
+    { value: 'payment', label: $_('history.entities.transaction') },
     { value: 'participant', label: $_('history.entities.participant') },
     { value: 'project_member', label: $_('history.entities.project_member') },
     { value: 'project', label: $_('history.entities.project') }
@@ -145,10 +147,27 @@
 
   function formatDateTime(dateStr: string): string {
     const date = new SvelteDate(dateStr);
-    return date.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
+    const lang = getCurrentLocale();
+    const format = ($preferences.date_format as DateFormatType) || 'mdy';
+
+    // Get date format options based on user preference
+    let dateOptions: Intl.DateTimeFormatOptions;
+    switch (format) {
+      case 'dmy':
+        dateOptions = { day: 'numeric', month: 'short', year: 'numeric' };
+        break;
+      case 'ymd':
+        dateOptions = { year: 'numeric', month: 'short', day: 'numeric' };
+        break;
+      case 'iso':
+        dateOptions = { year: 'numeric', month: '2-digit', day: '2-digit' };
+        break;
+      default: // mdy
+        dateOptions = { month: 'short', day: 'numeric', year: 'numeric' };
+    }
+
+    return date.toLocaleString(lang, {
+      ...dateOptions,
       hour: '2-digit',
       minute: '2-digit'
     });

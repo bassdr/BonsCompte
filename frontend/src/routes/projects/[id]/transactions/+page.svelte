@@ -8,8 +8,21 @@
   import { participants, canEdit } from '$lib/stores/project';
   import { _ } from '$lib/i18n';
   import { formatCurrency } from '$lib/format/currency';
-  import { formatDate, getLocalDateString, parseLocalDate } from '$lib/format/date';
+  import {
+    formatDate as formatDateBase,
+    getLocalDateString,
+    parseLocalDate,
+    type DateFormatType
+  } from '$lib/format/date';
+  import { preferences } from '$lib/stores/preferences';
   import { SvelteDate } from 'svelte/reactivity';
+
+  // Reactive date format wrapper
+  let dateFormat = $derived($preferences.date_format as DateFormatType);
+  function formatDate(dateStr: string | null | undefined): string {
+    if (!dateStr) return '';
+    return formatDateBase(dateStr, dateFormat);
+  }
   import { getErrorKey } from '$lib/errors';
   import DateInput from '$lib/components/DateInput.svelte';
 

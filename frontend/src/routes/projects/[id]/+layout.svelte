@@ -15,7 +15,8 @@
   } from '$lib/stores/project';
   import type { Snippet } from 'svelte';
   import { _ } from '$lib/i18n';
-  import { formatDateWithWeekday, getLocalDateString } from '$lib/format';
+  import { formatDateWithWeekday, getLocalDateString, type DateFormatType } from '$lib/format';
+  import { preferences } from '$lib/stores/preferences';
   import { SvelteMap } from 'svelte/reactivity';
   import { getDebts, type DebtSummary, type PaymentOccurrence } from '$lib/api';
   import { getErrorKey } from '$lib/errors';
@@ -430,7 +431,10 @@
                       {$_('overview.expectedMinWillGoNegative', {
                         values: {
                           pool: warnStats.poolName,
-                          date: formatDateWithWeekday(warnStats.expectedMinFirstNegativeDate)
+                          date: formatDateWithWeekday(
+                            warnStats.expectedMinFirstNegativeDate,
+                            $preferences.date_format as DateFormatType
+                          )
                         }
                       })}
                     {/if}
@@ -444,7 +448,10 @@
                       {$_('overview.poolWillGoBelow', {
                         values: {
                           pool: warnStats.poolName,
-                          date: formatDateWithWeekday(warnStats.poolFirstNegativeDate)
+                          date: formatDateWithWeekday(
+                            warnStats.poolFirstNegativeDate,
+                            $preferences.date_format as DateFormatType
+                          )
                         }
                       })}
                     {/if}
@@ -464,7 +471,10 @@
                         values: {
                           user: userWarn.participantName,
                           pool: warnStats.poolName,
-                          date: formatDateWithWeekday(userWarn.firstBelowExpectedDate)
+                          date: formatDateWithWeekday(
+                            userWarn.firstBelowExpectedDate,
+                            $preferences.date_format as DateFormatType
+                          )
                         }
                       })}
                     {/if}

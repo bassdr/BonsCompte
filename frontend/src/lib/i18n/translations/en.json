@@ -16,6 +16,12 @@
   "common.unknown": "Unknown",
   "common.total": "Total",
 
+  "dates.today": "today",
+  "dates.tomorrow": "tomorrow",
+  "dates.yesterday": "yesterday",
+  "dates.inDays": "in {days} days",
+  "dates.daysAgo": "{days} days ago",
+
   "nav.projects": "Projects",
   "nav.transactions": "Transactions",
   "nav.settings": "Settings",

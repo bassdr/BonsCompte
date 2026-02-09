@@ -14,7 +14,12 @@
   } from '$lib/api';
   import { _ } from '$lib/i18n';
   import { participants } from '$lib/stores/project';
-  import { formatDateWithWeekday, formatMonthYear as formatMonthYearI18n } from '$lib/format/date';
+  import {
+    formatDateWithWeekday,
+    formatMonthYear as formatMonthYearI18n,
+    type DateFormatType
+  } from '$lib/format/date';
+  import { preferences } from '$lib/stores/preferences';
   import { formatCurrency } from '$lib/format/currency';
   import DateInput from '$lib/components/DateInput.svelte';
   import { SvelteSet, SvelteMap, SvelteDate } from 'svelte/reactivity';
@@ -22,6 +27,8 @@
   import { Chart, registerables } from 'chart.js';
   import { getErrorKey } from '$lib/errors';
   import 'chartjs-adapter-date-fns';
+  import { fr, enUS } from 'date-fns/locale';
+  import { getCurrentLocale } from '$lib/i18n';
 
   // Chart.js annotation plugin - loaded dynamically for SSR safety
   let annotationPlugin: typeof import('chartjs-plugin-annotation').default | null = null;
@@ -1343,7 +1350,10 @@
             type: 'time',
             time: {
               unit: 'day',
-              displayFormats: { day: 'MMM d' }
+              displayFormats: { day: getChartDateFormat() }
+            },
+            adapters: {
+              date: { locale: getDateFnsLocale() }
             },
             title: { display: false }
           },
@@ -1520,7 +1530,10 @@
             type: 'time',
             time: {
               unit: 'day',
-              displayFormats: { day: 'MMM d' }
+              displayFormats: { day: getChartDateFormat() }
+            },
+            adapters: {
+              date: { locale: getDateFnsLocale() }
             },
             title: { display: false }
           },
@@ -1916,8 +1929,32 @@
     }
   }
 
+  // Reactive date format from user preferences
+  let dateFormat = $derived($preferences.date_format as DateFormatType);
+
   function formatDate(dateStr: string): string {
-    return formatDateWithWeekday(dateStr);
+    return formatDateWithWeekday(dateStr, dateFormat);
+  }
+
+  // Get date-fns locale for charts
+  function getDateFnsLocale() {
+    const lang = getCurrentLocale();
+    return lang.startsWith('fr') ? fr : enUS;
+  }
+
+  // Get chart X-axis date format based on user preference
+  function getChartDateFormat(): string {
+    switch (dateFormat) {
+      case 'iso':
+        return 'MM-dd'; // 02-09
+      case 'ymd':
+        return 'MM/dd'; // 02/09
+      case 'dmy':
+        return 'dd/MM'; // 09/02
+      case 'mdy':
+      default:
+        return 'MM/dd'; // 02/09
+    }
   }
 
   // Calculate days difference

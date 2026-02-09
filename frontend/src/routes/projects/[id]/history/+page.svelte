@@ -43,7 +43,7 @@
   // Entity type options
   let entityTypes = $derived([
     { value: '', label: $_('history.entities.all') },
-    { value: 'payment', label: $_('history.entities.payment') },
+    { value: 'payment', label: $_('history.entities.transaction') },
     { value: 'participant', label: $_('history.entities.participant') },
     { value: 'project_member', label: $_('history.entities.project_member') },
     { value: 'project', label: $_('history.entities.project') }

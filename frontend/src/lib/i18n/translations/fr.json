@@ -22,6 +22,11 @@
   "dates.inDays": "dans {days} jours",
   "dates.daysAgo": "il y a {days} jours",
 
+  "datePicker.alreadyToday": "Déjà défini à aujourd'hui",
+  "datePicker.fromDateInFuture": "La date de début est aujourd'hui ou plus tard",
+  "datePicker.startDateInFuture": "La date de début est aujourd'hui ou plus tard",
+  "datePicker.todayOutOfRange": "Aujourd'hui est en dehors de la plage de dates valide",
+
   "nav.projects": "Projets",
   "nav.transactions": "Transactions",
   "nav.settings": "Paramètres",
@@ -472,7 +477,7 @@
   "history.actions.DELETE": "Supprimé",
   "history.actions.UNDO": "Annulé",
   "history.entities.all": "Tous les types",
-  "history.entities.payment": "Paiements",
+  "history.entities.transaction": "Transactions",
   "history.entities.participant": "Participants",
   "history.entities.project_member": "Membres",
   "history.entities.project": "Projet",

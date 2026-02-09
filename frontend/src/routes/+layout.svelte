@@ -17,7 +17,8 @@
     isLocaleLoaded
   } from '$lib/i18n';
   import { preferences } from '$lib/stores/preferences';
-  import { Locale, Material } from '@svar-ui/svelte-core';
+  // Use our forked SVAR components with separate fonts/icons props
+  import { Locale, Material } from '$lib/components/svar';
   // @ts-expect-error - @svar-ui/core-locales doesn't have types
   import { en, fr } from '@svar-ui/core-locales';
   import {

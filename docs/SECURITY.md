@@ -239,9 +239,9 @@ bonscompte-admin approve username
 - Single compromised project member cannot approve alone (unless admin)
 - Need 33% of project members to collude
 
-✅ **Brute force is rate-limited**
-- Auth endpoints: 5 requests/60s
-- General API: 100 requests/second
+✅ **Brute force is rate-limited** (via reverse proxy)
+- Configure NGINX/Caddy to limit auth endpoints (recommended: 5 req/min)
+- See `docs/NGINX_PRODUCTION.conf` for example configuration
 - Token validation happens server-side
 
 ### What This Does NOT Protect Against
@@ -425,7 +425,7 @@ UPDATE project_members SET role = 'editor' WHERE user_id = <id>;
 - **Rust** + **Axum 0.8** + **SQLite** + **SQLx**
 - **JWT**: `jsonwebtoken` crate
 - **Password hashing**: Argon2 (OWASP recommended)
-- **Rate limiting**: `tower_governor` (5 req/min auth, 100 req/s general)
+- **Rate limiting**: Handled by reverse proxy (NGINX/Caddy) - see `docs/NGINX_PRODUCTION.conf`
 - **Migrations**: Inline SQL in `backend/src/db.rs`
 
 ### Frontend

@@ -24,13 +24,12 @@ export function getLocalDateString(date: Date = new Date()): string {
 }
 
 /**
- * Format a date according to user preferences
+ * Format a date according to user preferences.
+ * Pass dateFormat explicitly for reactivity in Svelte components.
+ * This produces exact format strings (not locale-dependent).
  */
-export function formatDate(dateStr: string | Date): string {
+export function formatDate(dateStr: string | Date, dateFormat?: DateFormatType): string {
   if (!dateStr) return '';
-
-  const prefs = preferences.get();
-  const lang = getCurrentLocale();
 
   const date = typeof dateStr === 'string' ? parseLocalDate(dateStr) : dateStr;
 
@@ -39,32 +38,51 @@ export function formatDate(dateStr: string | Date): string {
     return String(dateStr);
   }
 
-  const format = (prefs.date_format as DateFormatType) || 'mdy';
+  // Use passed format, or fall back to preferences (for non-reactive contexts)
+  const format = dateFormat ?? (preferences.get().date_format as DateFormatType) ?? 'mdy';
 
-  if (format === 'iso') {
-    return getLocalDateString(date);
-  }
-
-  const options: Intl.DateTimeFormatOptions = getDateFormatOptions(format);
-  return new Intl.DateTimeFormat(lang, options).format(date);
+  return formatDateExact(date, format);
 }
 
 /**
- * Format a date with weekday
+ * Format a date with weekday prefix.
+ * Pass dateFormat explicitly for reactivity in Svelte components.
  */
-export function formatDateWithWeekday(dateStr: string | Date): string {
-  const prefs = preferences.get();
+export function formatDateWithWeekday(dateStr: string | Date, dateFormat?: DateFormatType): string {
   const lang = getCurrentLocale();
-
   const date = typeof dateStr === 'string' ? parseLocalDate(dateStr) : dateStr;
-  const format = (prefs.date_format as DateFormatType) || 'mdy';
 
-  const options: Intl.DateTimeFormatOptions = {
-    weekday: 'short',
-    ...getDateFormatOptions(format)
-  };
+  // Use passed format, or fall back to preferences (for non-reactive contexts)
+  const format = dateFormat ?? (preferences.get().date_format as DateFormatType) ?? 'mdy';
 
-  return new Intl.DateTimeFormat(lang, options).format(date);
+  // Get localized weekday
+  const weekday = new Intl.DateTimeFormat(lang, { weekday: 'short' }).format(date);
+
+  // Get exact date format
+  const dateFormatted = formatDateExact(date, format);
+
+  return `${weekday} ${dateFormatted}`;
+}
+
+/**
+ * Format date exactly according to format preference (not locale-dependent for ordering).
+ */
+function formatDateExact(date: Date, format: DateFormatType): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  switch (format) {
+    case 'iso':
+      return `${year}-${month}-${day}`;
+    case 'ymd':
+      return `${year}/${month}/${day}`;
+    case 'dmy':
+      return `${day}/${month}/${year}`;
+    case 'mdy':
+    default:
+      return `${month}/${day}/${year}`;
+  }
 }
 
 /**
@@ -81,25 +99,18 @@ export function formatMonthYear(dateStr: string | Date): string {
 }
 
 /**
- * Format a date in short form (for compact displays)
+ * Get the number of days between a date and today.
+ * Positive = future, negative = past, 0 = today.
  */
-export function formatDateShort(dateStr: string | Date): string {
-  const prefs = preferences.get();
-  const lang = getCurrentLocale();
+export function getDaysDiff(dateStr: string | Date): number {
+  const date = typeof dateStr === 'string' ? parseLocalDate(dateStr) : new Date(dateStr);
+  const today = new Date();
 
-  const date = typeof dateStr === 'string' ? parseLocalDate(dateStr) : dateStr;
-  const format = (prefs.date_format as DateFormatType) || 'mdy';
+  // Normalize to midnight
+  date.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
 
-  if (format === 'iso') {
-    return getLocalDateString(date);
-  }
-
-  const options: Intl.DateTimeFormatOptions = {
-    month: 'short',
-    day: 'numeric'
-  };
-
-  return new Intl.DateTimeFormat(lang, options).format(date);
+  return Math.round((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
 /**
@@ -118,20 +129,5 @@ export function getSVARDateFormat(dateFormat: DateFormatType = 'mdy'): string {
       return '%Y-%m-%d'; // 2026-02-06
     default:
       return '%m/%d/%Y';
-  }
-}
-
-function getDateFormatOptions(format: DateFormatType): Intl.DateTimeFormatOptions {
-  switch (format) {
-    case 'mdy':
-      return { month: 'short', day: 'numeric', year: 'numeric' };
-    case 'dmy':
-      return { day: 'numeric', month: 'short', year: 'numeric' };
-    case 'ymd':
-      return { year: 'numeric', month: 'short', day: 'numeric' };
-    case 'iso':
-      return { year: 'numeric', month: '2-digit', day: '2-digit' };
-    default:
-      return { month: 'short', day: 'numeric', year: 'numeric' };
   }
 }

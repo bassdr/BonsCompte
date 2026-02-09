@@ -16,6 +16,12 @@
   "common.unknown": "Inconnu",
   "common.total": "Total",
 
+  "dates.today": "aujourd'hui",
+  "dates.tomorrow": "demain",
+  "dates.yesterday": "hier",
+  "dates.inDays": "dans {days} jours",
+  "dates.daysAgo": "il y a {days} jours",
+
   "datePicker.alreadyToday": "Déjà défini à aujourd'hui",
   "datePicker.fromDateInFuture": "La date de début est aujourd'hui ou plus tard",
   "datePicker.startDateInFuture": "La date de début est aujourd'hui ou plus tard",

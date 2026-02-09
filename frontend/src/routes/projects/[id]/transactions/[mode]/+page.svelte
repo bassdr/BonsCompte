@@ -12,6 +12,8 @@
   import { auth } from '$lib/auth';
   import { _ } from '$lib/i18n';
   import { formatCurrency } from '$lib/format/currency';
+  import { formatDate as formatDateBase, type DateFormatType } from '$lib/format/date';
+  import { preferences } from '$lib/stores/preferences';
   import { SvelteDate } from 'svelte/reactivity';
   import { getErrorKey } from '$lib/errors';
   import DateInput from '$lib/components/DateInput.svelte';
@@ -1190,10 +1192,11 @@
     }
   }
 
+  // Reactive date format from user preferences
+  let dateFormat = $derived($preferences.date_format as DateFormatType);
+
   function formatDate(dateStr: string): string {
-    const [year, month, day] = dateStr.split('T')[0].split('-').map(Number);
-    const date = new SvelteDate(year, month - 1, day);
-    return date.toLocaleDateString();
+    return formatDateBase(dateStr, dateFormat);
   }
 </script>
 

@@ -8,11 +8,11 @@
     type ChainVerification
   } from '$lib/api';
   import { isAdmin } from '$lib/stores/project';
-  import { _, getCurrentLocale } from '$lib/i18n';
+  import { _ } from '$lib/i18n';
   import { formatCurrency } from '$lib/format/currency';
+  import { formatDate, getDaysDiff, type DateFormatType } from '$lib/format/date';
   import { preferences } from '$lib/stores/preferences';
-  import type { DateFormatType } from '$lib/format/date';
-  import { SvelteSet, SvelteDate } from 'svelte/reactivity';
+  import { SvelteSet } from 'svelte/reactivity';
   import { getErrorKey } from '$lib/errors';
 
   let entries: HistoryEntry[] = $state([]);
@@ -145,47 +145,28 @@
     }
   }
 
-  function formatDateTime(dateStr: string): string {
-    const date = new SvelteDate(dateStr);
-    const lang = getCurrentLocale();
-    const format = ($preferences.date_format as DateFormatType) || 'mdy';
+  // Reactive date format from user preferences
+  let dateFormat = $derived($preferences.date_format as DateFormatType);
 
-    // Get date format options based on user preference
-    let dateOptions: Intl.DateTimeFormatOptions;
-    switch (format) {
-      case 'dmy':
-        dateOptions = { day: 'numeric', month: 'short', year: 'numeric' };
-        break;
-      case 'ymd':
-        dateOptions = { year: 'numeric', month: 'short', day: 'numeric' };
-        break;
-      case 'iso':
-        dateOptions = { year: 'numeric', month: '2-digit', day: '2-digit' };
-        break;
-      default: // mdy
-        dateOptions = { month: 'short', day: 'numeric', year: 'numeric' };
-    }
-
-    return date.toLocaleString(lang, {
-      ...dateOptions,
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+  function formatHistoryDate(dateStr: string): string {
+    return formatDate(dateStr, dateFormat);
   }
 
-  function formatRelativeTime(dateStr: string): string {
-    const date = new SvelteDate(dateStr);
-    const now = new SvelteDate();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
+  function formatRelativeLabel(dateStr: string): string {
+    const days = getDaysDiff(dateStr);
 
-    if (diffMins < 1) return 'just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return formatDateTime(dateStr);
+    if (days === 0) return $_('dates.today');
+    if (days === 1) return $_('dates.tomorrow');
+    if (days === -1) return $_('dates.yesterday');
+    if (days > 1 && days <= 7) return $_('dates.inDays', { values: { days } });
+    if (days < -1 && days >= -7) return $_('dates.daysAgo', { values: { days: Math.abs(days) } });
+    return '';
+  }
+
+  function formatHistoryDateTime(dateStr: string): string {
+    const date = formatHistoryDate(dateStr);
+    const relative = formatRelativeLabel(dateStr);
+    return relative ? `${date} (${relative})` : date;
   }
 
   function getActionColor(action: string): string {
@@ -372,8 +353,8 @@
           {#if summary}
             <span class="entry-summary">{summary}</span>
           {/if}
-          <span class="entry-time" title={formatDateTime(entry.created_at)}>
-            {formatRelativeTime(entry.created_at)}
+          <span class="entry-time">
+            {formatHistoryDateTime(entry.created_at)}
           </span>
         </div>
 
@@ -411,7 +392,7 @@
               <span class="correlation"
                 >{$_('history.correlation')}: {entry.correlation_id.substring(0, 8)}...</span
               >
-              <span class="full-time">{formatDateTime(entry.created_at)}</span>
+              <span class="full-time">{formatHistoryDateTime(entry.created_at)}</span>
             </div>
           </div>
         {/if}

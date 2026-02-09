@@ -180,9 +180,9 @@ This ensures that only NGINX can access the containers, not external traffic.
 
 ### Rate Limiting
 
-⚠️ **IMPORTANT**: The backend has its own rate limiting (100 req/s for API, 5 req/min for auth). NGINX rate limits should be **higher** than backend limits to avoid blocking legitimate traffic before it reaches the backend.
+Rate limiting should be configured in NGINX since it sees real client IPs (the backend only sees the proxy IP).
 
-**Recommended configuration** (matches backend limits):
+**Recommended configuration**:
 
 ```nginx
 # In http block (usually in nginx.conf or at top of conf.d file)

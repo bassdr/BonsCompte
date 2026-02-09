@@ -1,6 +1,5 @@
 use axum::{extract::DefaultBodyLimit, http::Method, middleware, routing::get, Router};
-use std::{net::SocketAddr, sync::Arc};
-use tower_governor::{governor::GovernorConfigBuilder, GovernorLayer};
+use std::net::SocketAddr;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
@@ -102,14 +101,6 @@ async fn main() {
     // Load configuration
     let config = Config::from_env();
     tracing::info!("Starting BonsCompte backend...");
-    tracing::info!(
-        "Rate limiting: {}",
-        if config.rate_limit_enabled {
-            "enabled (set RATE_LIMIT_ENABLED=false if behind reverse proxy)"
-        } else {
-            "disabled (reverse proxy should handle rate limiting)"
-        }
-    );
 
     // Initialize database
     let pool = db::init_pool(&config.database_url)
@@ -126,7 +117,6 @@ async fn main() {
     // Extract values before moving config into state
     let host = config.host.clone();
     let port = config.port;
-    let rate_limit_enabled = config.rate_limit_enabled;
 
     // Create app state
     let state = AppState {
@@ -147,25 +137,6 @@ async fn main() {
         ])
         .allow_headers(Any);
 
-    // Rate limiting configuration - stricter for auth routes
-    // Auth: 5 requests per 60 seconds (to prevent brute-force)
-    let auth_rate_limit = Arc::new(
-        GovernorConfigBuilder::default()
-            .per_second(1)
-            .burst_size(5)
-            .finish()
-            .expect("Failed to create auth rate limiter"),
-    );
-
-    // General API: 100 requests per minute
-    let api_rate_limit = Arc::new(
-        GovernorConfigBuilder::default()
-            .per_second(100)
-            .burst_size(100)
-            .finish()
-            .expect("Failed to create API rate limiter"),
-    );
-
     // Project sub-routes (nested under /api/projects/{id})
     let project_routes = Router::new()
         .nest("/participants", routes::participants::router())
@@ -174,19 +145,12 @@ async fn main() {
         .nest("/debts", routes::debts::router())
         .nest("/history", routes::history::router());
 
-    // Auth routes with optional rate limiting (5 requests per 60s to prevent brute-force)
-    let auth_routes = if rate_limit_enabled {
-        routes::auth::router().layer(GovernorLayer::new(auth_rate_limit))
-    } else {
-        routes::auth::router()
-    };
-
     // Build router - all routes at root level (use reverse proxy for /api prefix if needed)
-    let mut app = Router::new()
-        // Health check (no rate limiting)
+    let app = Router::new()
+        // Health check
         .route("/health", get(|| async { "OK" }))
-        // Public routes (auth) with optional rate limiting
-        .nest("/auth", auth_routes)
+        // Public routes (auth)
+        .nest("/auth", routes::auth::router())
         // Recovery routes (some public, some require auth)
         .nest("/recovery", routes::recovery::router())
         // Protected routes (with extensions middleware)
@@ -198,15 +162,8 @@ async fn main() {
         .layer(middleware::from_fn_with_state(
             state.clone(),
             inject_extensions,
-        ));
-
-    // Conditionally apply general rate limiting (100 requests per second)
-    if rate_limit_enabled {
-        app = app.layer(GovernorLayer::new(api_rate_limit));
-    }
-
-    // Allow up to 6 MiB bodies (receipt images can be up to 5 MB, base64 adds ~33% overhead)
-    let app = app
+        ))
+        // Allow up to 6 MiB bodies (receipt images can be up to 5 MB, base64 adds ~33% overhead)
         .layer(DefaultBodyLimit::max(6 * 1024 * 1024))
         // Global middleware
         .layer(TraceLayer::new_for_http())

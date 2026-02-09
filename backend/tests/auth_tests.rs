@@ -36,7 +36,6 @@ async fn create_test_app() -> (Router, SqlitePool) {
         jwt_secret: jwt_secret.clone(),
         host: "127.0.0.1".to_string(),
         port: 8000,
-        rate_limit_enabled: false,
         max_projects_per_user: None,
     };
 

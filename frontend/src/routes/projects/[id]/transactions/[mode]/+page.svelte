@@ -482,6 +482,10 @@
   $effect(() => {
     if (!isRecurring) return;
 
+    const defaultWeekday = paymentDate ? getDefaultWeekday(paymentDate) : 0;
+    const defaultMonthDay = paymentDate ? getDefaultMonthDay(paymentDate) : 1;
+    const defaultMonth = paymentDate ? getDefaultMonth(paymentDate) : 1;
+
     // Weekly: preserve user modifications when changing interval (1-4), otherwise reset
     if (recurrenceType === 'weekly') {
       const shouldPreserve =
@@ -498,23 +502,36 @@
       } else if (
         recurrenceWeekdays.length === 0 ||
         recurrenceInterval > 4 ||
-        recurrenceWeekdays.length !== recurrenceInterval ||
-        !userModifiedWeekdays
+        recurrenceWeekdays.length !== recurrenceInterval
       ) {
         resetWeekdays();
+      } else if (!userModifiedWeekdays) {
+        // Only reset if default actually differs
+        const expectedWeekdays = initializeWeekdayArrays(recurrenceInterval, defaultWeekday);
+        if (JSON.stringify(recurrenceWeekdays) !== JSON.stringify(expectedWeekdays)) {
+          resetWeekdays();
+        }
       }
     }
 
     // Monthly/Yearly days: preserve user modifications when interval is 1, otherwise reset
     if (recurrenceType === 'monthly' || recurrenceType === 'yearly') {
-      if (recurrenceMonthdays.length === 0 || recurrenceInterval > 1 || !userModifiedMonthdays) {
+      if (
+        recurrenceMonthdays.length === 0 ||
+        recurrenceInterval > 1 ||
+        (!userModifiedMonthdays && recurrenceMonthdays[0] !== defaultMonthDay)
+      ) {
         resetMonthdays();
       }
     }
 
     // Yearly months: preserve user modifications when interval is 1, otherwise reset
     if (recurrenceType === 'yearly') {
-      if (recurrenceMonths.length === 0 || recurrenceInterval > 1 || !userModifiedMonths) {
+      if (
+        recurrenceMonths.length === 0 ||
+        recurrenceInterval > 1 ||
+        (!userModifiedMonths && recurrenceMonths[0] !== defaultMonth)
+      ) {
         resetMonths();
       }
     }

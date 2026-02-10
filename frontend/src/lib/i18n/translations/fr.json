@@ -317,6 +317,7 @@
   "transactions.selectDaysOfMonth": "Sélectionnez les jours du mois :",
   "transactions.monthdayWarning": "Remarque : Pour les mois avec moins de jours, le dernier jour du mois sera utilisé.",
   "transactions.selectMonths": "Sélectionnez les mois :",
+  "transactions.fixedForInterval": "fixé pour cet intervalle",
   "transactions.endDateOptional": "Date de fin (optionnelle)",
   "transactions.occurrencesOptional": "Nombre d'occurrences (optionnel)",
   "transactions.occurrencesPlaceholder": "ex. 12",

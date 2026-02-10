@@ -177,15 +177,16 @@
   ]);
 
   // Derived values for UI logic
-  let showWeekdaySelector = $derived(
-    isRecurring && recurrenceType === 'weekly' && recurrenceInterval <= 4
-  );
+  let showMonthSelector = $derived(isRecurring && recurrenceType === 'yearly');
   let showMonthdaySelector = $derived(
-    isRecurring && recurrenceType === 'monthly' && recurrenceInterval === 1
+    isRecurring && (recurrenceType === 'monthly' || recurrenceType === 'yearly')
   );
-  let showMonthSelector = $derived(
-    isRecurring && recurrenceType === 'yearly' && recurrenceInterval === 1
-  );
+  let showWeekdaySelector = $derived(isRecurring && recurrenceType === 'weekly');
+
+  // Disabled state: interval > 1 means user can't customize days/months
+  let monthSelectorDisabled = $derived(recurrenceInterval > 1);
+  let monthdaySelectorDisabled = $derived(recurrenceInterval > 1);
+  let weekdaySelectorDisabled = $derived(recurrenceInterval > 4);
   let showMonthdayWarning = $derived(recurrenceMonthdays.some((d) => d > 28));
 
   // Computed end date from occurrence count
@@ -485,37 +486,57 @@
     const defaultMonthDay = paymentDate ? getDefaultMonthDay(paymentDate) : 1;
     const defaultMonth = paymentDate ? getDefaultMonth(paymentDate) : 1;
 
-    if (recurrenceType === 'weekly' && recurrenceInterval <= 4) {
-      if (recurrenceWeekdays.length !== recurrenceInterval) {
+    if (recurrenceType === 'weekly') {
+      if (recurrenceInterval <= 4) {
+        if (recurrenceWeekdays.length === 0) {
+          recurrenceWeekdays = initializeWeekdayArrays(recurrenceInterval, defaultWeekday);
+          userModifiedWeekdays = false;
+        } else if (!userModifiedWeekdays && recurrenceWeekdays.length === 1) {
+          const newWeekdays = initializeWeekdayArrays(recurrenceInterval, defaultWeekday);
+          if (JSON.stringify(recurrenceWeekdays) !== JSON.stringify(newWeekdays)) {
+            recurrenceWeekdays = newWeekdays;
+          }
+        }
+      } else {
+        // Force-set to payment date's weekday when interval > 4
         recurrenceWeekdays = initializeWeekdayArrays(recurrenceInterval, defaultWeekday);
         userModifiedWeekdays = false;
-      } else if (!userModifiedWeekdays) {
-        const newWeekdays = initializeWeekdayArrays(recurrenceInterval, defaultWeekday);
-        if (JSON.stringify(recurrenceWeekdays) !== JSON.stringify(newWeekdays)) {
-          recurrenceWeekdays = newWeekdays;
-        }
       }
     }
 
-    if (recurrenceType === 'monthly' && recurrenceInterval === 1) {
-      if (recurrenceMonthdays.length === 0) {
+    if (recurrenceType === 'monthly' || recurrenceType === 'yearly') {
+      if (recurrenceInterval === 1) {
+        // Allow customization when interval is 1
+        if (recurrenceMonthdays.length === 0) {
+          recurrenceMonthdays = [defaultMonthDay];
+          userModifiedMonthdays = false;
+        } else if (!userModifiedMonthdays && recurrenceMonthdays.length === 1) {
+          if (recurrenceMonthdays[0] !== defaultMonthDay) {
+            recurrenceMonthdays = [defaultMonthDay];
+          }
+        }
+      } else {
+        // Force-set to payment date's day when interval > 1
         recurrenceMonthdays = [defaultMonthDay];
         userModifiedMonthdays = false;
-      } else if (!userModifiedMonthdays && recurrenceMonthdays.length === 1) {
-        if (recurrenceMonthdays[0] !== defaultMonthDay) {
-          recurrenceMonthdays = [defaultMonthDay];
-        }
       }
     }
 
-    if (recurrenceType === 'yearly' && recurrenceInterval === 1) {
-      if (recurrenceMonths.length === 0) {
+    if (recurrenceType === 'yearly') {
+      if (recurrenceInterval === 1) {
+        // Allow customization when interval is 1
+        if (recurrenceMonths.length === 0) {
+          recurrenceMonths = [defaultMonth];
+          userModifiedMonths = false;
+        } else if (!userModifiedMonths && recurrenceMonths.length === 1) {
+          if (recurrenceMonths[0] !== defaultMonth) {
+            recurrenceMonths = [defaultMonth];
+          }
+        }
+      } else {
+        // Force-set to payment date's month when interval > 1
         recurrenceMonths = [defaultMonth];
         userModifiedMonths = false;
-      } else if (!userModifiedMonths && recurrenceMonths.length === 1) {
-        if (recurrenceMonths[0] !== defaultMonth) {
-          recurrenceMonths = [defaultMonth];
-        }
       }
     }
   });
@@ -883,7 +904,7 @@
       return computeNthMonthlyOccurrence(startDate, count, monthdays);
     }
     if (type === 'yearly' && months && months.length > 0 && interval === 1) {
-      return computeNthYearlyOccurrence(startDate, count, months);
+      return computeNthYearlyOccurrence(startDate, count, months, monthdays);
     }
 
     let result: Date;
@@ -964,21 +985,29 @@
     return getLocalDateString(addMonths(startDate, count));
   }
 
-  function computeNthYearlyOccurrence(startDate: Date, count: number, months: number[]): string {
+  function computeNthYearlyOccurrence(
+    startDate: Date,
+    count: number,
+    months: number[],
+    monthdays?: number[]
+  ): string {
     let occurrenceCount = 0;
-    const dayOfMonth = startDate.getDate();
+    // Use provided monthdays or fall back to start date's day
+    const daysToUse = monthdays && monthdays.length > 0 ? monthdays : [startDate.getDate()];
     let currentYear = startDate.getFullYear();
 
     for (let y = 0; y < 1000; y++) {
       for (const month of months.sort((a, b) => a - b)) {
         const monthIndex = month - 1;
         const daysInMonth = new SvelteDate(currentYear, monthIndex + 1, 0).getDate();
-        const effectiveDay = Math.min(dayOfMonth, daysInMonth);
-        const occurrenceDate = new SvelteDate(currentYear, monthIndex, effectiveDay);
-        if (occurrenceDate >= startDate) {
-          occurrenceCount++;
-          if (occurrenceCount === count) {
-            return getLocalDateString(occurrenceDate);
+        for (const dayOfMonth of daysToUse.sort((a, b) => a - b)) {
+          const effectiveDay = Math.min(dayOfMonth, daysInMonth);
+          const occurrenceDate = new SvelteDate(currentYear, monthIndex, effectiveDay);
+          if (occurrenceDate >= startDate) {
+            occurrenceCount++;
+            if (occurrenceCount === count) {
+              return getLocalDateString(occurrenceDate);
+            }
           }
         }
       }
@@ -1054,7 +1083,7 @@
           payload.recurrence_weekdays = JSON.stringify(recurrenceWeekdays);
         }
         if (
-          recurrenceType === 'monthly' &&
+          (recurrenceType === 'monthly' || recurrenceType === 'yearly') &&
           recurrenceInterval === 1 &&
           recurrenceMonthdays.length > 0
         ) {
@@ -1536,68 +1565,23 @@
                   </div>
                 </div>
 
-                {#if showWeekdaySelector}
-                  <div
-                    class="weekday-selector"
-                    role="group"
-                    aria-labelledby="weekday-selector-label"
-                  >
-                    <span id="weekday-selector-label" class="selector-label"
-                      >{$_('transactions.selectDaysOfWeek')}</span
-                    >
-                    {#each Array(recurrenceInterval) as _, weekIdx (weekIdx)}
-                      {#if recurrenceInterval > 1}
-                        <div class="week-label">{weekLabel} {weekIdx + 1}:</div>
-                      {/if}
-                      <div class="weekday-row">
-                        {#each WEEKDAY_NAMES as day, dayIdx (dayIdx)}
-                          <button
-                            type="button"
-                            class="weekday-btn"
-                            class:selected={recurrenceWeekdays[weekIdx]?.includes(dayIdx)}
-                            onclick={() => toggleWeekday(weekIdx, dayIdx)}
-                          >
-                            {day}
-                          </button>
-                        {/each}
-                      </div>
-                    {/each}
-                  </div>
-                {/if}
-
-                {#if showMonthdaySelector}
-                  <div
-                    class="monthday-selector"
-                    role="group"
-                    aria-labelledby="monthday-selector-label"
-                  >
-                    <span id="monthday-selector-label" class="selector-label"
-                      >{$_('transactions.selectDaysOfMonth')}</span
-                    >
-                    <div class="monthday-grid">
-                      {#each Array(31) as _, idx (idx)}
-                        {@const day = idx + 1}
-                        <button
-                          type="button"
-                          class="monthday-btn"
-                          class:selected={recurrenceMonthdays.includes(day)}
-                          onclick={() => toggleMonthday(day)}
-                        >
-                          {day}
-                        </button>
-                      {/each}
-                    </div>
-                    {#if showMonthdayWarning}
-                      <p class="warning-hint">{$_('transactions.monthdayWarning')}</p>
-                    {/if}
-                  </div>
-                {/if}
-
                 {#if showMonthSelector}
-                  <div class="month-selector" role="group" aria-labelledby="month-selector-label">
-                    <span id="month-selector-label" class="selector-label"
-                      >{$_('transactions.selectMonths')}</span
-                    >
+                  <div
+                    class="month-selector"
+                    class:disabled={monthSelectorDisabled}
+                    role="group"
+                    aria-labelledby="month-selector-label"
+                  >
+                    <span id="month-selector-label" class="selector-label">
+                      {$_('transactions.selectMonths')}
+                      {#if monthSelectorDisabled}
+                        <span class="disabled-hint"
+                          >({$_('transactions.fixedForInterval', {
+                            default: 'fixed for this interval'
+                          })})</span
+                        >
+                      {/if}
+                    </span>
                     <div class="month-grid">
                       {#each MONTH_NAMES as monthName, idx (idx)}
                         {@const month = idx + 1}
@@ -1605,12 +1589,101 @@
                           type="button"
                           class="month-btn"
                           class:selected={recurrenceMonths.includes(month)}
-                          onclick={() => toggleMonth(month)}
+                          disabled={monthSelectorDisabled}
+                          onclick={() => !monthSelectorDisabled && toggleMonth(month)}
                         >
                           {monthName}
                         </button>
                       {/each}
                     </div>
+                  </div>
+                {/if}
+
+                {#if showMonthdaySelector}
+                  <div
+                    class="monthday-selector"
+                    class:disabled={monthdaySelectorDisabled}
+                    role="group"
+                    aria-labelledby="monthday-selector-label"
+                  >
+                    <span id="monthday-selector-label" class="selector-label">
+                      {$_('transactions.selectDaysOfMonth')}
+                      {#if monthdaySelectorDisabled}
+                        <span class="disabled-hint"
+                          >({$_('transactions.fixedForInterval', {
+                            default: 'fixed for this interval'
+                          })})</span
+                        >
+                      {/if}
+                    </span>
+                    <div class="monthday-grid">
+                      {#each Array(31) as _, idx (idx)}
+                        {@const day = idx + 1}
+                        <button
+                          type="button"
+                          class="monthday-btn"
+                          class:selected={recurrenceMonthdays.includes(day)}
+                          disabled={monthdaySelectorDisabled}
+                          onclick={() => !monthdaySelectorDisabled && toggleMonthday(day)}
+                        >
+                          {day}
+                        </button>
+                      {/each}
+                    </div>
+                    {#if showMonthdayWarning && !monthdaySelectorDisabled}
+                      <p class="warning-hint">{$_('transactions.monthdayWarning')}</p>
+                    {/if}
+                  </div>
+                {/if}
+
+                {#if showWeekdaySelector}
+                  <div
+                    class="weekday-selector"
+                    class:disabled={weekdaySelectorDisabled}
+                    role="group"
+                    aria-labelledby="weekday-selector-label"
+                  >
+                    <span id="weekday-selector-label" class="selector-label"
+                      >{$_('transactions.selectDaysOfWeek')}
+                      {#if weekdaySelectorDisabled}
+                        <span class="disabled-hint"
+                          >({$_('transactions.fixedForInterval', {
+                            default: 'fixed for this interval'
+                          })})</span
+                        >
+                      {/if}</span
+                    >
+                    {#if weekdaySelectorDisabled}
+                      {#each WEEKDAY_NAMES as day, dayIdx (dayIdx)}
+                        <button
+                          type="button"
+                          class="weekday-btn"
+                          class:selected={recurrenceWeekdays[0]?.includes(dayIdx)}
+                          disabled={weekdaySelectorDisabled}
+                        >
+                          {day}
+                        </button>
+                      {/each}
+                    {:else}
+                      {#each Array(recurrenceInterval) as _, weekIdx (weekIdx)}
+                        {#if recurrenceInterval > 1}
+                          <div class="week-label">{weekLabel} {weekIdx + 1}:</div>
+                        {/if}
+                        <div class="weekday-row">
+                          {#each WEEKDAY_NAMES as day, dayIdx (dayIdx)}
+                            <button
+                              type="button"
+                              class="weekday-btn"
+                              class:selected={recurrenceWeekdays[weekIdx]?.includes(dayIdx)}
+                              disabled={weekdaySelectorDisabled}
+                              onclick={() => toggleWeekday(weekIdx, dayIdx)}
+                            >
+                              {day}
+                            </button>
+                          {/each}
+                        </div>
+                      {/each}
+                    {/if}
                   </div>
                 {/if}
 
@@ -2172,6 +2245,20 @@
     font-weight: 600;
   }
 
+  .disabled-hint {
+    font-weight: normal;
+    font-size: 0.8rem;
+    color: #888;
+    font-style: italic;
+  }
+
+  /* Disabled selector state */
+  .monthday-selector.disabled,
+  .month-selector.disabled {
+    opacity: 0.7;
+    background: #eee;
+  }
+
   .week-label {
     font-size: 0.85rem;
     color: #666;
@@ -2196,10 +2283,25 @@
     transition: all 0.2s;
   }
 
-  .weekday-btn:hover,
-  .monthday-btn:hover,
-  .month-btn:hover {
+  .weekday-btn:hover:not(:disabled),
+  .monthday-btn:hover:not(:disabled),
+  .month-btn:hover:not(:disabled) {
     border-color: var(--accent, #7b61ff);
+  }
+
+  .weekday-btn:disabled,
+  .monthday-btn:disabled,
+  .month-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .weekday-btn:disabled.selected,
+  .monthday-btn:disabled.selected,
+  .month-btn:disabled.selected {
+    background: #999;
+    border-color: #999;
+    color: white;
   }
 
   .weekday-btn.selected,

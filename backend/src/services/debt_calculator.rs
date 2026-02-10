@@ -707,6 +707,7 @@ fn generate_payment_occurrences(
                         start_date,
                         effective_end,
                         months_json,
+                        payment.recurrence_monthdays.as_deref(),
                     );
                 }
             }
@@ -911,13 +912,15 @@ fn generate_monthly_with_monthdays(
     occurrences
 }
 
-/// Generate yearly occurrences in specific months
+/// Generate yearly occurrences in specific months (and optionally specific days)
 /// months_json format: [1, 6, 12] - array of month numbers (1-12)
+/// monthdays_json format: [1, 15] - array of day numbers (1-31), optional
 fn generate_yearly_with_months(
     payment: &Payment,
     start_date: NaiveDate,
     end_date: NaiveDate,
     months_json: &str,
+    monthdays_json: Option<&str>,
 ) -> Vec<PaymentOccurrence> {
     let mut occurrences = Vec::new();
 
@@ -931,8 +934,15 @@ fn generate_yearly_with_months(
         return occurrences;
     }
 
-    // Get the day from start_date to use for all occurrences
-    let base_day = start_date.day();
+    // Parse monthdays JSON if provided, otherwise use start_date's day
+    let monthdays: Vec<u32> = if let Some(json) = monthdays_json {
+        match serde_json::from_str(json) {
+            Ok(d) => d,
+            Err(_) => vec![start_date.day()],
+        }
+    } else {
+        vec![start_date.day()]
+    };
 
     // Start from the year of start_date
     let mut current_year = start_date.year();
@@ -952,25 +962,30 @@ fn generate_yearly_with_months(
 
             // Get the last day of this month
             let days_in_month = get_days_in_month(current_year, month);
-            let actual_day = base_day.min(days_in_month);
 
-            if let Some(occurrence_date) = NaiveDate::from_ymd_opt(current_year, month, actual_day)
-            {
-                // Must be >= start_date and <= end_date
-                if occurrence_date >= start_date && occurrence_date <= end_date {
-                    occurrences.push(PaymentOccurrence {
-                        payment_id: payment.id,
-                        description: payment.description.clone(),
-                        amount: payment.amount,
-                        occurrence_date: occurrence_date.format("%Y-%m-%d").to_string(),
-                        payer_id: payment.payer_id,
-                        is_recurring: true,
-                        receiver_account_id: payment.receiver_account_id,
-                        is_final: payment.is_final,
-                        affects_balance: payment.affects_balance,
-                        affects_payer_expectation: payment.affects_payer_expectation,
-                        affects_receiver_expectation: payment.affects_receiver_expectation,
-                    });
+            // Generate occurrences for each selected day
+            for &day in &monthdays {
+                let actual_day = day.min(days_in_month);
+
+                if let Some(occurrence_date) =
+                    NaiveDate::from_ymd_opt(current_year, month, actual_day)
+                {
+                    // Must be >= start_date and <= end_date
+                    if occurrence_date >= start_date && occurrence_date <= end_date {
+                        occurrences.push(PaymentOccurrence {
+                            payment_id: payment.id,
+                            description: payment.description.clone(),
+                            amount: payment.amount,
+                            occurrence_date: occurrence_date.format("%Y-%m-%d").to_string(),
+                            payer_id: payment.payer_id,
+                            is_recurring: true,
+                            receiver_account_id: payment.receiver_account_id,
+                            is_final: payment.is_final,
+                            affects_balance: payment.affects_balance,
+                            affects_payer_expectation: payment.affects_payer_expectation,
+                            affects_receiver_expectation: payment.affects_receiver_expectation,
+                        });
+                    }
                 }
             }
         }

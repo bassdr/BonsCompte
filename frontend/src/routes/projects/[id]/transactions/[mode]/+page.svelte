@@ -218,6 +218,52 @@
     return recurrenceEndDate < endDateFromCount ? 'date' : 'count';
   });
 
+  // Compute actual first occurrence based on pattern (may differ from selected start date)
+  let actualFirstOccurrence = $derived.by(() => {
+    if (!isRecurring || !paymentDate) return null;
+
+    const startDate = parseDate(paymentDate);
+    const firstOccurrence = getFirstPatternOccurrenceFrom(
+      startDate,
+      recurrenceType,
+      recurrenceInterval,
+      recurrenceWeekdays.length > 0 ? recurrenceWeekdays : undefined,
+      recurrenceMonthdays.length > 0 ? recurrenceMonthdays : undefined,
+      recurrenceMonths.length > 0 ? recurrenceMonths : undefined
+    );
+
+    const firstOccurrenceStr = getLocalDateString(firstOccurrence);
+    // Only return if different from selected date
+    return firstOccurrenceStr !== paymentDate ? firstOccurrenceStr : null;
+  });
+
+  // Compute actual last occurrence based on pattern (may differ from selected end date)
+  let actualLastOccurrence = $derived.by(() => {
+    if (!isRecurring || !effectiveEndDate) return null;
+
+    const startDate = parseDate(paymentDate);
+    const endDate = parseDate(effectiveEndDate);
+
+    // Find the last occurrence on or before the end date
+    // We use getLastPatternOccurrenceBefore with endDate + 1 day to include endDate itself
+    const dayAfterEnd = addDays(endDate, 1);
+    const lastOccurrence = getLastPatternOccurrenceBefore(
+      startDate,
+      dayAfterEnd,
+      recurrenceType,
+      recurrenceInterval,
+      recurrenceWeekdays.length > 0 ? recurrenceWeekdays : undefined,
+      recurrenceMonthdays.length > 0 ? recurrenceMonthdays : undefined,
+      recurrenceMonths.length > 0 ? recurrenceMonths : undefined
+    );
+
+    if (!lastOccurrence) return null;
+
+    const lastOccurrenceStr = getLocalDateString(lastOccurrence);
+    // Only return if different from effective end date
+    return lastOccurrenceStr !== effectiveEndDate ? lastOccurrenceStr : null;
+  });
+
   // Internal transfer: receiver_account_id
   let receiverAccountId = $state<number | null>(null);
 
@@ -849,7 +895,11 @@
     }
   }
 
-  function getLastOccurrenceBefore(
+  /**
+   * Find the last occurrence that matches the recurrence pattern strictly before beforeDate.
+   * This is pattern-aware and respects weekdays/monthdays/months selections.
+   */
+  function getLastPatternOccurrenceBefore(
     startDate: Date,
     beforeDate: Date,
     type: string,
@@ -858,16 +908,118 @@
     monthdays?: number[],
     months?: number[]
   ): Date | null {
+    if (beforeDate <= startDate) return null;
+
+    // For weekly with specific weekdays
+    if (type === 'weekly' && weekdays && weekdays.length > 0 && interval <= 4) {
+      // Search backwards from beforeDate
+      for (let daysBack = 1; daysBack <= 7 * interval * 2; daysBack++) {
+        const checkDate = addDays(beforeDate, -daysBack);
+        if (checkDate < startDate) break;
+
+        const checkDayOfWeek = checkDate.getDay();
+        // Calculate which week in the cycle this date falls into
+        const daysFromStart = daysBetween(startDate, checkDate);
+        const weekInCycle = Math.floor(daysFromStart / 7) % interval;
+
+        if (weekdays[weekInCycle]?.includes(checkDayOfWeek)) {
+          return checkDate;
+        }
+      }
+      return null;
+    }
+
+    // For monthly with specific monthdays
+    if (type === 'monthly' && monthdays && monthdays.length > 0 && interval === 1) {
+      const sortedDays = [...monthdays].sort((a, b) => b - a); // Descending for backwards search
+      let currentYear = beforeDate.getFullYear();
+      let currentMonth = beforeDate.getMonth();
+      const beforeDay = beforeDate.getDate();
+
+      // Check current month first (days before beforeDate)
+      const daysInCurrentMonth = new SvelteDate(currentYear, currentMonth + 1, 0).getDate();
+      for (const day of sortedDays) {
+        const effectiveDay = Math.min(day, daysInCurrentMonth);
+        if (effectiveDay < beforeDay) {
+          const occurrenceDate = new SvelteDate(currentYear, currentMonth, effectiveDay);
+          if (occurrenceDate >= startDate) {
+            return occurrenceDate;
+          }
+        }
+      }
+
+      // Check previous months
+      for (let m = 0; m < 24; m++) {
+        currentMonth--;
+        if (currentMonth < 0) {
+          currentMonth = 11;
+          currentYear--;
+        }
+        const daysInMonth = new SvelteDate(currentYear, currentMonth + 1, 0).getDate();
+        for (const day of sortedDays) {
+          const effectiveDay = Math.min(day, daysInMonth);
+          const occurrenceDate = new SvelteDate(currentYear, currentMonth, effectiveDay);
+          if (occurrenceDate >= startDate && occurrenceDate < beforeDate) {
+            return occurrenceDate;
+          }
+          if (occurrenceDate < startDate) {
+            return null;
+          }
+        }
+      }
+      return null;
+    }
+
+    // For yearly with specific months (and optionally monthdays)
+    if (type === 'yearly' && months && months.length > 0 && interval === 1) {
+      const sortedMonths = [...months].sort((a, b) => b - a); // Descending
+      const daysToUse =
+        monthdays && monthdays.length > 0
+          ? [...monthdays].sort((a, b) => b - a)
+          : [startDate.getDate()];
+      let currentYear = beforeDate.getFullYear();
+
+      // Check up to 10 years back
+      for (let y = 0; y < 10; y++) {
+        for (const month of sortedMonths) {
+          const monthIndex = month - 1;
+          const daysInMonth = new SvelteDate(currentYear, monthIndex + 1, 0).getDate();
+          for (const dayOfMonth of daysToUse) {
+            const effectiveDay = Math.min(dayOfMonth, daysInMonth);
+            const occurrenceDate = new SvelteDate(currentYear, monthIndex, effectiveDay);
+            if (occurrenceDate >= startDate && occurrenceDate < beforeDate) {
+              return occurrenceDate;
+            }
+            if (occurrenceDate < startDate) {
+              return null;
+            }
+          }
+        }
+        currentYear--;
+      }
+      return null;
+    }
+
+    // Fallback to simple interval calculation
     const dayInterval = getRecurrenceDayInterval(type, interval, weekdays, monthdays, months);
     const daysFromStart = daysBetween(startDate, beforeDate);
     if (daysFromStart < 0) return null;
     const occurrences = Math.floor(daysFromStart / dayInterval);
     if (occurrences < 0) return null;
-    return addDays(startDate, occurrences * dayInterval);
+    const lastOccurrence = addDays(startDate, occurrences * dayInterval);
+    // Ensure it's strictly before beforeDate
+    if (lastOccurrence >= beforeDate) {
+      if (occurrences === 0) return null;
+      return addDays(startDate, (occurrences - 1) * dayInterval);
+    }
+    return lastOccurrence;
   }
 
-  function getFirstOccurrenceFrom(
-    startDate: Date,
+  /**
+   * Find the first occurrence that matches the recurrence pattern on or after fromDate.
+   * This is pattern-aware and respects weekdays/monthdays/months selections.
+   */
+  function getFirstPatternOccurrenceFrom(
     fromDate: Date,
     type: string,
     interval: number,
@@ -875,13 +1027,83 @@
     monthdays?: number[],
     months?: number[]
   ): Date {
-    const dayInterval = getRecurrenceDayInterval(type, interval, weekdays, monthdays, months);
-    const daysFromStart = daysBetween(startDate, fromDate);
-    if (daysFromStart <= 0) {
-      return new SvelteDate(startDate);
+    // For weekly with specific weekdays
+    if (type === 'weekly' && weekdays && weekdays.length > 0 && interval <= 4) {
+      // Flatten all selected weekdays
+      const allSelectedDays = weekdays.flat().sort((a, b) => a - b);
+      if (allSelectedDays.length > 0) {
+        const fromDayOfWeek = fromDate.getDay();
+        // Find the next selected day on or after fromDate
+        for (let daysAhead = 0; daysAhead < 7 * interval; daysAhead++) {
+          const checkDate = addDays(fromDate, daysAhead);
+          const checkDayOfWeek = checkDate.getDay();
+          // Check if this day is in any of the week arrays
+          // For multi-week intervals, we need to check which week we're in
+          const weekInCycle = Math.floor(daysAhead / 7) % interval;
+          if (weekdays[weekInCycle]?.includes(checkDayOfWeek)) {
+            return checkDate;
+          }
+        }
+        // Fallback: find the first selected day in the first week
+        const firstSelectedDay = allSelectedDays[0];
+        let daysUntilFirst = (firstSelectedDay - fromDayOfWeek + 7) % 7;
+        if (daysUntilFirst === 0) daysUntilFirst = 7; // Move to next week if today
+        return addDays(fromDate, daysUntilFirst);
+      }
     }
-    const fullIntervals = Math.ceil(daysFromStart / dayInterval);
-    return addDays(startDate, fullIntervals * dayInterval);
+
+    // For monthly with specific monthdays
+    if (type === 'monthly' && monthdays && monthdays.length > 0 && interval === 1) {
+      const sortedDays = [...monthdays].sort((a, b) => a - b);
+      let currentYear = fromDate.getFullYear();
+      let currentMonth = fromDate.getMonth();
+
+      // Check up to 24 months ahead
+      for (let m = 0; m < 24; m++) {
+        const daysInMonth = new SvelteDate(currentYear, currentMonth + 1, 0).getDate();
+        for (const day of sortedDays) {
+          const effectiveDay = Math.min(day, daysInMonth);
+          const occurrenceDate = new SvelteDate(currentYear, currentMonth, effectiveDay);
+          if (occurrenceDate >= fromDate) {
+            return occurrenceDate;
+          }
+        }
+        currentMonth++;
+        if (currentMonth > 11) {
+          currentMonth = 0;
+          currentYear++;
+        }
+      }
+    }
+
+    // For yearly with specific months (and optionally monthdays)
+    if (type === 'yearly' && months && months.length > 0 && interval === 1) {
+      const sortedMonths = [...months].sort((a, b) => a - b);
+      const daysToUse =
+        monthdays && monthdays.length > 0
+          ? [...monthdays].sort((a, b) => a - b)
+          : [fromDate.getDate()];
+      let currentYear = fromDate.getFullYear();
+
+      // Check up to 10 years ahead
+      for (let y = 0; y < 10; y++) {
+        for (const month of sortedMonths) {
+          const monthIndex = month - 1;
+          const daysInMonth = new SvelteDate(currentYear, monthIndex + 1, 0).getDate();
+          for (const dayOfMonth of daysToUse) {
+            const effectiveDay = Math.min(dayOfMonth, daysInMonth);
+            const occurrenceDate = new SvelteDate(currentYear, monthIndex, effectiveDay);
+            if (occurrenceDate >= fromDate) {
+              return occurrenceDate;
+            }
+          }
+        }
+        currentYear++;
+      }
+    }
+
+    // Fallback for simple patterns or when no specific days/months selected
+    return new SvelteDate(fromDate);
   }
 
   function addMonths(date: Date, months: number): Date {
@@ -1124,10 +1346,36 @@
           ? parseDate(editingPaymentOriginal.recurrence_end_date.split('T')[0])
           : null;
 
-        const splitRecurrenceType =
-          payload.recurrence_type || (editingPaymentOriginal.recurrence_type as string);
-        const splitRecurrenceInterval =
-          payload.recurrence_interval || editingPaymentOriginal.recurrence_interval || 1;
+        // Original payment's recurrence settings (for calculating end date of original)
+        const originalRecurrenceType = editingPaymentOriginal.recurrence_type as string;
+        const originalRecurrenceInterval = editingPaymentOriginal.recurrence_interval || 1;
+
+        // Parse original payment's recurrence patterns
+        let originalWeekdays: number[][] | undefined;
+        let originalMonthdays: number[] | undefined;
+        let originalMonths: number[] | undefined;
+
+        if (editingPaymentOriginal.recurrence_weekdays) {
+          try {
+            originalWeekdays = JSON.parse(editingPaymentOriginal.recurrence_weekdays);
+          } catch {
+            originalWeekdays = undefined;
+          }
+        }
+        if (editingPaymentOriginal.recurrence_monthdays) {
+          try {
+            originalMonthdays = JSON.parse(editingPaymentOriginal.recurrence_monthdays);
+          } catch {
+            originalMonthdays = undefined;
+          }
+        }
+        if (editingPaymentOriginal.recurrence_months) {
+          try {
+            originalMonths = JSON.parse(editingPaymentOriginal.recurrence_months);
+          } catch {
+            originalMonths = undefined;
+          }
+        }
 
         if (splitDate < originalStartDate) {
           errorKey = 'transactions.split.beforeStart';
@@ -1144,11 +1392,15 @@
           return;
         }
 
-        const lastOccurrenceBeforeSplit = getLastOccurrenceBefore(
+        // Use pattern-aware function with ORIGINAL payment's recurrence patterns
+        const lastOccurrenceBeforeSplit = getLastPatternOccurrenceBefore(
           originalStartDate,
-          addDays(splitDate, -1),
-          splitRecurrenceType,
-          splitRecurrenceInterval
+          splitDate,
+          originalRecurrenceType,
+          originalRecurrenceInterval,
+          originalWeekdays,
+          originalMonthdays,
+          originalMonths
         );
 
         if (!lastOccurrenceBeforeSplit) {
@@ -1157,11 +1409,14 @@
           return;
         }
 
-        const firstOccurrenceFromSplit = getFirstOccurrenceFrom(
-          splitDate,
+        // Use the pattern-aware function to find the first occurrence matching the new recurrence pattern
+        const firstOccurrenceFromSplit = getFirstPatternOccurrenceFrom(
           splitDate,
           recurrenceType,
-          recurrenceInterval || 1
+          recurrenceInterval || 1,
+          recurrenceWeekdays.length > 0 ? recurrenceWeekdays : undefined,
+          recurrenceMonthdays.length > 0 ? recurrenceMonthdays : undefined,
+          recurrenceMonths.length > 0 ? recurrenceMonths : undefined
         );
 
         const endDateForOriginal = getLocalDateString(lastOccurrenceBeforeSplit);
@@ -1773,6 +2028,28 @@
                     {/if}
                   </div>
                 {/if}
+
+                <!-- Info about actual first/last occurrences when they differ from selected dates -->
+                {#if actualFirstOccurrence || actualLastOccurrence}
+                  <div class="recurrence-adjustment-info">
+                    {#if actualFirstOccurrence}
+                      <p>
+                        {$_('transactions.firstOccurrenceInfo', {
+                          default: 'First occurrence will be on {date}',
+                          values: { date: formatDate(actualFirstOccurrence) }
+                        })}
+                      </p>
+                    {/if}
+                    {#if actualLastOccurrence}
+                      <p>
+                        {$_('transactions.lastOccurrenceInfo', {
+                          default: 'Last occurrence will be on {date}',
+                          values: { date: formatDate(actualLastOccurrence) }
+                        })}
+                      </p>
+                    {/if}
+                  </div>
+                {/if}
               </div>
             {/if}
           </div>
@@ -1799,17 +2076,49 @@
                   />
                   <p class="split-hint">
                     {#if splitFromDate}
-                      {@const lastBefore = getLastOccurrenceBefore(
+                      {@const origWeekdays = editingPaymentOriginal.recurrence_weekdays
+                        ? (() => {
+                            try {
+                              return JSON.parse(editingPaymentOriginal.recurrence_weekdays);
+                            } catch {
+                              return undefined;
+                            }
+                          })()
+                        : undefined}
+                      {@const origMonthdays = editingPaymentOriginal.recurrence_monthdays
+                        ? (() => {
+                            try {
+                              return JSON.parse(editingPaymentOriginal.recurrence_monthdays);
+                            } catch {
+                              return undefined;
+                            }
+                          })()
+                        : undefined}
+                      {@const origMonths = editingPaymentOriginal.recurrence_months
+                        ? (() => {
+                            try {
+                              return JSON.parse(editingPaymentOriginal.recurrence_months);
+                            } catch {
+                              return undefined;
+                            }
+                          })()
+                        : undefined}
+                      {@const lastBefore = getLastPatternOccurrenceBefore(
                         parseDate(editingPaymentOriginal.payment_date.split('T')[0]),
-                        addDays(parseDate(splitFromDate), -1),
-                        recurrenceType || editingPaymentOriginal.recurrence_type || 'monthly',
-                        recurrenceInterval || editingPaymentOriginal.recurrence_interval || 1
-                      )}
-                      {@const firstFrom = getFirstOccurrenceFrom(
                         parseDate(splitFromDate),
+                        editingPaymentOriginal.recurrence_type || 'monthly',
+                        editingPaymentOriginal.recurrence_interval || 1,
+                        origWeekdays,
+                        origMonthdays,
+                        origMonths
+                      )}
+                      {@const firstFrom = getFirstPatternOccurrenceFrom(
                         parseDate(splitFromDate),
                         recurrenceType,
-                        recurrenceInterval || 1
+                        recurrenceInterval || 1,
+                        recurrenceWeekdays.length > 0 ? recurrenceWeekdays : undefined,
+                        recurrenceMonthdays.length > 0 ? recurrenceMonthdays : undefined,
+                        recurrenceMonths.length > 0 ? recurrenceMonths : undefined
                       )}
                       {#if lastBefore}
                         Original payment will end on {formatDate(getLocalDateString(lastBefore))},
@@ -2107,6 +2416,24 @@
     border-radius: 8px;
     margin-top: 0.75rem;
     font-size: 0.9rem;
+  }
+
+  .recurrence-adjustment-info {
+    background: #e3f2fd;
+    border: 1px solid #90caf9;
+    color: #1565c0;
+    padding: 0.75rem;
+    border-radius: 8px;
+    margin-top: 0.75rem;
+    font-size: 0.9rem;
+  }
+
+  .recurrence-adjustment-info p {
+    margin: 0;
+  }
+
+  .recurrence-adjustment-info p + p {
+    margin-top: 0.25rem;
   }
 
   .split-header {

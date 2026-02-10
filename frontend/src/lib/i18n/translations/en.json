@@ -322,6 +322,8 @@
   "transactions.occurrencesOptional": "Number of occurrences (optional)",
   "transactions.occurrencesPlaceholder": "e.g., 12",
   "transactions.lastOccurrence": "Last occurrence",
+  "transactions.firstOccurrenceInfo": "First occurrence will be on {date}",
+  "transactions.lastOccurrenceInfo": "Last occurrence will be on {date}",
   "transactions.splitAndUpdate": "Split & Update",
   "transactions.recentTransactions": "Recent Transactions",
   "transactions.noTransactionsYet": "No transactions yet.",

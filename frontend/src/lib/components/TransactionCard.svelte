@@ -110,16 +110,22 @@
 
     switch (recurrenceType) {
       case 'daily':
-        typeKey = interval === 1 ? 'transactions.daily' : 'transactions.everyNDays';
+        typeKey =
+          interval === 1 ? 'transactions.recurrence.daily' : 'transactions.recurrence.everyNDays';
         break;
       case 'weekly':
-        typeKey = interval === 1 ? 'transactions.weekly' : 'transactions.everyNWeeks';
+        typeKey =
+          interval === 1 ? 'transactions.recurrence.weekly' : 'transactions.recurrence.everyNWeeks';
         break;
       case 'monthly':
-        typeKey = interval === 1 ? 'transactions.monthly' : 'transactions.everyNMonths';
+        typeKey =
+          interval === 1
+            ? 'transactions.recurrence.monthly'
+            : 'transactions.recurrence.everyNMonths';
         break;
       case 'yearly':
-        typeKey = interval === 1 ? 'transactions.yearly' : 'transactions.everyNYears';
+        typeKey =
+          interval === 1 ? 'transactions.recurrence.yearly' : 'transactions.recurrence.everyNYears';
         break;
       default:
         return recurrenceType;
@@ -199,7 +205,7 @@
 
     {#if isRecurring && recurrenceEndDate}
       {$_('transactions.dateRangeFromTo', {
-        values: { from: displayDate, to: displayRecurrenceEndDate }
+        values: { startDate: displayDate, endDate: displayRecurrenceEndDate }
       })}
     {:else if isFutureDate(date)}
       {$_('transactions.startingFrom', { values: { date: displayDate } })}

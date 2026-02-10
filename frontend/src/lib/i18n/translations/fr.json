@@ -116,7 +116,6 @@
   "settings.savingPreferences": "Enregistrement...",
   "settings.passwordsDoNotMatch": "Les mots de passe ne correspondent pas",
   "settings.passwordTooShort": "Le nouveau mot de passe doit contenir au moins 6 caractères",
-  "settings.passwordChanged": "Mot de passe modifié avec succès",
   "settings.preferencesNotice": "Note : Ces paramètres affectent uniquement l'affichage des nombres et des dates. BonsCompte n'effectue pas de conversion de devises.",
 
   "settings.trustedUsers.title": "Utilisateurs de confiance pour la récupération de mot de passe",
@@ -318,6 +317,7 @@
   "transactions.monthdayWarning": "Remarque : Pour les mois avec moins de jours, le dernier jour du mois sera utilisé.",
   "transactions.selectMonths": "Sélectionnez les mois :",
   "transactions.fixedForInterval": "fixé pour cet intervalle",
+  "transactions.resetToDefault": "Réinitialiser",
   "transactions.endDateOptional": "Date de fin (optionnelle)",
   "transactions.occurrencesOptional": "Nombre d'occurrences (optionnel)",
   "transactions.occurrencesPlaceholder": "ex. 12",

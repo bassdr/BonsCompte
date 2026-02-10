@@ -482,61 +482,40 @@
   $effect(() => {
     if (!isRecurring) return;
 
-    const defaultWeekday = paymentDate ? getDefaultWeekday(paymentDate) : 0;
-    const defaultMonthDay = paymentDate ? getDefaultMonthDay(paymentDate) : 1;
-    const defaultMonth = paymentDate ? getDefaultMonth(paymentDate) : 1;
-
+    // Weekly: preserve user modifications when changing interval (1-4), otherwise reset
     if (recurrenceType === 'weekly') {
-      if (recurrenceInterval <= 4) {
-        if (recurrenceWeekdays.length === 0) {
-          recurrenceWeekdays = initializeWeekdayArrays(recurrenceInterval, defaultWeekday);
-          userModifiedWeekdays = false;
-        } else if (!userModifiedWeekdays && recurrenceWeekdays.length === 1) {
-          const newWeekdays = initializeWeekdayArrays(recurrenceInterval, defaultWeekday);
-          if (JSON.stringify(recurrenceWeekdays) !== JSON.stringify(newWeekdays)) {
-            recurrenceWeekdays = newWeekdays;
-          }
-        }
-      } else {
-        // Force-set to payment date's weekday when interval > 4
-        recurrenceWeekdays = initializeWeekdayArrays(recurrenceInterval, defaultWeekday);
-        userModifiedWeekdays = false;
+      const shouldPreserve =
+        userModifiedWeekdays &&
+        recurrenceInterval <= 4 &&
+        recurrenceWeekdays.length > 0 &&
+        recurrenceWeekdays.length !== recurrenceInterval;
+
+      if (shouldPreserve) {
+        // Adjust array length while preserving existing selections
+        const newWeekdays = [...recurrenceWeekdays];
+        while (newWeekdays.length < recurrenceInterval) newWeekdays.push([]);
+        recurrenceWeekdays = newWeekdays.slice(0, recurrenceInterval);
+      } else if (
+        recurrenceWeekdays.length === 0 ||
+        recurrenceInterval > 4 ||
+        recurrenceWeekdays.length !== recurrenceInterval ||
+        !userModifiedWeekdays
+      ) {
+        resetWeekdays();
       }
     }
 
+    // Monthly/Yearly days: preserve user modifications when interval is 1, otherwise reset
     if (recurrenceType === 'monthly' || recurrenceType === 'yearly') {
-      if (recurrenceInterval === 1) {
-        // Allow customization when interval is 1
-        if (recurrenceMonthdays.length === 0) {
-          recurrenceMonthdays = [defaultMonthDay];
-          userModifiedMonthdays = false;
-        } else if (!userModifiedMonthdays && recurrenceMonthdays.length === 1) {
-          if (recurrenceMonthdays[0] !== defaultMonthDay) {
-            recurrenceMonthdays = [defaultMonthDay];
-          }
-        }
-      } else {
-        // Force-set to payment date's day when interval > 1
-        recurrenceMonthdays = [defaultMonthDay];
-        userModifiedMonthdays = false;
+      if (recurrenceMonthdays.length === 0 || recurrenceInterval > 1 || !userModifiedMonthdays) {
+        resetMonthdays();
       }
     }
 
+    // Yearly months: preserve user modifications when interval is 1, otherwise reset
     if (recurrenceType === 'yearly') {
-      if (recurrenceInterval === 1) {
-        // Allow customization when interval is 1
-        if (recurrenceMonths.length === 0) {
-          recurrenceMonths = [defaultMonth];
-          userModifiedMonths = false;
-        } else if (!userModifiedMonths && recurrenceMonths.length === 1) {
-          if (recurrenceMonths[0] !== defaultMonth) {
-            recurrenceMonths = [defaultMonth];
-          }
-        }
-      } else {
-        // Force-set to payment date's month when interval > 1
-        recurrenceMonths = [defaultMonth];
-        userModifiedMonths = false;
+      if (recurrenceMonths.length === 0 || recurrenceInterval > 1 || !userModifiedMonths) {
+        resetMonths();
       }
     }
   });
@@ -755,7 +734,8 @@
   function initializeWeekdayArrays(numWeeks: number, defaultDay: number): number[][] {
     const result: number[][] = [];
     for (let i = 0; i < numWeeks; i++) {
-      result.push([defaultDay]);
+      // Only the first week gets the default day, others are empty
+      result.push(i === 0 ? [defaultDay] : []);
     }
     return result;
   }
@@ -765,7 +745,10 @@
     const week = recurrenceWeekdays[weekIndex] || [];
     const idx = week.indexOf(day);
     if (idx >= 0) {
-      if (week.length > 1) {
+      // Count total selected days across all weeks
+      const totalSelected = recurrenceWeekdays.reduce((sum, w) => sum + w.length, 0);
+      // Only allow deselection if there's at least one other day selected
+      if (totalSelected > 1) {
         recurrenceWeekdays[weekIndex] = week.filter((d) => d !== day);
       }
     } else {
@@ -796,6 +779,24 @@
     } else {
       recurrenceMonths = [...recurrenceMonths, month].sort((a, b) => a - b);
     }
+  }
+
+  function resetWeekdays() {
+    const defaultWeekday = paymentDate ? getDefaultWeekday(paymentDate) : 0;
+    recurrenceWeekdays = initializeWeekdayArrays(recurrenceInterval, defaultWeekday);
+    userModifiedWeekdays = false;
+  }
+
+  function resetMonthdays() {
+    const defaultMonthDay = paymentDate ? getDefaultMonthDay(paymentDate) : 1;
+    recurrenceMonthdays = [defaultMonthDay];
+    userModifiedMonthdays = false;
+  }
+
+  function resetMonths() {
+    const defaultMonth = paymentDate ? getDefaultMonth(paymentDate) : 1;
+    recurrenceMonths = [defaultMonth];
+    userModifiedMonths = false;
   }
 
   function getRecurrenceDayInterval(
@@ -1572,16 +1573,23 @@
                     role="group"
                     aria-labelledby="month-selector-label"
                   >
-                    <span id="month-selector-label" class="selector-label">
-                      {$_('transactions.selectMonths')}
-                      {#if monthSelectorDisabled}
-                        <span class="disabled-hint"
-                          >({$_('transactions.fixedForInterval', {
-                            default: 'fixed for this interval'
-                          })})</span
-                        >
+                    <div class="selector-header">
+                      <span id="month-selector-label" class="selector-label">
+                        {$_('transactions.selectMonths')}
+                        {#if monthSelectorDisabled}
+                          <span class="disabled-hint"
+                            >({$_('transactions.fixedForInterval', {
+                              default: 'fixed for this interval'
+                            })})</span
+                          >
+                        {/if}
+                      </span>
+                      {#if !monthSelectorDisabled && userModifiedMonths}
+                        <button type="button" class="reset-btn" onclick={resetMonths}>
+                          {$_('transactions.resetToDefault', { default: 'Reset to default' })}
+                        </button>
                       {/if}
-                    </span>
+                    </div>
                     <div class="month-grid">
                       {#each MONTH_NAMES as monthName, idx (idx)}
                         {@const month = idx + 1}
@@ -1589,6 +1597,8 @@
                           type="button"
                           class="month-btn"
                           class:selected={recurrenceMonths.includes(month)}
+                          class:default-selected={!userModifiedMonths &&
+                            recurrenceMonths.includes(month)}
                           disabled={monthSelectorDisabled}
                           onclick={() => !monthSelectorDisabled && toggleMonth(month)}
                         >
@@ -1606,16 +1616,23 @@
                     role="group"
                     aria-labelledby="monthday-selector-label"
                   >
-                    <span id="monthday-selector-label" class="selector-label">
-                      {$_('transactions.selectDaysOfMonth')}
-                      {#if monthdaySelectorDisabled}
-                        <span class="disabled-hint"
-                          >({$_('transactions.fixedForInterval', {
-                            default: 'fixed for this interval'
-                          })})</span
-                        >
+                    <div class="selector-header">
+                      <span id="monthday-selector-label" class="selector-label">
+                        {$_('transactions.selectDaysOfMonth')}
+                        {#if monthdaySelectorDisabled}
+                          <span class="disabled-hint"
+                            >({$_('transactions.fixedForInterval', {
+                              default: 'fixed for this interval'
+                            })})</span
+                          >
+                        {/if}
+                      </span>
+                      {#if !monthdaySelectorDisabled && userModifiedMonthdays}
+                        <button type="button" class="reset-btn" onclick={resetMonthdays}>
+                          {$_('transactions.resetToDefault', { default: 'Reset to default' })}
+                        </button>
                       {/if}
-                    </span>
+                    </div>
                     <div class="monthday-grid">
                       {#each Array(31) as _, idx (idx)}
                         {@const day = idx + 1}
@@ -1623,6 +1640,8 @@
                           type="button"
                           class="monthday-btn"
                           class:selected={recurrenceMonthdays.includes(day)}
+                          class:default-selected={!userModifiedMonthdays &&
+                            recurrenceMonthdays.includes(day)}
                           disabled={monthdaySelectorDisabled}
                           onclick={() => !monthdaySelectorDisabled && toggleMonthday(day)}
                         >
@@ -1643,16 +1662,23 @@
                     role="group"
                     aria-labelledby="weekday-selector-label"
                   >
-                    <span id="weekday-selector-label" class="selector-label"
-                      >{$_('transactions.selectDaysOfWeek')}
-                      {#if weekdaySelectorDisabled}
-                        <span class="disabled-hint"
-                          >({$_('transactions.fixedForInterval', {
-                            default: 'fixed for this interval'
-                          })})</span
-                        >
-                      {/if}</span
-                    >
+                    <div class="selector-header">
+                      <span id="weekday-selector-label" class="selector-label">
+                        {$_('transactions.selectDaysOfWeek')}
+                        {#if weekdaySelectorDisabled}
+                          <span class="disabled-hint"
+                            >({$_('transactions.fixedForInterval', {
+                              default: 'fixed for this interval'
+                            })})</span
+                          >
+                        {/if}
+                      </span>
+                      {#if !weekdaySelectorDisabled && userModifiedWeekdays}
+                        <button type="button" class="reset-btn" onclick={resetWeekdays}>
+                          {$_('transactions.resetToDefault', { default: 'Reset to default' })}
+                        </button>
+                      {/if}
+                    </div>
                     {#if weekdaySelectorDisabled}
                       {#each WEEKDAY_NAMES as day, dayIdx (dayIdx)}
                         <button
@@ -1675,6 +1701,8 @@
                               type="button"
                               class="weekday-btn"
                               class:selected={recurrenceWeekdays[weekIdx]?.includes(dayIdx)}
+                              class:default-selected={!userModifiedWeekdays &&
+                                recurrenceWeekdays[weekIdx]?.includes(dayIdx)}
                               disabled={weekdaySelectorDisabled}
                               onclick={() => toggleWeekday(weekIdx, dayIdx)}
                             >
@@ -2239,9 +2267,15 @@
     border-radius: 8px;
   }
 
-  .selector-label {
-    display: block;
+  .selector-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     margin-bottom: 0.75rem;
+    gap: 1rem;
+  }
+
+  .selector-label {
     font-weight: 600;
   }
 
@@ -2252,7 +2286,26 @@
     font-style: italic;
   }
 
+  .reset-btn {
+    padding: 0.25rem 0.75rem;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    color: #666;
+    white-space: nowrap;
+    transition: all 0.2s;
+  }
+
+  .reset-btn:hover {
+    background: #f5f5f5;
+    border-color: #999;
+    color: #333;
+  }
+
   /* Disabled selector state */
+  .weekday-selector.disabled,
   .monthday-selector.disabled,
   .month-selector.disabled {
     opacity: 0.7;
@@ -2310,6 +2363,22 @@
     background: var(--accent, #7b61ff);
     color: white;
     border-color: var(--accent, #7b61ff);
+  }
+
+  /* Default selections have a lighter appearance */
+  .weekday-btn.default-selected,
+  .monthday-btn.default-selected,
+  .month-btn.default-selected {
+    background: #b8a9ff;
+    color: white;
+    border-color: #b8a9ff;
+  }
+
+  .weekday-btn.default-selected:hover,
+  .monthday-btn.default-selected:hover,
+  .month-btn.default-selected:hover {
+    background: #a598ff;
+    border-color: #a598ff;
   }
 
   .monthday-grid {

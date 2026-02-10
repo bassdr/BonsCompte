@@ -2059,12 +2059,12 @@
             <div class="split-date-section">
               <label class="checkbox-label">
                 <input type="checkbox" bind:checked={useSplitDate} />
-                Apply changes starting from date
+                {$_('transactions.split.applyFromDate')}
               </label>
 
               {#if useSplitDate}
                 <div class="split-date-field">
-                  <label for="split-from-date">Changes start from</label>
+                  <label for="split-from-date">{$_('transactions.split.changesStartFrom')}</label>
                   <DateInput
                     id="split-from-date"
                     bind:value={splitFromDate}
@@ -2121,13 +2121,18 @@
                         recurrenceMonths.length > 0 ? recurrenceMonths : undefined
                       )}
                       {#if lastBefore}
-                        Original payment will end on {formatDate(getLocalDateString(lastBefore))},
-                        new payment will start on {formatDate(getLocalDateString(firstFrom))}.
+                        {$_('transactions.split.splitPlan', {
+                          values: {
+                            endDate: formatDate(getLocalDateString(lastBefore)),
+                            startDate: formatDate(getLocalDateString(firstFrom))
+                          }
+                        })}
                       {:else}
-                        <span class="warning">Date is before the first recurrence.</span>
+                        <span class="warning">{$_('transactions.split.beforeFirstOccurrence')}</span
+                        >
                       {/if}
                     {:else}
-                      Choose a date to see the split plan.
+                      {$_('transactions.split.chooseDateHint')}
                     {/if}
                   </p>
                 </div>

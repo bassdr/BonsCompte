@@ -66,6 +66,9 @@ struct UpdatePreferencesRequest {
     decimal_separator: Option<String>,
     currency_symbol: Option<String>,
     currency_symbol_position: Option<String>,
+    // Budget preferences
+    budget_pay_frequency: Option<String>,
+    budget_hours_per_week: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -359,8 +362,26 @@ fn validate_preferences(req: &UpdatePreferencesRequest) -> Result<(), AppError> 
             return Err(AppError::validation(ErrorCode::InvalidCurrencyPosition));
         }
     }
+    // Validate budget pay frequency
+    if let Some(ref freq) = req.budget_pay_frequency {
+        if !["weekly", "biweekly", "semimonthly", "monthly"].contains(&freq.as_str()) {
+            return Err(AppError::validation(ErrorCode::InvalidPayFrequency));
+        }
+    }
+    // Validate budget hours per week (must be positive and reasonable)
+    if let Some(hours) = req.budget_hours_per_week {
+        if hours <= 0.0 || hours > 168.0 {
+            return Err(AppError::validation(ErrorCode::InvalidHoursPerWeek));
+        }
+    }
     // currency_symbol is freeform, no validation needed
     Ok(())
+}
+
+/// Enum to hold different binding types for dynamic query building
+enum QueryBinding {
+    String(String),
+    Float(f64),
 }
 
 async fn update_preferences(
@@ -373,30 +394,41 @@ async fn update_preferences(
 
     // Build dynamic update query
     let mut updates = Vec::new();
-    let mut bindings: Vec<Option<String>> = Vec::new();
+    let mut bindings: Vec<QueryBinding> = Vec::new();
 
     if let Some(ref v) = req.date_format {
         updates.push("date_format = ?");
-        bindings.push(Some(v.clone()));
+        bindings.push(QueryBinding::String(v.clone()));
     }
     if let Some(ref v) = req.decimal_separator {
         updates.push("decimal_separator = ?");
-        bindings.push(Some(v.clone()));
+        bindings.push(QueryBinding::String(v.clone()));
     }
     if let Some(ref v) = req.currency_symbol {
         updates.push("currency_symbol = ?");
-        bindings.push(Some(v.clone()));
+        bindings.push(QueryBinding::String(v.clone()));
     }
     if let Some(ref v) = req.currency_symbol_position {
         updates.push("currency_symbol_position = ?");
-        bindings.push(Some(v.clone()));
+        bindings.push(QueryBinding::String(v.clone()));
+    }
+    if let Some(ref v) = req.budget_pay_frequency {
+        updates.push("budget_pay_frequency = ?");
+        bindings.push(QueryBinding::String(v.clone()));
+    }
+    if let Some(v) = req.budget_hours_per_week {
+        updates.push("budget_hours_per_week = ?");
+        bindings.push(QueryBinding::Float(v));
     }
 
     if !updates.is_empty() {
         let query = format!("UPDATE users SET {} WHERE id = ?", updates.join(", "));
         let mut q = sqlx::query(&query);
         for binding in bindings {
-            q = q.bind(binding);
+            match binding {
+                QueryBinding::String(s) => q = q.bind(s),
+                QueryBinding::Float(f) => q = q.bind(f),
+            }
         }
         q = q.bind(auth.user_id);
         q.execute(&pool).await?;

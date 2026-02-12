@@ -388,6 +388,8 @@ export interface Payment {
   affects_payer_expectation: boolean;
   // affects_receiver_expectation: When receiver is a pool and true, increases receiver's expected minimum
   affects_receiver_expectation: boolean;
+  // Tags for categorization (e.g., ["groceries", "food"])
+  tags: string[] | null;
 }
 
 export interface Contribution {
@@ -674,6 +676,8 @@ export interface CreatePaymentInput {
   affects_payer_expectation?: boolean;
   // affects_receiver_expectation: When receiver is a pool and true, increases receiver's expected minimum
   affects_receiver_expectation?: boolean;
+  // Tags for categorization (e.g., ["groceries", "food"])
+  tags?: string[];
 }
 
 export const getPayments = (projectId: number): Promise<PaymentWithContributions[]> =>
@@ -997,3 +1001,100 @@ export const voteOnRecovery = (
     method: 'POST',
     body: JSON.stringify({ vote })
   });
+
+// ========================================
+// Budget API
+// ========================================
+
+export interface BudgetSource {
+  type: 'RecurringPayment' | 'Override' | 'Observed';
+  payment_id?: number;
+  override_id?: number;
+  payment_ids?: number[];
+}
+
+export interface BudgetLineItem {
+  tag: string | null;
+  name: string;
+  yearly_amount: number;
+  is_income: boolean;
+  source: BudgetSource;
+}
+
+export interface BudgetSummary {
+  items: BudgetLineItem[];
+  total_income_yearly: number;
+  total_expenses_yearly: number;
+  net_yearly: number;
+}
+
+export interface BudgetResponse {
+  budgeted: BudgetSummary;
+  observed: BudgetSummary;
+  available_tags: string[];
+}
+
+export interface BudgetOverride {
+  id: number;
+  project_id: number;
+  participant_id: number | null;
+  tag: string | null;
+  name: string;
+  yearly_amount: number;
+  override_type: 'add' | 'adjust' | 'exclude';
+  linked_payment_id: number | null;
+  created_at: string;
+}
+
+export interface CreateBudgetOverride {
+  participant_id?: number | null;
+  tag?: string | null;
+  name: string;
+  yearly_amount: number;
+  override_type: 'add' | 'adjust' | 'exclude';
+  linked_payment_id?: number | null;
+}
+
+// Get budget summary (budgeted vs observed)
+export const getBudget = (projectId: number, participantId?: number): Promise<BudgetResponse> => {
+  const params = new URLSearchParams();
+  if (participantId !== undefined) params.set('participant_id', participantId.toString());
+  const queryString = params.toString();
+  return authFetch(`/projects/${projectId}/budget${queryString ? '?' + queryString : ''}`);
+};
+
+// Get all project tags
+export const getProjectTags = (projectId: number): Promise<string[]> =>
+  authFetch(`/projects/${projectId}/payments/tags`);
+
+// Budget overrides CRUD
+export const getBudgetOverrides = (projectId: number): Promise<BudgetOverride[]> =>
+  authFetch(`/projects/${projectId}/budget/overrides`);
+
+export const getBudgetOverride = (projectId: number, overrideId: number): Promise<BudgetOverride> =>
+  authFetch(`/projects/${projectId}/budget/overrides/${overrideId}`);
+
+export const createBudgetOverride = (
+  projectId: number,
+  override: CreateBudgetOverride
+): Promise<BudgetOverride> =>
+  authFetch(`/projects/${projectId}/budget/overrides`, {
+    method: 'POST',
+    body: JSON.stringify(override)
+  });
+
+export const updateBudgetOverride = (
+  projectId: number,
+  overrideId: number,
+  override: CreateBudgetOverride
+): Promise<BudgetOverride> =>
+  authFetch(`/projects/${projectId}/budget/overrides/${overrideId}`, {
+    method: 'PUT',
+    body: JSON.stringify(override)
+  });
+
+export const deleteBudgetOverride = (
+  projectId: number,
+  overrideId: number
+): Promise<{ deleted: boolean }> =>
+  authFetch(`/projects/${projectId}/budget/overrides/${overrideId}`, { method: 'DELETE' });

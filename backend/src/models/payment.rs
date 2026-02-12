@@ -38,6 +38,8 @@ pub struct Payment {
     // affects_receiver_expectation: When receiver is a pool and true, increases receiver's expected minimum
     // (Used for "Earmarked" deposits to pools, and "Rules" that set expected minimums)
     pub affects_receiver_expectation: bool,
+    // Tags for categorization (JSON array stored as string, e.g., ["groceries", "food"])
+    pub tags: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,6 +72,8 @@ pub struct CreatePayment {
     pub affects_payer_expectation: Option<bool>,
     // affects_receiver_expectation: When receiver is a pool and true, increases receiver's expected minimum
     pub affects_receiver_expectation: Option<bool>,
+    // Tags for categorization (JSON array, e.g., ["groceries", "food"])
+    pub tags: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]

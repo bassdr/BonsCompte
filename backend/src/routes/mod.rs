@@ -1,5 +1,6 @@
 pub mod approvals;
 pub mod auth;
+pub mod budget;
 pub mod debts;
 pub mod history;
 pub mod members;

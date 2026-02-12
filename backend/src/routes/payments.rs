@@ -24,6 +24,7 @@ struct PaymentPath {
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_payments).post(create_payment))
+        .route("/tags", get(list_tags))
         .route(
             "/{payment_id}",
             get(get_payment).put(update_payment).delete(delete_payment),
@@ -200,9 +201,15 @@ async fn create_payment(
     let affects_payer_expectation = input.affects_payer_expectation.unwrap_or(false);
     let affects_receiver_expectation = input.affects_receiver_expectation.unwrap_or(false);
 
+    // Serialize tags to JSON string
+    let tags_json = input
+        .tags
+        .as_ref()
+        .map(|tags| serde_json::to_string(tags).unwrap_or_else(|_| "[]".to_string()));
+
     let result = sqlx::query(
-        "INSERT INTO payments (project_id, payer_id, amount, description, payment_date, receipt_image, is_recurring, recurrence_type, recurrence_interval, recurrence_times_per, recurrence_end_date, recurrence_weekdays, recurrence_monthdays, recurrence_months, receiver_account_id, is_final, affects_balance, affects_payer_expectation, affects_receiver_expectation)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO payments (project_id, payer_id, amount, description, payment_date, receipt_image, is_recurring, recurrence_type, recurrence_interval, recurrence_times_per, recurrence_end_date, recurrence_weekdays, recurrence_monthdays, recurrence_months, receiver_account_id, is_final, affects_balance, affects_payer_expectation, affects_receiver_expectation, tags)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(member.project_id)
     .bind(input.payer_id)
@@ -223,6 +230,7 @@ async fn create_payment(
     .bind(affects_balance)
     .bind(affects_payer_expectation)
     .bind(affects_receiver_expectation)
+    .bind(&tags_json)
     .execute(&pool)
     .await?;
 
@@ -421,13 +429,19 @@ async fn update_payment(
     let affects_payer_expectation = input.affects_payer_expectation.unwrap_or(false);
     let affects_receiver_expectation = input.affects_receiver_expectation.unwrap_or(false);
 
+    // Serialize tags to JSON string
+    let tags_json = input
+        .tags
+        .as_ref()
+        .map(|tags| serde_json::to_string(tags).unwrap_or_else(|_| "[]".to_string()));
+
     // Update payment
     sqlx::query(
         "UPDATE payments SET payer_id = ?, amount = ?, description = ?, payment_date = ?,
          receipt_image = ?, is_recurring = ?, recurrence_type = ?, recurrence_interval = ?,
          recurrence_times_per = ?, recurrence_end_date = ?, recurrence_weekdays = ?,
          recurrence_monthdays = ?, recurrence_months = ?, receiver_account_id = ?, is_final = ?,
-         affects_balance = ?, affects_payer_expectation = ?, affects_receiver_expectation = ?
+         affects_balance = ?, affects_payer_expectation = ?, affects_receiver_expectation = ?, tags = ?
          WHERE id = ? AND project_id = ?",
     )
     .bind(input.payer_id)
@@ -448,6 +462,7 @@ async fn update_payment(
     .bind(affects_balance)
     .bind(affects_payer_expectation)
     .bind(affects_receiver_expectation)
+    .bind(&tags_json)
     .bind(path.payment_id)
     .bind(member.project_id)
     .execute(&pool)
@@ -610,4 +625,35 @@ async fn delete_payment(
     .await;
 
     Ok(Json(serde_json::json!({ "deleted": true })))
+}
+
+/// List all unique tags used in project payments
+async fn list_tags(
+    member: ProjectMember,
+    State(pool): State<SqlitePool>,
+) -> AppResult<Json<Vec<String>>> {
+    // Get all payments with tags for this project
+    let tags_rows: Vec<(Option<String>,)> =
+        sqlx::query_as("SELECT tags FROM payments WHERE project_id = ? AND tags IS NOT NULL")
+            .bind(member.project_id)
+            .fetch_all(&pool)
+            .await?;
+
+    // Parse JSON arrays and collect unique tags
+    let mut all_tags: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (tags_json,) in tags_rows {
+        if let Some(json_str) = tags_json {
+            if let Ok(tags) = serde_json::from_str::<Vec<String>>(&json_str) {
+                for tag in tags {
+                    all_tags.insert(tag);
+                }
+            }
+        }
+    }
+
+    // Convert to sorted vector
+    let mut result: Vec<String> = all_tags.into_iter().collect();
+    result.sort();
+
+    Ok(Json(result))
 }

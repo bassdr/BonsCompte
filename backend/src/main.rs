@@ -143,7 +143,8 @@ async fn main() {
         .nest("/members", routes::members::router())
         .nest("/payments", routes::payments::router())
         .nest("/debts", routes::debts::router())
-        .nest("/history", routes::history::router());
+        .nest("/history", routes::history::router())
+        .nest("/budget", routes::budget::router());
 
     // Build router - all routes at root level (use reverse proxy for /api prefix if needed)
     let app = Router::new()

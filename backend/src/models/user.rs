@@ -60,6 +60,11 @@ pub struct User {
     pub currency_symbol: Option<String>,
     #[serde(skip_serializing)]
     pub currency_symbol_position: Option<String>,
+    // Budget preferences
+    #[serde(skip_serializing)]
+    pub budget_pay_frequency: Option<String>,
+    #[serde(skip_serializing)]
+    pub budget_hours_per_week: Option<f64>,
 }
 
 impl User {
@@ -97,6 +102,9 @@ pub struct UserPreferences {
     pub decimal_separator: String,
     pub currency_symbol: String,
     pub currency_symbol_position: String,
+    // Budget preferences
+    pub budget_pay_frequency: String,
+    pub budget_hours_per_week: f64,
 }
 
 impl Default for UserPreferences {
@@ -106,6 +114,8 @@ impl Default for UserPreferences {
             decimal_separator: ".".to_string(),
             currency_symbol: "$".to_string(),
             currency_symbol_position: "before".to_string(),
+            budget_pay_frequency: "biweekly".to_string(),
+            budget_hours_per_week: 40.0,
         }
     }
 }
@@ -128,6 +138,13 @@ impl UserPreferences {
                 .currency_symbol_position
                 .clone()
                 .unwrap_or(defaults.currency_symbol_position),
+            budget_pay_frequency: user
+                .budget_pay_frequency
+                .clone()
+                .unwrap_or(defaults.budget_pay_frequency),
+            budget_hours_per_week: user
+                .budget_hours_per_week
+                .unwrap_or(defaults.budget_hours_per_week),
         }
     }
 }

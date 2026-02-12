@@ -837,6 +837,62 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         }
     }
 
+    // =====================
+    // Migration 025: Tags for Payments (Budget categorization)
+    // =====================
+    // Store tags as JSON array for categorizing payments (e.g., ["groceries", "food"])
+    sqlx::query("ALTER TABLE payments ADD COLUMN tags TEXT")
+        .execute(pool)
+        .await
+        .ok(); // Ignore error if column already exists
+
+    // =====================
+    // Migration 026: User Budget Preferences
+    // =====================
+    // Add budget-related preferences for pay frequency and hours per week
+    sqlx::query("ALTER TABLE users ADD COLUMN budget_pay_frequency TEXT DEFAULT 'biweekly'")
+        .execute(pool)
+        .await
+        .ok();
+
+    sqlx::query("ALTER TABLE users ADD COLUMN budget_hours_per_week REAL DEFAULT 40.0")
+        .execute(pool)
+        .await
+        .ok();
+
+    // =====================
+    // Migration 027: Budget Overrides Table
+    // =====================
+    // For manual budget adjustments and promoting one-time transactions to budget
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS budget_overrides (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            participant_id INTEGER REFERENCES participants(id) ON DELETE SET NULL,
+            tag TEXT,
+            name TEXT NOT NULL,
+            yearly_amount REAL NOT NULL,
+            override_type TEXT NOT NULL,
+            linked_payment_id INTEGER REFERENCES payments(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    // Indexes for budget_overrides
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_budget_overrides_project ON budget_overrides(project_id)",
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_budget_overrides_participant ON budget_overrides(participant_id)",
+    )
+    .execute(pool)
+    .await?;
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

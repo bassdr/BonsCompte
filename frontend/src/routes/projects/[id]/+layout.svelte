@@ -507,6 +507,12 @@
           {$_('nav.transactions')}
         </a>
         <a
+          href={resolve(`/projects/${$page.params.id}/budget`)}
+          class:active={$page.url.pathname.includes('/budget')}
+        >
+          {$_('budget.title')}
+        </a>
+        <a
           href={resolve(`/projects/${$page.params.id}/history`)}
           class:active={$page.url.pathname.includes('/history')}
         >

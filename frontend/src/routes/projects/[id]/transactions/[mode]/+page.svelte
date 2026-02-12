@@ -5,6 +5,7 @@
     getPayment,
     createPayment,
     updatePayment,
+    getProjectTags,
     type PaymentWithContributions,
     type CreatePaymentInput
   } from '$lib/api';
@@ -48,6 +49,11 @@
   let payerId = $state<number | null>(null);
   let paymentDate = $state(getLocalDateString());
   let submitting = $state(false);
+
+  // Tags state
+  let tags = $state<string[]>([]);
+  let tagInput = $state('');
+  let availableTags = $state<string[]>([]);
 
   // Receipt image state
   let receiptImage = $state<string | null>(null);
@@ -438,6 +444,15 @@
     }
   });
 
+  // Load available tags for autocomplete
+  $effect(() => {
+    if (projectId) {
+      getProjectTags(projectId)
+        .then((t) => (availableTags = t))
+        .catch(() => {});
+    }
+  });
+
   async function loadPaymentForEditing(paymentId: number) {
     loading = true;
     errorKey = '';
@@ -697,6 +712,7 @@
     // Convert API flags to UI toggles
     isPayerApproved = payment.affects_payer_expectation;
     isReceiverEarmarked = payment.affects_receiver_expectation;
+    tags = payment.tags ?? [];
 
     useSplitDate = false;
     splitFromDate = getLocalDateString();
@@ -1306,7 +1322,8 @@
         is_final: isRuleMode ? true : isFinal, // Rules are always final
         affects_balance: affectsBalance,
         affects_payer_expectation: affectsPayerExpectation,
-        affects_receiver_expectation: affectsReceiverExpectation
+        affects_receiver_expectation: affectsReceiverExpectation,
+        tags: tags.length > 0 ? tags : undefined
       };
 
       if (isRecurring) {
@@ -1609,6 +1626,53 @@
               placeholder={$_('transactions.descriptionPlaceholder')}
               required
             />
+          </div>
+
+          <!-- Tags -->
+          <div class="field">
+            <!-- svelte-ignore a11y_label_has_associated_control -->
+            <label>{$_('tags.label')}</label>
+            <div class="tags-input-wrapper">
+              {#each tags as tag (tag)}
+                <span class="tag-chip">
+                  {tag}
+                  <button
+                    type="button"
+                    class="tag-remove"
+                    onclick={() => {
+                      tags = tags.filter((t) => t !== tag);
+                    }}>x</button
+                  >
+                </span>
+              {/each}
+              <input
+                type="text"
+                bind:value={tagInput}
+                placeholder={tags.length === 0 ? $_('tags.placeholder') : ''}
+                list="project-tags"
+                class="tag-text-input"
+                onkeydown={(e) => {
+                  if ((e.key === 'Enter' || e.key === ',') && tagInput.trim()) {
+                    e.preventDefault();
+                    const newTag = tagInput.trim().replace(/,$/, '');
+                    if (newTag && !tags.includes(newTag)) {
+                      tags = [...tags, newTag];
+                    }
+                    tagInput = '';
+                  }
+                  if (e.key === 'Backspace' && !tagInput && tags.length > 0) {
+                    tags = tags.slice(0, -1);
+                  }
+                }}
+              />
+              {#if availableTags.length > 0}
+                <datalist id="project-tags">
+                  {#each availableTags.filter((t) => !tags.includes(t)) as tag (tag)}
+                    <option value={tag}></option>
+                  {/each}
+                </datalist>
+              {/if}
+            </div>
           </div>
 
           <!-- Receipt Image -->
@@ -2836,5 +2900,60 @@
     .share {
       font-size: 0.8rem;
     }
+  }
+
+  /* Tags input */
+  .tags-input-wrapper {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    padding: 0.3rem 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background: white;
+    align-items: center;
+    min-height: 38px;
+  }
+
+  .tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.15rem 0.4rem;
+    background: var(--accent, #7b61ff);
+    color: white;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+
+  .tag-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+    padding: 0;
+    font-size: 0.75rem;
+    line-height: 1;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+  }
+
+  .tag-remove:hover {
+    color: white;
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  .tag-text-input {
+    border: none;
+    outline: none;
+    flex: 1;
+    min-width: 80px;
+    font-size: 0.85rem;
+    padding: 0.2rem 0;
   }
 </style>

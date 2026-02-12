@@ -7,6 +7,7 @@
   import Image from '@lucide/svelte/icons/image';
   import Pencil from '@lucide/svelte/icons/pencil';
   import Trash2 from '@lucide/svelte/icons/trash-2';
+  import CirclePlus from '@lucide/svelte/icons/circle-plus';
 
   interface Contribution {
     participant_id: number;
@@ -44,10 +45,14 @@
     // Receipt image
     receiptImage?: string | null;
 
+    // Tags for categorization
+    tags?: string[] | null;
+
     // Optional action handlers (if provided, buttons will show)
     onEdit?: () => void;
     onDelete?: () => void;
     onViewReceipt?: () => void;
+    onPromoteToBudget?: () => void;
 
     // Styling
     class?: string;
@@ -71,9 +76,11 @@
     recurrenceEndDate = null,
     contributions = [],
     receiptImage = null,
+    tags = null,
     onEdit,
     onDelete,
     onViewReceipt,
+    onPromoteToBudget,
     class: className = ''
   }: Props = $props();
 
@@ -179,6 +186,16 @@
       {#if onDelete}
         <button class="icon-btn delete-btn" onclick={onDelete} title={$_('common.delete')}>
           <Trash2 size={18} />
+        </button>
+      {/if}
+      <!-- TODO: untested and put there to silent eslint errors -->
+      {#if tags && onPromoteToBudget}
+        <button
+          class="icon-btn promote-btn"
+          onclick={onPromoteToBudget}
+          title={$_('budget.promoteToBudget')}
+        >
+          <CirclePlus size={18} />
         </button>
       {/if}
     </div>

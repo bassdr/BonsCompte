@@ -6,6 +6,9 @@ export interface UserPreferences {
   decimal_separator: string;
   currency_symbol: string;
   currency_symbol_position: string;
+  // Budget preferences
+  budget_pay_frequency: 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
+  budget_hours_per_week: number;
 }
 
 export interface User {
@@ -60,7 +63,9 @@ function createAuthStore() {
                   date_format: 'mdy',
                   decimal_separator: '.',
                   currency_symbol: '$',
-                  currency_symbol_position: 'before'
+                  currency_symbol_position: 'before',
+                  budget_pay_frequency: 'biweekly',
+                  budget_hours_per_week: 40
                 }
               },
               loading: true // Still loading full user data
@@ -89,7 +94,9 @@ function createAuthStore() {
                     date_format: 'mdy',
                     decimal_separator: '.',
                     currency_symbol: '$',
-                    currency_symbol_position: 'before'
+                    currency_symbol_position: 'before',
+                    budget_pay_frequency: 'biweekly',
+                    budget_hours_per_week: 40
                   }
                 },
                 loading: false

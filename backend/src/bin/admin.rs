@@ -9,9 +9,87 @@
 //!   bonscompte-admin list-users                  # List all users
 //!   bonscompte-admin merge-users <source> <target> # Merge source user into target user
 
+use std::io::{self, Write};
+
 use clap::{Parser, Subcommand};
+use sqlx::SqlitePool;
 
 use bonscompte_backend::{config::Config, db, models::UserState};
+
+/// Look up a user by ID or username
+async fn find_user(
+    pool: &SqlitePool,
+    id_or_username: &str,
+) -> Result<Option<(i64, String, Option<String>)>, sqlx::Error> {
+    // Try as numeric ID first
+    if let Ok(id) = id_or_username.parse::<i64>() {
+        let user = sqlx::query_as("SELECT id, username, display_name FROM users WHERE id = ?")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?;
+        if user.is_some() {
+            return Ok(user);
+        }
+    }
+    // Fall back to username match
+    sqlx::query_as("SELECT id, username, display_name FROM users WHERE username = ?")
+        .bind(id_or_username)
+        .fetch_optional(pool)
+        .await
+}
+
+/// Print user list and prompt for selection
+async fn pick_user_interactive(
+    pool: &SqlitePool,
+    prompt: &str,
+    exclude_id: Option<i64>,
+) -> Result<(i64, String, Option<String>), Box<dyn std::error::Error>> {
+    let users: Vec<(i64, String, Option<String>, String)> =
+        sqlx::query_as("SELECT id, username, display_name, user_state FROM users ORDER BY id")
+            .fetch_all(pool)
+            .await?;
+
+    println!();
+    println!("{}", prompt);
+    println!(
+        "{:<5} {:<25} {:<20} State",
+        "ID", "Username", "Display Name"
+    );
+    println!("{}", "-".repeat(70));
+    for (id, username, display_name, state) in &users {
+        if exclude_id == Some(*id) {
+            continue;
+        }
+        println!(
+            "{:<5} {:<25} {:<20} {}",
+            id,
+            username,
+            display_name.clone().unwrap_or_else(|| "-".to_string()),
+            state
+        );
+    }
+    println!();
+    print!("Enter user ID or username: ");
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let input = input.trim();
+
+    match find_user(pool, input).await? {
+        Some(u) => {
+            if exclude_id == Some(u.0) {
+                eprintln!("Error: Cannot select the same user twice");
+                std::process::exit(1);
+            }
+            Ok(u)
+        }
+        None => {
+            eprintln!("Error: User '{}' not found", input);
+            std::process::exit(1);
+        }
+    }
+}
 
 #[derive(Parser)]
 #[command(name = "bonscompte-admin")]
@@ -42,10 +120,10 @@ enum Commands {
     ListUsers,
     /// Merge two users into one (keeps projects from both)
     MergeUsers {
-        /// Username to merge FROM (will be deactivated)
-        source: String,
-        /// Username to merge INTO (will receive all projects)
-        target: String,
+        /// User to merge FROM (ID or username, will be deactivated). Omit for interactive mode.
+        source: Option<String>,
+        /// User to merge INTO (ID or username, will receive all projects). Omit for interactive mode.
+        target: Option<String>,
     },
 }
 
@@ -414,42 +492,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         Commands::MergeUsers { source, target } => {
-            // Validate source and target are different
-            if source == target {
+            // Resolve source and target users (interactive or by ID/username)
+            let (source_id, source_username, source_display) = match source {
+                Some(s) => match find_user(&pool, &s).await? {
+                    Some(u) => u,
+                    None => {
+                        eprintln!("Error: Source user '{}' not found", s);
+                        std::process::exit(1);
+                    }
+                },
+                None => {
+                    pick_user_interactive(&pool, "Select SOURCE user (will be deactivated):", None)
+                        .await?
+                }
+            };
+
+            let (target_id, target_username, target_display) = match target {
+                Some(t) => match find_user(&pool, &t).await? {
+                    Some(u) => u,
+                    None => {
+                        eprintln!("Error: Target user '{}' not found", t);
+                        std::process::exit(1);
+                    }
+                },
+                None => {
+                    pick_user_interactive(
+                        &pool,
+                        "Select TARGET user (will receive all projects):",
+                        Some(source_id),
+                    )
+                    .await?
+                }
+            };
+
+            if source_id == target_id {
                 eprintln!("Error: Source and target users must be different");
                 std::process::exit(1);
             }
 
-            // Get source user
-            let source_user: Option<(i64, String, Option<String>)> =
-                sqlx::query_as("SELECT id, username, display_name FROM users WHERE username = ?")
-                    .bind(&source)
-                    .fetch_optional(&pool)
-                    .await?;
-
-            let (source_id, source_username, source_display) = match source_user {
-                Some(u) => u,
-                None => {
-                    eprintln!("Error: Source user '{}' not found", source);
-                    std::process::exit(1);
-                }
-            };
-
-            // Get target user
-            let target_user: Option<(i64, String, Option<String>)> =
-                sqlx::query_as("SELECT id, username, display_name FROM users WHERE username = ?")
-                    .bind(&target)
-                    .fetch_optional(&pool)
-                    .await?;
-
-            let (target_id, target_username, target_display) = match target_user {
-                Some(u) => u,
-                None => {
-                    eprintln!("Error: Target user '{}' not found", target);
-                    std::process::exit(1);
-                }
-            };
-
+            println!();
             println!("=== Merge Users ===");
             println!(
                 "Source: {} (id={}, display={})",
@@ -524,8 +605,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .execute(&mut *tx)
                             .await?;
 
-                            // Update participant's linked_user_id
-                            sqlx::query("UPDATE participants SET linked_user_id = ? WHERE id = ?")
+                            // Update participant's user_id
+                            sqlx::query("UPDATE participants SET user_id = ? WHERE id = ?")
                                 .bind(target_id)
                                 .bind(pid)
                                 .execute(&mut *tx)
@@ -543,9 +624,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .execute(&mut *tx)
                     .await?;
 
-                    // Update participant's linked_user_id if exists
+                    // Update participant's user_id if exists
                     if let Some(pid) = participant_id {
-                        sqlx::query("UPDATE participants SET linked_user_id = ? WHERE id = ?")
+                        sqlx::query("UPDATE participants SET user_id = ? WHERE id = ?")
                             .bind(target_id)
                             .bind(pid)
                             .execute(&mut *tx)
@@ -608,7 +689,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // 3. Transfer any remaining participants linked to source
             let participants_updated =
-                sqlx::query("UPDATE participants SET linked_user_id = ? WHERE linked_user_id = ?")
+                sqlx::query("UPDATE participants SET user_id = ? WHERE user_id = ?")
                     .bind(target_id)
                     .bind(source_id)
                     .execute(&mut *tx)

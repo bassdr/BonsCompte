@@ -41,7 +41,7 @@
     onchange?: (ev: { value: string | number; input?: boolean }) => void;
   } = $props();
 
-  const inputId = $state(getInputId(id));
+  const inputId = $derived(getInputId(id));
 
   const Icon = $derived(icon);
   let cssString = $derived(

@@ -1630,13 +1630,13 @@
 
           <!-- Receipt Image -->
           <div class="field">
-            <!-- svelte-ignore a11y_label_has_associated_control -->
-            <label>
+            <label for="receipt-upload-input">
               {$_('transactions.receiptImage')}
               <span class="hint">{$_('transactions.imageFormatsHint')}</span>
             </label>
             <div class="receipt-upload">
               <input
+                id="receipt-upload-input"
                 type="file"
                 accept="image/jpeg,image/png,image/gif,image/webp"
                 onchange={handleFileChange}

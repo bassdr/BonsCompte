@@ -1,10 +1,11 @@
 <script lang="ts">
   import { getContext } from 'svelte';
   import { dateToString } from '@svar-ui/lib-dom';
+  import CalendarIcon from '@lucide/svelte/icons/calendar';
 
-  // Use original SVAR components for Text and Dropdown
-  import { Text, Dropdown } from '@svar-ui/svelte-core';
-  // Use our forked Calendar with disabledButtons support
+  // Use original SVAR Dropdown, forked Text (SVG icon support) and Calendar (disabledButtons)
+  import { Dropdown } from '@svar-ui/svelte-core';
+  import Text from './Text.svelte';
   import Calendar from './Calendar.svelte';
 
   // Calendar locale contains month/day names for date formatting
@@ -173,7 +174,7 @@
     {error}
     {placeholder}
     onchange={change}
-    icon="wxi-calendar"
+    icon={CalendarIcon}
     inputStyle="cursor: pointer; width: 100%; padding-right: calc(var(--wx-input-icon-size) + var(--wx-input-icon-indent) * 2);"
     {clear}
   />

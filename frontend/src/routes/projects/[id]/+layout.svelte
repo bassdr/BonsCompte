@@ -79,6 +79,9 @@
     }
   }
 
+  // Float-safe "less than" to avoid false positives from floating point accumulation
+  const isBelow = (a: number, b: number) => a < b - 0.001;
+
   // Warning pool stats: compute when each pool or user will go negative within the warning horizon
   // This is independent of the current view and always computed from today to warning horizon
   interface UserWarning {
@@ -175,7 +178,7 @@
         }
 
         // Check if already below expected minimum today
-        if (runningBalance < runningExpectedMinimum) {
+        if (isBelow(runningBalance, runningExpectedMinimum)) {
           poolTotalNegative = true;
           poolFirstNegativeDate = today;
         }
@@ -218,7 +221,7 @@
           }
 
           // Warn when balance drops below expected minimum
-          if (!poolTotalNegative && runningBalance < runningExpectedMinimum) {
+          if (!poolTotalNegative && isBelow(runningBalance, runningExpectedMinimum)) {
             poolTotalNegative = true;
             poolFirstNegativeDate = occ.occurrence_date;
           }
@@ -232,15 +235,19 @@
       // Only calculate if user warning is enabled
       if (poolParticipant.warning_horizon_users) {
         const usersHorizonEnd = getWarningHorizonEndDate(poolParticipant.warning_horizon_users);
-        const poolTotalOwnership = startPoolData?.total_balance ?? 0;
-        const poolExpectedMin = startPoolData?.expected_minimum ?? 0;
 
-        // Build a map of occurrences by payment_id for looking up expectation flags
+        // Build occurrence maps by payment_id for looking up expectation flags
         const occurrencesByPayment = new SvelteMap<number, PaymentOccurrence[]>();
         for (const occ of warningDebts!.occurrences) {
           const existing = occurrencesByPayment.get(occ.payment_id) || [];
           existing.push(occ);
           occurrencesByPayment.set(occ.payment_id, existing);
+        }
+        const startOccurrencesByPayment = new SvelteMap<number, PaymentOccurrence[]>();
+        for (const occ of warningStartDebts!.occurrences) {
+          const existing = startOccurrencesByPayment.get(occ.payment_id) || [];
+          existing.push(occ);
+          startOccurrencesByPayment.set(occ.payment_id, existing);
         }
 
         for (const entry of pool.entries) {
@@ -249,13 +256,27 @@
           );
 
           let userOwnership = startEntry?.ownership ?? 0;
-          // Compute user's starting expected minimum proportionally to their ownership share
-          // If pool total is 0, use 0 as starting expected minimum
-          let userExpectedMin =
-            poolTotalOwnership !== 0 ? (userOwnership / poolTotalOwnership) * poolExpectedMin : 0;
+          // Compute user's starting expected minimum from actual expectation-affecting transactions
+          let userExpectedMin = 0;
+          if (startEntry) {
+            for (const contrib of startEntry.contributed_breakdown) {
+              const occs = startOccurrencesByPayment.get(contrib.payment_id) || [];
+              const occ = occs.find((o) => o.occurrence_date === contrib.occurrence_date);
+              if (occ?.affects_receiver_expectation) {
+                userExpectedMin += contrib.amount;
+              }
+            }
+            for (const consumed of startEntry.consumed_breakdown) {
+              const occs = startOccurrencesByPayment.get(consumed.payment_id) || [];
+              const occ = occs.find((o) => o.occurrence_date === consumed.occurrence_date);
+              if (occ?.affects_payer_expectation) {
+                userExpectedMin -= consumed.amount;
+              }
+            }
+          }
 
           // Already below expected minimum today
-          if (userOwnership < userExpectedMin) {
+          if (isBelow(userOwnership, userExpectedMin)) {
             userWarnings.push({
               participantId: entry.participant_id,
               participantName: entry.participant_name,
@@ -317,7 +338,7 @@
           for (const change of changes) {
             userOwnership += change.ownershipDelta;
             userExpectedMin += change.expectedMinDelta;
-            if (userOwnership < userExpectedMin && !firstBelowExpectedDate) {
+            if (isBelow(userOwnership, userExpectedMin) && !firstBelowExpectedDate) {
               firstBelowExpectedDate = change.date;
               break;
             }

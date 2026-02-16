@@ -42,6 +42,7 @@ WORKDIR /app
 # Copy binaries (server and CLI utilities)
 COPY --from=builder /app/target/release/bonscompte-backend /usr/local/bin/
 COPY --from=builder /app/target/release/bonscompte-admin /usr/local/bin/
+RUN ln -s /usr/local/bin/bonscompte-admin /usr/local/bin/admin
 COPY --from=builder /app/target/release/recalculate-contributions /usr/local/bin/
 COPY --from=builder /app/migrations ./migrations
 

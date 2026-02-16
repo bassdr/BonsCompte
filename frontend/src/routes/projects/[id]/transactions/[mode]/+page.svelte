@@ -707,10 +707,19 @@
       recurrenceInterval = payment.recurrence_interval || 1;
       recurrenceEndDate = payment.recurrence_end_date || '';
 
+      const editDateStr = payment.payment_date.split('T')[0];
+
       if (payment.recurrence_weekdays) {
         try {
           recurrenceWeekdays = JSON.parse(payment.recurrence_weekdays);
-          userModifiedWeekdays = true;
+          // Detect if weekdays are just the default pattern derived from payment date
+          const defaultWeekday = getDefaultWeekday(editDateStr);
+          const expectedWeekdays = initializeWeekdayArrays(
+            payment.recurrence_interval || 1,
+            defaultWeekday
+          );
+          userModifiedWeekdays =
+            JSON.stringify(recurrenceWeekdays) !== JSON.stringify(expectedWeekdays);
         } catch {
           recurrenceWeekdays = [];
           userModifiedWeekdays = false;
@@ -723,7 +732,11 @@
       if (payment.recurrence_monthdays) {
         try {
           recurrenceMonthdays = JSON.parse(payment.recurrence_monthdays);
-          userModifiedMonthdays = true;
+          // Detect if monthdays are just the default (single day matching payment date)
+          const defaultDay = getDefaultMonthDay(editDateStr);
+          userModifiedMonthdays = !(
+            recurrenceMonthdays.length === 1 && recurrenceMonthdays[0] === defaultDay
+          );
         } catch {
           recurrenceMonthdays = [];
           userModifiedMonthdays = false;
@@ -736,7 +749,11 @@
       if (payment.recurrence_months) {
         try {
           recurrenceMonths = JSON.parse(payment.recurrence_months);
-          userModifiedMonths = true;
+          // Detect if months are just the default (single month matching payment date)
+          const defaultMonth = getDefaultMonth(editDateStr);
+          userModifiedMonths = !(
+            recurrenceMonths.length === 1 && recurrenceMonths[0] === defaultMonth
+          );
         } catch {
           recurrenceMonths = [];
           userModifiedMonths = false;

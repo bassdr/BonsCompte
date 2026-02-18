@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, State},
-    routing::get,
+    routing::{get, patch},
     Json, Router,
 };
 use serde::Deserialize;
@@ -29,6 +29,7 @@ pub fn router() -> Router<AppState> {
             "/{payment_id}",
             get(get_payment).put(update_payment).delete(delete_payment),
         )
+        .route("/{payment_id}/tags", patch(update_payment_tags))
 }
 
 async fn list_payments(
@@ -656,4 +657,47 @@ async fn list_tags(
     result.sort();
 
     Ok(Json(result))
+}
+
+#[derive(Deserialize)]
+struct UpdateTagsInput {
+    tags: Vec<String>,
+}
+
+async fn update_payment_tags(
+    Path(path): Path<PaymentPath>,
+    member: ProjectMember,
+    State(pool): State<SqlitePool>,
+    Json(input): Json<UpdateTagsInput>,
+) -> AppResult<Json<Payment>> {
+    if !member.can_edit() {
+        return Err(AppError::forbidden(ErrorCode::EditorRequired));
+    }
+
+    // Verify payment exists and belongs to project
+    sqlx::query("SELECT id FROM payments WHERE id = ? AND project_id = ?")
+        .bind(path.payment_id)
+        .bind(member.project_id)
+        .fetch_optional(&pool)
+        .await?
+        .ok_or_else(|| AppError::not_found(ErrorCode::PaymentNotFound))?;
+
+    let tags_json = if input.tags.is_empty() {
+        None
+    } else {
+        Some(serde_json::to_string(&input.tags).unwrap())
+    };
+
+    sqlx::query("UPDATE payments SET tags = ? WHERE id = ?")
+        .bind(&tags_json)
+        .bind(path.payment_id)
+        .execute(&pool)
+        .await?;
+
+    let updated: Payment = sqlx::query_as("SELECT * FROM payments WHERE id = ?")
+        .bind(path.payment_id)
+        .fetch_one(&pool)
+        .await?;
+
+    Ok(Json(updated))
 }

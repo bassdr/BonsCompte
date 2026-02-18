@@ -7,12 +7,16 @@
   import Pencil from '@lucide/svelte/icons/pencil';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
+  import X from '@lucide/svelte/icons/x';
+  import Tag from '@lucide/svelte/icons/tag';
   import {
     getBudget,
     getBudgetOverrides,
     createBudgetOverride,
     deleteBudgetOverride,
     updatePreferences,
+    updatePaymentTags,
+    getProjectTags,
     type BudgetResponse,
     type BudgetLineItem,
     type BudgetOverride,
@@ -51,6 +55,11 @@
     linked_payment_id: null
   });
   let savingOverride = $state(false);
+
+  // Tag editing state
+  let editingTagItemKey = $state<string | null>(null);
+  let editingTagValue = $state('');
+  let projectTags = $state<string[]>([]);
 
   // Expanded sections
   let expandedSections = new SvelteSet<string>();
@@ -106,9 +115,44 @@
     return $_(`budget.${col}`);
   }
 
+  // Merged budget item (may combine multiple same-name items)
+  interface MergedBudgetLineItem extends BudgetLineItem {
+    merged_count: number;
+    merged_payment_ids: number[];
+  }
+
+  // Merge items with the same name (budgeted view only)
+  function mergeByName(items: BudgetLineItem[]): MergedBudgetLineItem[] {
+    const byName = new Map<string, MergedBudgetLineItem>();
+    for (const item of items) {
+      const key = `${item.name}|${item.is_income}`;
+      const existing = byName.get(key);
+      if (existing) {
+        existing.yearly_amount += item.yearly_amount;
+        existing.merged_count++;
+        if (item.source.type === 'RecurringPayment' && item.source.payment_id != null) {
+          existing.merged_payment_ids.push(item.source.payment_id);
+        }
+        // Keep the tag from first item, but if this one has a tag and the existing doesn't, use it
+        if (!existing.tag && item.tag) {
+          existing.tag = item.tag;
+        }
+      } else {
+        const paymentId =
+          item.source.type === 'RecurringPayment' ? item.source.payment_id : undefined;
+        byName.set(key, {
+          ...item,
+          merged_count: 1,
+          merged_payment_ids: paymentId != null ? [paymentId] : []
+        });
+      }
+    }
+    return Array.from(byName.values());
+  }
+
   // Group items by tag
-  function groupByTag(items: BudgetLineItem[]): Map<string, BudgetLineItem[]> {
-    const groups = new Map<string, BudgetLineItem[]>();
+  function groupByTag(items: MergedBudgetLineItem[]): Map<string, MergedBudgetLineItem[]> {
+    const groups = new Map<string, MergedBudgetLineItem[]>();
     for (const item of items) {
       const tag = item.tag || $_('budget.uncategorized');
       if (!groups.has(tag)) {
@@ -127,10 +171,10 @@
   });
 
   let incomeItems = $derived(
-    currentSummary?.items.filter((i: BudgetLineItem) => i.is_income) ?? []
+    mergeByName(currentSummary?.items.filter((i: BudgetLineItem) => i.is_income) ?? [])
   );
   let expenseItems = $derived(
-    currentSummary?.items.filter((i: BudgetLineItem) => !i.is_income) ?? []
+    mergeByName(currentSummary?.items.filter((i: BudgetLineItem) => !i.is_income) ?? [])
   );
   let incomeByTag = $derived(groupByTag(incomeItems));
   let expenseByTag = $derived(groupByTag(expenseItems));
@@ -165,8 +209,8 @@
       .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
   });
 
-  // User participants (non-pool)
-  let userParticipants = $derived($participants.filter((p) => p.account_type === 'user'));
+  // All participants for scope filter (users and pools)
+  let allParticipants = $derived($participants);
 
   const projectId = $derived(parseInt($page.params.id ?? ''));
 
@@ -174,12 +218,14 @@
     loading = true;
     errorKey = '';
     try {
-      const [budgetData, overridesData] = await Promise.all([
+      const [budgetData, overridesData, tagsData] = await Promise.all([
         getBudget(projectId, selectedParticipantId),
-        getBudgetOverrides(projectId)
+        getBudgetOverrides(projectId),
+        getProjectTags(projectId)
       ]);
       budget = budgetData;
       overrides = overridesData;
+      projectTags = tagsData;
     } catch (e) {
       errorKey = getErrorKey(e, 'common.error');
     } finally {
@@ -246,6 +292,48 @@
     }
   }
 
+  async function handleExcludeItem(item: MergedBudgetLineItem) {
+    // Create exclude overrides for each payment ID in the merged item
+    try {
+      for (const paymentId of item.merged_payment_ids) {
+        await createBudgetOverride(projectId, {
+          name: item.name,
+          yearly_amount: 0,
+          override_type: 'exclude',
+          tag: item.tag,
+          linked_payment_id: paymentId
+        });
+      }
+      await loadData();
+    } catch (e) {
+      errorKey = getErrorKey(e, 'common.error');
+    }
+  }
+
+  function startTagEdit(item: MergedBudgetLineItem) {
+    editingTagItemKey = `${item.name}|${item.is_income}`;
+    editingTagValue = item.tag || '';
+  }
+
+  async function saveTagEdit(item: MergedBudgetLineItem) {
+    try {
+      for (const paymentId of item.merged_payment_ids) {
+        const tags = editingTagValue.trim() ? [editingTagValue.trim()] : [];
+        await updatePaymentTags(projectId, paymentId, tags);
+      }
+      editingTagItemKey = null;
+      editingTagValue = '';
+      await loadData();
+    } catch (e) {
+      errorKey = getErrorKey(e, 'common.error');
+    }
+  }
+
+  function cancelTagEdit() {
+    editingTagItemKey = null;
+    editingTagValue = '';
+  }
+
   onMount(() => {
     loadData();
   });
@@ -259,8 +347,10 @@
         <label for="scope-select">{$_('budget.scope')}</label>
         <select id="scope-select" bind:value={selectedParticipantId} onchange={() => loadData()}>
           <option value={undefined}>{$_('budget.allAccounts')}</option>
-          {#each userParticipants as participant}
-            <option value={participant.id}>{participant.name}</option>
+          {#each allParticipants as participant}
+            <option value={participant.id}
+              >{participant.name}{participant.account_type === 'pool' ? ` (${$_('budget.pool')})` : ''}</option
+            >
           {/each}
         </select>
       </div>
@@ -390,12 +480,16 @@
         {#each timeColumns as col}
           <div class="col-amount">{getColumnLabel(col)}</div>
         {/each}
+        {#if viewMode === 'budgeted'}
+          <div class="col-actions">&nbsp;</div>
+        {/if}
       </div>
 
       <!-- Income Section -->
       {#if incomeItems.length > 0}
         <div
           class="section-header"
+          class:has-actions={viewMode === 'budgeted'}
           onclick={() => toggleSection('income')}
           role="button"
           tabindex="0"
@@ -414,23 +508,73 @@
               {formatCurrency(calculateTimeAmount(currentSummary?.total_income_yearly ?? 0, col))}
             </div>
           {/each}
+          {#if viewMode === 'budgeted'}
+            <div class="col-actions">&nbsp;</div>
+          {/if}
         </div>
 
         {#if expandedSections.has('income')}
           {#each [...incomeByTag] as [tag, items]}
             {#each items as item}
-              <div class="table-row item-row">
+              {@const itemKey = `${item.name}|${item.is_income}`}
+              <div class="table-row item-row" class:has-actions={viewMode === 'budgeted'}>
                 <div class="col-category item-name">
-                  {#if item.tag}
-                    <span class="tag-badge">{item.tag}</span>
+                  {#if editingTagItemKey === itemKey}
+                    <div class="inline-tag-edit">
+                      <input
+                        type="text"
+                        bind:value={editingTagValue}
+                        list="tag-suggestions"
+                        class="tag-edit-input"
+                        onkeydown={(e) => {
+                          if (e.key === 'Enter') saveTagEdit(item);
+                          if (e.key === 'Escape') cancelTagEdit();
+                        }}
+                      />
+                      <button class="btn-icon-sm" onclick={() => saveTagEdit(item)} title={$_('common.save')}>
+                        <Pencil size={12} />
+                      </button>
+                      <button class="btn-icon-sm" onclick={() => cancelTagEdit()} title={$_('common.cancel')}>
+                        <X size={12} />
+                      </button>
+                    </div>
+                  {:else}
+                    {#if item.tag}
+                      <span class="tag-badge">{item.tag}</span>
+                    {/if}
+                    {item.name}
+                    {#if item.merged_count > 1}
+                      <span class="merged-badge" title={$_('budget.mergedItems', { values: { count: item.merged_count } })}>
+                        x{item.merged_count}
+                      </span>
+                    {/if}
                   {/if}
-                  {item.name}
                 </div>
                 {#each timeColumns as col}
                   <div class="col-amount">
                     {formatCurrency(calculateTimeAmount(item.yearly_amount, col))}
                   </div>
                 {/each}
+                {#if viewMode === 'budgeted'}
+                  <div class="col-actions">
+                    {#if item.merged_payment_ids.length > 0}
+                      <button
+                        class="btn-icon-sm"
+                        onclick={() => startTagEdit(item)}
+                        title={$_('budget.tagItem')}
+                      >
+                        <Tag size={14} />
+                      </button>
+                      <button
+                        class="btn-icon-sm btn-exclude"
+                        onclick={() => handleExcludeItem(item)}
+                        title={$_('budget.excludeItem')}
+                      >
+                        <X size={14} />
+                      </button>
+                    {/if}
+                  </div>
+                {/if}
               </div>
             {/each}
           {/each}
@@ -441,6 +585,7 @@
       {#if expenseItems.length > 0}
         <div
           class="section-header"
+          class:has-actions={viewMode === 'budgeted'}
           onclick={() => toggleSection('expenses')}
           role="button"
           tabindex="0"
@@ -459,31 +604,88 @@
               {formatCurrency(calculateTimeAmount(currentSummary?.total_expenses_yearly ?? 0, col))}
             </div>
           {/each}
+          {#if viewMode === 'budgeted'}
+            <div class="col-actions">&nbsp;</div>
+          {/if}
         </div>
 
         {#if expandedSections.has('expenses')}
           {#each [...expenseByTag] as [tag, items]}
             {#each items as item}
-              <div class="table-row item-row">
+              {@const itemKey = `${item.name}|${item.is_income}`}
+              <div class="table-row item-row" class:has-actions={viewMode === 'budgeted'}>
                 <div class="col-category item-name">
-                  {#if item.tag}
-                    <span class="tag-badge">{item.tag}</span>
+                  {#if editingTagItemKey === itemKey}
+                    <div class="inline-tag-edit">
+                      <input
+                        type="text"
+                        bind:value={editingTagValue}
+                        list="tag-suggestions"
+                        class="tag-edit-input"
+                        onkeydown={(e) => {
+                          if (e.key === 'Enter') saveTagEdit(item);
+                          if (e.key === 'Escape') cancelTagEdit();
+                        }}
+                      />
+                      <button class="btn-icon-sm" onclick={() => saveTagEdit(item)} title={$_('common.save')}>
+                        <Pencil size={12} />
+                      </button>
+                      <button class="btn-icon-sm" onclick={() => cancelTagEdit()} title={$_('common.cancel')}>
+                        <X size={12} />
+                      </button>
+                    </div>
+                  {:else}
+                    {#if item.tag}
+                      <span class="tag-badge">{item.tag}</span>
+                    {/if}
+                    {item.name}
+                    {#if item.merged_count > 1}
+                      <span class="merged-badge" title={$_('budget.mergedItems', { values: { count: item.merged_count } })}>
+                        x{item.merged_count}
+                      </span>
+                    {/if}
                   {/if}
-                  {item.name}
                 </div>
                 {#each timeColumns as col}
                   <div class="col-amount">
                     {formatCurrency(calculateTimeAmount(item.yearly_amount, col))}
                   </div>
                 {/each}
+                {#if viewMode === 'budgeted'}
+                  <div class="col-actions">
+                    {#if item.merged_payment_ids.length > 0}
+                      <button
+                        class="btn-icon-sm"
+                        onclick={() => startTagEdit(item)}
+                        title={$_('budget.tagItem')}
+                      >
+                        <Tag size={14} />
+                      </button>
+                      <button
+                        class="btn-icon-sm btn-exclude"
+                        onclick={() => handleExcludeItem(item)}
+                        title={$_('budget.excludeItem')}
+                      >
+                        <X size={14} />
+                      </button>
+                    {/if}
+                  </div>
+                {/if}
               </div>
             {/each}
           {/each}
         {/if}
       {/if}
 
+      <!-- Tag suggestions datalist -->
+      <datalist id="tag-suggestions">
+        {#each projectTags as tag}
+          <option value={tag}></option>
+        {/each}
+      </datalist>
+
       <!-- Net Row -->
-      <div class="table-row net-row">
+      <div class="table-row net-row" class:has-actions={viewMode === 'budgeted'}>
         <div class="col-category"><strong>{$_('budget.net')}</strong></div>
         {#each timeColumns as col}
           <div
@@ -496,6 +698,9 @@
             >
           </div>
         {/each}
+        {#if viewMode === 'budgeted'}
+          <div class="col-actions">&nbsp;</div>
+        {/if}
       </div>
     </div>
   {/if}
@@ -729,6 +934,10 @@
     letter-spacing: 0.05em;
   }
 
+  .table-header:has(.col-actions) {
+    grid-template-columns: 1.5fr repeat(5, 1fr) auto;
+  }
+
   .section-header {
     display: grid;
     grid-template-columns: 1.5fr repeat(5, 1fr);
@@ -736,6 +945,10 @@
     cursor: pointer;
     border-bottom: 1px solid #f0f0f0;
     transition: background 0.15s;
+  }
+
+  .section-header.has-actions {
+    grid-template-columns: 1.5fr repeat(5, 1fr) auto;
   }
 
   .section-header:hover {
@@ -747,6 +960,10 @@
     grid-template-columns: 1.5fr repeat(5, 1fr);
     padding: 0.5rem 1rem;
     border-bottom: 1px solid #f5f5f5;
+  }
+
+  .table-row.has-actions {
+    grid-template-columns: 1.5fr repeat(5, 1fr) auto;
   }
 
   .item-row {
@@ -800,6 +1017,65 @@
     color: white;
     font-size: 0.7rem;
     font-weight: 500;
+  }
+
+  .merged-badge {
+    display: inline-block;
+    padding: 0.05rem 0.3rem;
+    border-radius: 4px;
+    background: #e0e0e0;
+    color: #666;
+    font-size: 0.65rem;
+    font-weight: 500;
+    margin-left: 0.25rem;
+  }
+
+  .col-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.15rem;
+    min-width: 60px;
+  }
+
+  .btn-icon-sm {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    background: transparent;
+    color: #999;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.15s;
+    padding: 0;
+  }
+
+  .btn-icon-sm:hover {
+    background: #f0f0f0;
+    color: #555;
+  }
+
+  .btn-icon-sm.btn-exclude:hover {
+    background: #fee;
+    color: #c00;
+  }
+
+  .inline-tag-edit {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .tag-edit-input {
+    padding: 0.15rem 0.4rem;
+    border: 1px solid var(--accent, #7b61ff);
+    border-radius: 4px;
+    font-size: 0.8rem;
+    width: 120px;
+    outline: none;
   }
 
   /* Comparison Table */
@@ -1053,6 +1329,12 @@
       grid-template-columns: 1fr repeat(3, 1fr);
     }
 
+    .table-header:has(.col-actions),
+    .section-header.has-actions,
+    .table-row.has-actions {
+      grid-template-columns: 1fr repeat(3, 1fr) auto;
+    }
+
     /* Hide semester and hour columns on mobile */
     .table-header > :nth-child(3),
     .section-header > :nth-child(3),
@@ -1066,6 +1348,10 @@
     .config-row {
       flex-direction: column;
       gap: 0.75rem;
+    }
+
+    .col-actions {
+      min-width: 50px;
     }
   }
 </style>

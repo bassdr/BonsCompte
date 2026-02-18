@@ -1067,6 +1067,17 @@ export const getBudget = (projectId: number, participantId?: number): Promise<Bu
 export const getProjectTags = (projectId: number): Promise<string[]> =>
   authFetch(`/projects/${projectId}/payments/tags`);
 
+// Update tags on a payment
+export const updatePaymentTags = (
+  projectId: number,
+  paymentId: number,
+  tags: string[]
+): Promise<Payment> =>
+  authFetch(`/projects/${projectId}/payments/${paymentId}/tags`, {
+    method: 'PATCH',
+    body: JSON.stringify({ tags })
+  });
+
 // Budget overrides CRUD
 export const getBudgetOverrides = (projectId: number): Promise<BudgetOverride[]> =>
   authFetch(`/projects/${projectId}/budget/overrides`);

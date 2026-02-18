@@ -872,6 +872,11 @@
   "budget.everyYear": "Every year",
   "budget.every2Years": "Every 2 years",
   "budget.every5Years": "Every 5 years",
+  "budget.pool": "Pool",
+  "budget.excludeItem": "Exclude from budget",
+  "budget.tagItem": "Set tag",
+  "budget.tagPrompt": "Enter tag for this item:",
+  "budget.mergedItems": "{count} merged items",
 
   "tags.label": "Tags",
   "tags.placeholder": "Add tags...",

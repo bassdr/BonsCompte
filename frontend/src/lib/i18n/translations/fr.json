@@ -872,6 +872,11 @@
   "budget.everyYear": "Chaque année",
   "budget.every2Years": "Tous les 2 ans",
   "budget.every5Years": "Tous les 5 ans",
+  "budget.pool": "Caisse",
+  "budget.excludeItem": "Exclure du budget",
+  "budget.tagItem": "Définir l'étiquette",
+  "budget.tagPrompt": "Entrez l'étiquette pour cet élément :",
+  "budget.mergedItems": "{count} éléments fusionnés",
 
   "tags.label": "Étiquettes",
   "tags.placeholder": "Ajouter des étiquettes...",

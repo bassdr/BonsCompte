@@ -3496,12 +3496,17 @@
     .date-nav-row {
       width: 100%;
       justify-content: center;
-      flex-wrap: wrap;
       gap: 0.5rem;
     }
 
     .date-display {
+      flex: 1;
+      min-width: 0;
       max-width: 100%;
+    }
+
+    .date-display :global(.wx-datepicker) {
+      width: 100%;
     }
 
     .horizon-selector {

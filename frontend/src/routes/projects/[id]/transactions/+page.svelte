@@ -392,6 +392,9 @@
           recurrenceType={p.recurrence_type}
           recurrenceInterval={p.recurrence_interval}
           recurrenceEndDate={p.recurrence_end_date}
+          recurrenceWeekdays={p.recurrence_weekdays}
+          recurrenceMonthdays={p.recurrence_monthdays}
+          recurrenceMonths={p.recurrence_months}
           contributions={p.contributions}
           receiptImage={p.receipt_image}
           onEdit={$canEdit ? () => editTransaction(p) : undefined}

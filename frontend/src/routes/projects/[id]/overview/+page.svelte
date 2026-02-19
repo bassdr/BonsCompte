@@ -2563,6 +2563,9 @@
                                                 recurrenceType={payment?.recurrence_type}
                                                 recurrenceInterval={payment?.recurrence_interval}
                                                 recurrenceEndDate={payment?.recurrence_end_date}
+                                                recurrenceWeekdays={payment?.recurrence_weekdays}
+                                                recurrenceMonthdays={payment?.recurrence_monthdays}
+                                                recurrenceMonths={payment?.recurrence_months}
                                                 contributions={payment?.contributions ?? []}
                                               />
                                             {/each}
@@ -2659,6 +2662,9 @@
                                                 recurrenceType={payment?.recurrence_type}
                                                 recurrenceInterval={payment?.recurrence_interval}
                                                 recurrenceEndDate={payment?.recurrence_end_date}
+                                                recurrenceWeekdays={payment?.recurrence_weekdays}
+                                                recurrenceMonthdays={payment?.recurrence_monthdays}
+                                                recurrenceMonths={payment?.recurrence_months}
                                                 contributions={payment?.contributions ?? []}
                                               />
                                             {/each}
@@ -2841,6 +2847,9 @@
                                                         recurrenceType={payment?.recurrence_type}
                                                         recurrenceInterval={payment?.recurrence_interval}
                                                         recurrenceEndDate={payment?.recurrence_end_date}
+                                                        recurrenceWeekdays={payment?.recurrence_weekdays}
+                                                        recurrenceMonthdays={payment?.recurrence_monthdays}
+                                                        recurrenceMonths={payment?.recurrence_months}
                                                         contributions={payment?.contributions ?? []}
                                                       />
                                                     {/each}
@@ -2948,6 +2957,9 @@
                                                         recurrenceType={payment?.recurrence_type}
                                                         recurrenceInterval={payment?.recurrence_interval}
                                                         recurrenceEndDate={payment?.recurrence_end_date}
+                                                        recurrenceWeekdays={payment?.recurrence_weekdays}
+                                                        recurrenceMonthdays={payment?.recurrence_monthdays}
+                                                        recurrenceMonths={payment?.recurrence_months}
                                                         contributions={payment?.contributions ?? []}
                                                       />
                                                     {/each}
@@ -3179,6 +3191,9 @@
                                 recurrenceType={payment?.recurrence_type}
                                 recurrenceInterval={payment?.recurrence_interval}
                                 recurrenceEndDate={payment?.recurrence_end_date}
+                                recurrenceWeekdays={payment?.recurrence_weekdays}
+                                recurrenceMonthdays={payment?.recurrence_monthdays}
+                                recurrenceMonths={payment?.recurrence_months}
                                 contributions={payment?.contributions ?? []}
                               />
                             {/each}

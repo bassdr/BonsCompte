@@ -863,18 +863,33 @@
 
   function resetWeekdays() {
     const defaultWeekday = paymentDate ? getDefaultWeekday(paymentDate) : 0;
-    recurrenceWeekdays = initializeWeekdayArrays(recurrenceInterval, defaultWeekday);
+    const expected = initializeWeekdayArrays(recurrenceInterval, defaultWeekday);
+    if (JSON.stringify(recurrenceWeekdays) === JSON.stringify(expected) && !userModifiedWeekdays)
+      return;
+    recurrenceWeekdays = expected;
     userModifiedWeekdays = false;
   }
 
   function resetMonthdays() {
     const defaultMonthDay = paymentDate ? getDefaultMonthDay(paymentDate) : 1;
+    if (
+      recurrenceMonthdays.length === 1 &&
+      recurrenceMonthdays[0] === defaultMonthDay &&
+      !userModifiedMonthdays
+    )
+      return;
     recurrenceMonthdays = [defaultMonthDay];
     userModifiedMonthdays = false;
   }
 
   function resetMonths() {
     const defaultMonth = paymentDate ? getDefaultMonth(paymentDate) : 1;
+    if (
+      recurrenceMonths.length === 1 &&
+      recurrenceMonths[0] === defaultMonth &&
+      !userModifiedMonths
+    )
+      return;
     recurrenceMonths = [defaultMonth];
     userModifiedMonths = false;
   }

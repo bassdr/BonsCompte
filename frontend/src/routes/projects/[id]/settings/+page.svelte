@@ -36,6 +36,9 @@
   import { auth } from '$lib/auth';
   import { _ } from '$lib/i18n';
   import { getErrorKey } from '$lib/errors';
+  import Pencil from '@lucide/svelte/icons/pencil';
+  import Trash2 from '@lucide/svelte/icons/trash-2';
+  import UserMinus from '@lucide/svelte/icons/user-minus';
 
   let errorKey = $state('');
   let success = $state('');
@@ -745,14 +748,22 @@
                     </button>
                   {/if}
                   {#if $canEdit}
-                    <button class="btn-edit" onclick={() => startEditParticipant(p)}
-                      >{$_('common.edit')}</button
+                    <button
+                      class="icon-btn edit-btn"
+                      onclick={() => startEditParticipant(p)}
+                      title={$_('common.edit')}
                     >
+                      <Pencil size={18} />
+                    </button>
                   {/if}
                   {#if $isAdmin}
-                    <button class="btn-delete" onclick={() => handleDeleteParticipant(p.id)}
-                      >{$_('common.delete')}</button
+                    <button
+                      class="icon-btn delete-btn"
+                      onclick={() => handleDeleteParticipant(p.id)}
+                      title={$_('common.delete')}
                     >
+                      <Trash2 size={18} />
+                    </button>
                   {/if}
                 </div>
               </div>
@@ -862,12 +873,20 @@
                     <span class="status-badge status-recovered">{$_('members.recovered')}</span>
                   {/if}
                   {#if !isCurrentUser(m.user_id)}
-                    <button class="btn-edit" onclick={() => startEditMember(m)}
-                      >{$_('common.edit')}</button
+                    <button
+                      class="icon-btn edit-btn"
+                      onclick={() => startEditMember(m)}
+                      title={$_('common.edit')}
                     >
-                    <button class="btn-delete" onclick={() => handleRemoveMember(m.user_id)}
-                      >{$_('members.remove')}</button
+                      <Pencil size={18} />
+                    </button>
+                    <button
+                      class="icon-btn delete-btn"
+                      onclick={() => handleRemoveMember(m.user_id)}
+                      title={$_('members.remove')}
                     >
+                      <UserMinus size={18} />
+                    </button>
                   {/if}
                 </div>
               </div>
@@ -1355,33 +1374,30 @@
     cursor: pointer;
   }
 
-  .btn-edit {
-    padding: 0.5rem 1rem;
+  .icon-btn {
+    padding: 0.4rem;
     background: transparent;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    font-size: 0.85rem;
+    border: none;
     cursor: pointer;
-  }
-
-  .btn-edit:hover {
-    background: #f5f5f5;
-  }
-
-  .btn-delete {
-    padding: 0.5rem 1rem;
-    background: transparent;
-    border: 1px solid #ddd;
+    color: #666;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     border-radius: 6px;
-    font-size: 0.85rem;
-    color: #999;
-    cursor: pointer;
+    transition: all 0.2s;
   }
 
-  .btn-delete:hover {
+  .icon-btn:hover {
+    background: #e0e0e0;
+  }
+
+  .edit-btn:hover {
+    color: var(--accent, #7b61ff);
+  }
+
+  .delete-btn:hover {
+    color: #dc3545;
     background: #fee;
-    border-color: #fcc;
-    color: #c00;
   }
 
   .edit-form {

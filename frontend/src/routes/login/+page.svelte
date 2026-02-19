@@ -6,6 +6,7 @@
   import { browser } from '$app/environment';
   import {
     login,
+    getProjects,
     ApiRequestError,
     initiateRecovery,
     getRecoveryIntentStatus,
@@ -58,6 +59,27 @@
     }
   });
 
+  async function getSmartRedirect(): Promise<string> {
+    try {
+      const projects = await getProjects();
+      const active = projects.filter((p) => p.member_status === 'active');
+
+      if (active.length === 1) {
+        return `/projects/${active[0].id}/overview`;
+      }
+
+      if (active.length > 1) {
+        const lastId = localStorage.getItem('bonscompte_last_project');
+        if (lastId && active.some((p) => String(p.id) === lastId)) {
+          return `/projects/${lastId}/overview`;
+        }
+      }
+    } catch {
+      // Fall through to projects page
+    }
+    return '/';
+  }
+
   async function handleSubmit(e: Event) {
     e.preventDefault();
     error = '';
@@ -69,8 +91,13 @@
       auth.setAuth(response.token, response.user);
       // Sync preferences from backend
       preferences.initFromUser(response.user.preferences);
-      // Redirect to return URL or home
-      await goto(returnUrl);
+
+      // Smart redirect: if going to home, try to skip the projects list
+      if (returnUrl === '/') {
+        await goto(await getSmartRedirect());
+      } else {
+        await goto(returnUrl);
+      }
     } catch (err) {
       if (isNetworkError(err)) {
         error = $_('errors.networkError');

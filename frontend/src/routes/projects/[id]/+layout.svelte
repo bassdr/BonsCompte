@@ -2,6 +2,7 @@
   import { page } from '$app/stores';
   import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
+  import { browser } from '$app/environment';
   import Loader from '@lucide/svelte/icons/loader';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import Lock from '@lucide/svelte/icons/lock';
@@ -40,6 +41,9 @@
 
     const projectId = parseInt($page.params.id ?? '');
     if (!isNaN(projectId)) {
+      if (browser) {
+        localStorage.setItem('bonscompte_last_project', String(projectId));
+      }
       loadProjectData(projectId);
     }
 

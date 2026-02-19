@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { _ } from '$lib/i18n';
+  import { _, locale } from '$lib/i18n';
   import { formatCurrency } from '$lib/format/currency';
   import { formatDate } from '$lib/format/date';
   import { preferences } from '$lib/stores/preferences';
@@ -37,6 +37,9 @@
     recurrenceType?: string | null;
     recurrenceInterval?: number | null;
     recurrenceEndDate?: string | null;
+    recurrenceWeekdays?: string | null;
+    recurrenceMonthdays?: string | null;
+    recurrenceMonths?: string | null;
 
     // Contributions/splits
     contributions?: Contribution[];
@@ -69,6 +72,9 @@
     recurrenceType = null,
     recurrenceInterval = null,
     recurrenceEndDate = null,
+    recurrenceWeekdays = null,
+    recurrenceMonthdays = null,
+    recurrenceMonths = null,
     contributions = [],
     receiptImage = null,
     onEdit,
@@ -101,37 +107,189 @@
     return formatDate(recurrenceEndDate.split('T')[0]);
   });
 
+  // Weekday keys indexed by JS day (0=Sun)
+  const WEEKDAY_KEYS = [
+    'weekdays.sun',
+    'weekdays.mon',
+    'weekdays.tue',
+    'weekdays.wed',
+    'weekdays.thu',
+    'weekdays.fri',
+    'weekdays.sat'
+  ];
+
+  // Month keys indexed by 1-based month
+  const MONTH_KEYS = [
+    '',
+    'months.jan',
+    'months.feb',
+    'months.mar',
+    'months.apr',
+    'months.may',
+    'months.jun',
+    'months.jul',
+    'months.aug',
+    'months.sep',
+    'months.oct',
+    'months.nov',
+    'months.dec'
+  ];
+
+  function ordinalDay(n: number): string {
+    if ($locale?.startsWith('fr')) {
+      return n === 1 ? '1er' : `${n}`;
+    }
+    const s = ['th', 'st', 'nd', 'rd'];
+    const v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  }
+
+  function joinList(items: string[]): string {
+    if (items.length <= 1) return items[0] || '';
+    return items.join(', ');
+  }
+
+  function parseJson<T>(raw: string | null): T | null {
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
   // Format recurrence info
   function formatRecurrence(): string {
     if (!isRecurring || !recurrenceType) return '';
 
     const interval = recurrenceInterval || 1;
-    let typeKey = '';
+    const d = new Date(date.split('T')[0] + 'T12:00:00');
 
-    switch (recurrenceType) {
-      case 'daily':
-        typeKey =
-          interval === 1 ? 'transactions.recurrence.daily' : 'transactions.recurrence.everyNDays';
-        break;
-      case 'weekly':
-        typeKey =
-          interval === 1 ? 'transactions.recurrence.weekly' : 'transactions.recurrence.everyNWeeks';
-        break;
-      case 'monthly':
-        typeKey =
-          interval === 1
-            ? 'transactions.recurrence.monthly'
-            : 'transactions.recurrence.everyNMonths';
-        break;
-      case 'yearly':
-        typeKey =
-          interval === 1 ? 'transactions.recurrence.yearly' : 'transactions.recurrence.everyNYears';
-        break;
-      default:
-        return recurrenceType;
+    // Daily: no extra detail possible
+    if (recurrenceType === 'daily') {
+      return $_(
+        interval === 1 ? 'transactions.recurrence.daily' : 'transactions.recurrence.everyNDays',
+        { values: { n: interval } }
+      );
     }
 
-    return $_(`${typeKey}`, { values: { n: interval } });
+    // Weekly
+    if (recurrenceType === 'weekly') {
+      const weekdays = parseJson<number[][]>(recurrenceWeekdays);
+      const defaultWeekday = d.getDay();
+      const isDefault =
+        !weekdays ||
+        weekdays.length === 0 ||
+        weekdays.every((w) => w.length === 1 && w[0] === defaultWeekday);
+
+      if (isDefault) {
+        return $_(
+          interval === 1 ? 'transactions.recurrence.weekly' : 'transactions.recurrence.everyNWeeks',
+          { values: { n: interval } }
+        );
+      }
+
+      // Count total selected days
+      const totalDays = weekdays.reduce((sum, w) => sum + w.length, 0);
+
+      if (totalDays > 2) {
+        // Verbose: just show "N× weekly" or "N× every M weeks"
+        return $_(
+          interval === 1
+            ? 'transactions.recurrence.nTimesWeekly'
+            : 'transactions.recurrence.nTimesEveryNWeeks',
+          { values: { n: totalDays, m: interval } }
+        );
+      }
+
+      if (interval === 1) {
+        // Single-week cycle: "weekly on Mon, Fri"
+        const dayNames = weekdays[0].map((d) => $_(WEEKDAY_KEYS[d]));
+        return $_('transactions.recurrence.weeklyOn', { values: { days: joinList(dayNames) } });
+      }
+
+      // Multi-week cycle: "every 1st Mon, 2nd Fri"
+      const parts: string[] = [];
+      for (let wi = 0; wi < weekdays.length; wi++) {
+        const ord = $_(`common.ordinal.${wi + 1}`);
+        for (const dayIdx of weekdays[wi]) {
+          parts.push(
+            $_('transactions.recurrence.weekOrdDay', {
+              values: { ord, day: $_(WEEKDAY_KEYS[dayIdx]) }
+            })
+          );
+        }
+      }
+      return $_('transactions.recurrence.everyNWeeksOn', {
+        values: { n: interval, days: joinList(parts) }
+      });
+    }
+
+    // Monthly
+    if (recurrenceType === 'monthly') {
+      const monthdays = parseJson<number[]>(recurrenceMonthdays);
+      const defaultDay = d.getDate();
+      const isDefault = !monthdays || (monthdays.length === 1 && monthdays[0] === defaultDay);
+
+      if (isDefault) {
+        return $_(
+          interval === 1
+            ? 'transactions.recurrence.monthly'
+            : 'transactions.recurrence.everyNMonths',
+          { values: { n: interval } }
+        );
+      }
+
+      const dayList = joinList(monthdays.map(ordinalDay));
+      return $_(
+        interval === 1
+          ? 'transactions.recurrence.monthlyOn'
+          : 'transactions.recurrence.everyNMonthsOn',
+        { values: { n: interval, days: dayList } }
+      );
+    }
+
+    // Yearly
+    if (recurrenceType === 'yearly') {
+      const monthdays = parseJson<number[]>(recurrenceMonthdays);
+      const months = parseJson<number[]>(recurrenceMonths);
+      const defaultDay = d.getDate();
+      const defaultMonth = d.getMonth() + 1;
+      const isDefaultDays = !monthdays || (monthdays.length === 1 && monthdays[0] === defaultDay);
+      const isDefaultMonths = !months || (months.length === 1 && months[0] === defaultMonth);
+
+      if (isDefaultDays && isDefaultMonths) {
+        return $_(
+          interval === 1 ? 'transactions.recurrence.yearly' : 'transactions.recurrence.everyNYears',
+          { values: { n: interval } }
+        );
+      }
+
+      const dayList = !isDefaultDays ? joinList(monthdays!.map(ordinalDay)) : '';
+      const monthList = !isDefaultMonths ? joinList(months!.map((m) => $_(MONTH_KEYS[m]))) : '';
+
+      let key: string;
+      if (!isDefaultDays && !isDefaultMonths) {
+        key =
+          interval === 1
+            ? 'transactions.recurrence.yearlyOnIn'
+            : 'transactions.recurrence.everyNYearsOnIn';
+      } else if (!isDefaultDays) {
+        key =
+          interval === 1
+            ? 'transactions.recurrence.yearlyOn'
+            : 'transactions.recurrence.everyNYearsOn';
+      } else {
+        key =
+          interval === 1
+            ? 'transactions.recurrence.yearlyIn'
+            : 'transactions.recurrence.everyNYearsIn';
+      }
+
+      return $_(key, { values: { n: interval, days: dayList, months: monthList } });
+    }
+
+    return recurrenceType;
   }
 
   // Check if date is in the future

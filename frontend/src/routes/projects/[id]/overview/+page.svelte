@@ -1544,7 +1544,36 @@
             callbacks: {
               label: (context) => {
                 const value = context.parsed.y ?? 0;
-                return `${context.dataset.label}: ${formatCurrency(value)}`;
+                const base = `${context.dataset.label}: ${formatCurrency(value)}`;
+                if (!expectedMinData) return base;
+                const dateStr = rangeDates[context.dataIndex];
+                if (!dateStr) return base;
+                const idx = context.datasetIndex;
+                // Per-participant line
+                if (idx < entriesToShow.length) {
+                  const entry = entriesToShow[idx];
+                  const expMin =
+                    expectedMinData.perParticipant.get(dateStr)?.get(entry.participant_id) ?? 0;
+                  if (expMin === 0 && value === 0) return base;
+                  const diff = value - expMin;
+                  if (diff >= 0) {
+                    return `${base} (${$_('overview.aboveExpected', { values: { amount: formatCurrency(diff) } })})`;
+                  } else {
+                    return `${base} (${$_('overview.belowExpectedBy', { values: { amount: formatCurrency(Math.abs(diff)) } })})`;
+                  }
+                }
+                // Total line
+                if (totalData && focusParticipantId === null && idx === entriesToShow.length) {
+                  const totalExpMin = expectedMinData.total.get(dateStr) ?? 0;
+                  if (totalExpMin === 0 && value === 0) return base;
+                  const diff = value - totalExpMin;
+                  if (diff >= 0) {
+                    return `${base} (${$_('overview.aboveExpected', { values: { amount: formatCurrency(diff) } })})`;
+                  } else {
+                    return `${base} (${$_('overview.belowExpectedBy', { values: { amount: formatCurrency(Math.abs(diff)) } })})`;
+                  }
+                }
+                return base;
               }
             }
           }
@@ -2384,68 +2413,118 @@
               <span class="warning-text">{$_('overview.belowExpected')}</span>
             </div>
           {/if}
-          <div class="pool-total-stats">
-            <div class="pool-stat">
-              {#if isRangeMode}
-                <span class="stat-label">{$_('overview.balanceStart')}</span>
-              {:else}
-                <span class="stat-label">{$_('overview.balance')}</span>
-              {/if}
-              <span
-                class="stat-value"
-                class:positive={stats.currentTotal > 0}
-                class:negative={stats.currentTotal < 0}
-              >
-                {stats.currentTotal >= 0 ? '+' : ''}{formatCurrency(stats.currentTotal)}
-              </span>
+          <div class="pool-stats-sections">
+            <div class="pool-stats-section">
+              <span class="section-label">{$_('overview.balance')}</span>
+              <div class="pool-total-stats">
+                <div class="pool-stat">
+                  {#if isRangeMode}
+                    <span class="stat-label">{$_('overview.start')}</span>
+                  {/if}
+                  <span
+                    class="stat-value"
+                    class:positive={stats.currentTotal > 0}
+                    class:negative={stats.currentTotal < 0}
+                  >
+                    {stats.currentTotal >= 0 ? '+' : ''}{formatCurrency(stats.currentTotal)}
+                    {#if hasExpectedMin}
+                      {@const diff = stats.currentTotal - stats.currentExpectedMinimum}
+                      <span class="stat-diff" class:positive={diff >= 0} class:negative={diff < 0}>
+                        ({diff >= 0
+                          ? $_('overview.aboveExpected', {
+                              values: { amount: formatCurrency(diff) }
+                            })
+                          : $_('overview.belowExpectedBy', {
+                              values: { amount: formatCurrency(Math.abs(diff)) }
+                            })})
+                      </span>
+                    {/if}
+                  </span>
+                </div>
+                {#if isRangeMode}
+                  <div class="pool-stat">
+                    <span class="stat-label">{$_('overview.end')}</span>
+                    <span
+                      class="stat-value"
+                      class:positive={stats.projectedTotal > 0}
+                      class:negative={stats.projectedTotal < 0}
+                    >
+                      {stats.projectedTotal >= 0 ? '+' : ''}{formatCurrency(stats.projectedTotal)}
+                      {#if hasExpectedMin}
+                        {@const diff = stats.projectedTotal - stats.projectedExpectedMinimum}
+                        <span
+                          class="stat-diff"
+                          class:positive={diff >= 0}
+                          class:negative={diff < 0}
+                        >
+                          ({diff >= 0
+                            ? $_('overview.aboveExpected', {
+                                values: { amount: formatCurrency(diff) }
+                              })
+                            : $_('overview.belowExpectedBy', {
+                                values: { amount: formatCurrency(Math.abs(diff)) }
+                              })})
+                        </span>
+                      {/if}
+                    </span>
+                  </div>
+                  <div class="pool-stat">
+                    <span class="stat-label">{$_('overview.lowest')}</span>
+                    <span
+                      class="stat-value"
+                      class:positive={stats.minTotal > 0}
+                      class:negative={stats.minTotal < 0}
+                    >
+                      {stats.minTotal >= 0 ? '+' : ''}{formatCurrency(stats.minTotal)}
+                      {#if hasExpectedMin}
+                        {@const diff = stats.minTotal - stats.maxExpectedMinimum}
+                        <span
+                          class="stat-diff"
+                          class:positive={diff >= 0}
+                          class:negative={diff < 0}
+                        >
+                          ({diff >= 0
+                            ? $_('overview.aboveExpected', {
+                                values: { amount: formatCurrency(diff) }
+                              })
+                            : $_('overview.belowExpectedBy', {
+                                values: { amount: formatCurrency(Math.abs(diff)) }
+                              })})
+                        </span>
+                      {/if}
+                    </span>
+                  </div>
+                {/if}
+              </div>
             </div>
-            {#if isRangeMode}
-              <div class="pool-stat">
-                <span class="stat-label">{$_('overview.balanceEnd')}</span>
-                <span
-                  class="stat-value"
-                  class:positive={stats.projectedTotal > 0}
-                  class:negative={stats.projectedTotal < 0}
-                >
-                  {stats.projectedTotal >= 0 ? '+' : ''}{formatCurrency(stats.projectedTotal)}
-                </span>
-              </div>
-              <div class="pool-stat">
-                <span class="stat-label">{$_('overview.balanceLowest')}</span>
-                <span
-                  class="stat-value"
-                  class:positive={stats.minTotal > 0}
-                  class:negative={stats.minTotal < 0}
-                >
-                  {stats.minTotal >= 0 ? '+' : ''}{formatCurrency(stats.minTotal)}
-                </span>
-              </div>
-            {/if}
             {#if hasExpectedMin}
-              <div class="pool-stat">
-                <span class="stat-label"
-                  >{isRangeMode
-                    ? $_('overview.expectedStart')
-                    : $_('overview.expectedMinimum')}</span
-                >
-                <span class="stat-value">
-                  {formatCurrency(stats.currentExpectedMinimum)}
-                </span>
+              <div class="pool-stats-section">
+                <span class="section-label">{$_('overview.expectedMinimum')}</span>
+                <div class="pool-total-stats">
+                  <div class="pool-stat">
+                    {#if isRangeMode}
+                      <span class="stat-label">{$_('overview.start')}</span>
+                    {/if}
+                    <span class="stat-value">
+                      {formatCurrency(stats.currentExpectedMinimum)}
+                    </span>
+                  </div>
+                  {#if isRangeMode}
+                    <div class="pool-stat">
+                      <span class="stat-label">{$_('overview.end')}</span>
+                      <span class="stat-value">
+                        {formatCurrency(stats.projectedExpectedMinimum)}
+                      </span>
+                    </div>
+                    <div class="pool-stat">
+                      <span class="stat-label">{$_('overview.highest')}</span>
+                      <span class="stat-value">
+                        {formatCurrency(stats.maxExpectedMinimum)}
+                      </span>
+                    </div>
+                  {/if}
+                </div>
               </div>
-              {#if isRangeMode}
-                <div class="pool-stat">
-                  <span class="stat-label">{$_('overview.expectedEnd')}</span>
-                  <span class="stat-value">
-                    {formatCurrency(stats.projectedExpectedMinimum)}
-                  </span>
-                </div>
-                <div class="pool-stat">
-                  <span class="stat-label">{$_('overview.expectedHighest')}</span>
-                  <span class="stat-value">
-                    {formatCurrency(stats.maxExpectedMinimum)}
-                  </span>
-                </div>
-              {/if}
             {/if}
           </div>
         </div>
@@ -2459,6 +2538,12 @@
           <canvas use:bindPoolCanvas={{ poolId: poolOwnership.pool_id }}></canvas>
         </div>
       {:else}
+        {@const tableHasExpectedMin =
+          stats &&
+          (stats.currentExpectedMinimum > 0 ||
+            stats.projectedExpectedMinimum > 0 ||
+            stats.maxExpectedMinimum > 0)}
+        {@const participantExpMinMap = poolParticipantExpectedMinimum.get(poolOwnership.pool_id)}
         <table class="balance-table">
           <thead>
             <tr>
@@ -2470,6 +2555,8 @@
           <tbody>
             {#each poolOwnership.entries as entry (entry.participant_id)}
               {@const isExpanded = isPoolEntryExpanded(entry.participant_id)}
+              {@const entryExpMin = participantExpMinMap?.get(entry.participant_id) ?? 0}
+              {@const entryDiff = entry.ownership - entryExpMin}
               <tr
                 class="balance-row"
                 class:expanded={isExpanded}
@@ -2482,6 +2569,21 @@
                 <td>{entry.participant_name}</td>
                 <td class:positive={entry.ownership > 0} class:negative={entry.ownership < 0}>
                   {entry.ownership >= 0 ? '+' : ''}{formatCurrency(entry.ownership)}
+                  {#if tableHasExpectedMin}
+                    <span
+                      class="stat-diff"
+                      class:positive={entryDiff >= 0}
+                      class:negative={entryDiff < 0}
+                    >
+                      ({entryDiff >= 0
+                        ? $_('overview.aboveExpected', {
+                            values: { amount: formatCurrency(entryDiff) }
+                          })
+                        : $_('overview.belowExpectedBy', {
+                            values: { amount: formatCurrency(Math.abs(entryDiff)) }
+                          })})
+                    </span>
+                  {/if}
                 </td>
               </tr>
               {#if isExpanded}
@@ -3264,6 +3366,26 @@
     font-size: 0.9rem;
   }
 
+  .pool-stats-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .pool-stats-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .section-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
   .pool-total-stats {
     display: flex;
     flex-wrap: wrap;
@@ -3295,6 +3417,20 @@
   }
 
   .stat-value.negative {
+    color: #dc3545;
+  }
+
+  .stat-diff {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 400;
+  }
+
+  .stat-diff.positive {
+    color: #198754;
+  }
+
+  .stat-diff.negative {
     color: #dc3545;
   }
 

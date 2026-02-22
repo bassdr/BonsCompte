@@ -2289,4 +2289,191 @@ mod tests {
         assert!(occurrence.affects_payer_expectation);
         assert!(!occurrence.affects_receiver_expectation);
     }
+
+    // Helper to create a minimal recurring payment for testing
+    fn make_recurring_payment(
+        start_date: &str,
+        recurrence_type: &str,
+        interval: i32,
+        end_date: Option<&str>,
+    ) -> Payment {
+        Payment {
+            id: 1,
+            project_id: Some(1),
+            payer_id: Some(1),
+            amount: 100.0,
+            description: "Test recurring".to_string(),
+            payment_date: start_date.to_string(),
+            created_at: "2024-01-01".to_string(),
+            receipt_image: None,
+            is_recurring: true,
+            recurrence_type: Some(recurrence_type.to_string()),
+            recurrence_interval: Some(interval),
+            recurrence_times_per: None,
+            recurrence_end_date: end_date.map(|s| s.to_string()),
+            recurrence_weekdays: None,
+            recurrence_monthdays: None,
+            recurrence_months: None,
+            receiver_account_id: None,
+            is_final: true,
+            affects_balance: true,
+            affects_payer_expectation: false,
+            affects_receiver_expectation: false,
+        }
+    }
+
+    #[test]
+    fn test_recurring_monthly_every_2_months_with_end_date() {
+        // Start April 20, every 2 months, end August 22
+        // Expected occurrences: April 20, June 20, August 20
+        let payment = make_recurring_payment("2025-04-20", "monthly", 2, Some("2025-08-22"));
+        let target = NaiveDate::from_ymd_opt(2025, 12, 31).unwrap();
+        let occurrences = generate_payment_occurrences(&payment, target);
+
+        assert_eq!(occurrences.len(), 3);
+        assert_eq!(occurrences[0].occurrence_date, "2025-04-20");
+        assert_eq!(occurrences[1].occurrence_date, "2025-06-20");
+        assert_eq!(occurrences[2].occurrence_date, "2025-08-20");
+    }
+
+    #[test]
+    fn test_recurring_monthly_every_2_months_end_on_exact_date() {
+        // Start April 20, every 2 months, end August 20 (exactly on last occurrence)
+        let payment = make_recurring_payment("2025-04-20", "monthly", 2, Some("2025-08-20"));
+        let target = NaiveDate::from_ymd_opt(2025, 12, 31).unwrap();
+        let occurrences = generate_payment_occurrences(&payment, target);
+
+        assert_eq!(occurrences.len(), 3);
+        assert_eq!(occurrences[0].occurrence_date, "2025-04-20");
+        assert_eq!(occurrences[1].occurrence_date, "2025-06-20");
+        assert_eq!(occurrences[2].occurrence_date, "2025-08-20");
+    }
+
+    #[test]
+    fn test_recurring_monthly_every_2_months_end_before_next() {
+        // Start April 20, every 2 months, end August 19 (just before next occurrence)
+        // Expected: April 20, June 20 only (August 20 > August 19)
+        let payment = make_recurring_payment("2025-04-20", "monthly", 2, Some("2025-08-19"));
+        let target = NaiveDate::from_ymd_opt(2025, 12, 31).unwrap();
+        let occurrences = generate_payment_occurrences(&payment, target);
+
+        assert_eq!(occurrences.len(), 2);
+        assert_eq!(occurrences[0].occurrence_date, "2025-04-20");
+        assert_eq!(occurrences[1].occurrence_date, "2025-06-20");
+    }
+
+    #[test]
+    fn test_recurring_monthly_every_3_months() {
+        // Start Jan 15, every 3 months, end Dec 31
+        // Expected: Jan 15, Apr 15, Jul 15, Oct 15
+        let payment = make_recurring_payment("2025-01-15", "monthly", 3, Some("2025-12-31"));
+        let target = NaiveDate::from_ymd_opt(2025, 12, 31).unwrap();
+        let occurrences = generate_payment_occurrences(&payment, target);
+
+        assert_eq!(occurrences.len(), 4);
+        assert_eq!(occurrences[0].occurrence_date, "2025-01-15");
+        assert_eq!(occurrences[1].occurrence_date, "2025-04-15");
+        assert_eq!(occurrences[2].occurrence_date, "2025-07-15");
+        assert_eq!(occurrences[3].occurrence_date, "2025-10-15");
+    }
+
+    #[test]
+    fn test_recurring_monthly_end_date_limits_occurrences() {
+        // Start Jan 1, monthly, end March 15
+        // Expected: Jan 1, Feb 1, Mar 1 (Apr 1 > Mar 15)
+        let payment = make_recurring_payment("2025-01-01", "monthly", 1, Some("2025-03-15"));
+        let target = NaiveDate::from_ymd_opt(2025, 12, 31).unwrap();
+        let occurrences = generate_payment_occurrences(&payment, target);
+
+        assert_eq!(occurrences.len(), 3);
+        assert_eq!(occurrences[0].occurrence_date, "2025-01-01");
+        assert_eq!(occurrences[1].occurrence_date, "2025-02-01");
+        assert_eq!(occurrences[2].occurrence_date, "2025-03-01");
+    }
+
+    #[test]
+    fn test_recurring_monthly_target_date_limits_occurrences() {
+        // Start Jan 1, monthly, no end date, target March 15
+        // Expected: Jan 1, Feb 1, Mar 1 (target limits expansion)
+        let payment = make_recurring_payment("2025-01-01", "monthly", 1, None);
+        let target = NaiveDate::from_ymd_opt(2025, 3, 15).unwrap();
+        let occurrences = generate_payment_occurrences(&payment, target);
+
+        assert_eq!(occurrences.len(), 3);
+        assert_eq!(occurrences[0].occurrence_date, "2025-01-01");
+        assert_eq!(occurrences[1].occurrence_date, "2025-02-01");
+        assert_eq!(occurrences[2].occurrence_date, "2025-03-01");
+    }
+
+    #[test]
+    fn test_recurring_weekly_every_2_weeks_with_end_date() {
+        // Start Jan 6 (Monday), every 2 weeks, end Feb 3
+        // Expected: Jan 6, Jan 20, Feb 3
+        let payment = make_recurring_payment("2025-01-06", "weekly", 2, Some("2025-02-03"));
+        let target = NaiveDate::from_ymd_opt(2025, 12, 31).unwrap();
+        let occurrences = generate_payment_occurrences(&payment, target);
+
+        assert_eq!(occurrences.len(), 3);
+        assert_eq!(occurrences[0].occurrence_date, "2025-01-06");
+        assert_eq!(occurrences[1].occurrence_date, "2025-01-20");
+        assert_eq!(occurrences[2].occurrence_date, "2025-02-03");
+    }
+
+    #[test]
+    fn test_recurring_daily_every_3_days_with_end_date() {
+        // Start Jan 1, every 3 days, end Jan 10
+        // Expected: Jan 1, Jan 4, Jan 7, Jan 10
+        let payment = make_recurring_payment("2025-01-01", "daily", 3, Some("2025-01-10"));
+        let target = NaiveDate::from_ymd_opt(2025, 12, 31).unwrap();
+        let occurrences = generate_payment_occurrences(&payment, target);
+
+        assert_eq!(occurrences.len(), 4);
+        assert_eq!(occurrences[0].occurrence_date, "2025-01-01");
+        assert_eq!(occurrences[1].occurrence_date, "2025-01-04");
+        assert_eq!(occurrences[2].occurrence_date, "2025-01-07");
+        assert_eq!(occurrences[3].occurrence_date, "2025-01-10");
+    }
+
+    #[test]
+    fn test_recurring_yearly_every_2_years_with_end_date() {
+        // Start 2024-06-15, every 2 years, end 2030-01-01
+        // Expected: 2024-06-15, 2026-06-15, 2028-06-15
+        let payment = make_recurring_payment("2024-06-15", "yearly", 2, Some("2030-01-01"));
+        let target = NaiveDate::from_ymd_opt(2030, 12, 31).unwrap();
+        let occurrences = generate_payment_occurrences(&payment, target);
+
+        assert_eq!(occurrences.len(), 3);
+        assert_eq!(occurrences[0].occurrence_date, "2024-06-15");
+        assert_eq!(occurrences[1].occurrence_date, "2026-06-15");
+        assert_eq!(occurrences[2].occurrence_date, "2028-06-15");
+    }
+
+    #[test]
+    fn test_recurring_single_occurrence_when_end_before_second() {
+        // Start Jan 1, monthly, end Jan 15 (before Feb 1)
+        // Expected: Jan 1 only
+        let payment = make_recurring_payment("2025-01-01", "monthly", 1, Some("2025-01-15"));
+        let target = NaiveDate::from_ymd_opt(2025, 12, 31).unwrap();
+        let occurrences = generate_payment_occurrences(&payment, target);
+
+        assert_eq!(occurrences.len(), 1);
+        assert_eq!(occurrences[0].occurrence_date, "2025-01-01");
+    }
+
+    #[test]
+    fn test_recurring_month_end_day_handling() {
+        // Start Jan 31, monthly, end May 31
+        // chrono::checked_add_months adds from previous occurrence, so after
+        // clamping to Feb 28, subsequent months use 28 as the day
+        let payment = make_recurring_payment("2025-01-31", "monthly", 1, Some("2025-05-31"));
+        let target = NaiveDate::from_ymd_opt(2025, 12, 31).unwrap();
+        let occurrences = generate_payment_occurrences(&payment, target);
+
+        assert_eq!(occurrences.len(), 5);
+        assert_eq!(occurrences[0].occurrence_date, "2025-01-31");
+        assert_eq!(occurrences[1].occurrence_date, "2025-02-28");
+        assert_eq!(occurrences[2].occurrence_date, "2025-03-28");
+        assert_eq!(occurrences[3].occurrence_date, "2025-04-28");
+        assert_eq!(occurrences[4].occurrence_date, "2025-05-28");
+    }
 }

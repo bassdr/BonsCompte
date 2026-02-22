@@ -3,6 +3,7 @@
   import { formatCurrency } from '$lib/format/currency';
   import { formatDate } from '$lib/format/date';
   import { preferences } from '$lib/stores/preferences';
+  import { computeLastOccurrenceDate } from '$lib/recurrence-utils';
   import { SvelteDate } from 'svelte/reactivity';
   import Image from '@lucide/svelte/icons/image';
   import Pencil from '@lucide/svelte/icons/pencil';
@@ -99,12 +100,24 @@
     return formatDate(date.split('T')[0]);
   });
 
-  // Format recurrence end date reactively
+  // Format recurrence end date reactively - shows last actual occurrence
   let displayRecurrenceEndDate = $derived.by(() => {
     if (!recurrenceEndDate) return '';
     // Access preferences to create reactive dependency
     const _ = $preferences.date_format;
-    return formatDate(recurrenceEndDate.split('T')[0]);
+    const lastOccurrence =
+      recurrenceType && recurrenceInterval
+        ? computeLastOccurrenceDate(
+            date.split('T')[0],
+            recurrenceEndDate.split('T')[0],
+            recurrenceType,
+            recurrenceInterval,
+            recurrenceWeekdays,
+            recurrenceMonthdays,
+            recurrenceMonths
+          )
+        : null;
+    return formatDate(lastOccurrence ?? recurrenceEndDate.split('T')[0]);
   });
 
   // Weekday keys indexed by JS day (0=Sun)

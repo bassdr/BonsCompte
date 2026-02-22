@@ -34,6 +34,7 @@
     affectsReceiverExpectation?: boolean;
 
     // Recurrence
+    originalDate?: string | null; // Original payment start date (for recurring occurrences shown in overview)
     isRecurring?: boolean;
     recurrenceType?: string | null;
     recurrenceInterval?: number | null;
@@ -69,6 +70,7 @@
     affectsBalance = true,
     affectsPayerExpectation = false,
     affectsReceiverExpectation = false,
+    originalDate = null,
     isRecurring = false,
     recurrenceType = null,
     recurrenceInterval = null,
@@ -92,12 +94,15 @@
     return 'expense';
   });
 
+  // The start date for recurrence display: use originalDate if provided (overview passes occurrence date as `date`)
+  let recurrenceStartDate = $derived(originalDate?.split('T')[0] ?? date.split('T')[0]);
+
   // Format date (strip time portion if present)
   // Include $preferences in the expression to make it reactive to preference changes
   let displayDate = $derived.by(() => {
     // Access preferences to create reactive dependency
     const _ = $preferences.date_format;
-    return formatDate(date.split('T')[0]);
+    return formatDate(recurrenceStartDate);
   });
 
   // Format recurrence end date reactively - shows last actual occurrence
@@ -108,7 +113,7 @@
     const lastOccurrence =
       recurrenceType && recurrenceInterval
         ? computeLastOccurrenceDate(
-            date.split('T')[0],
+            recurrenceStartDate,
             recurrenceEndDate.split('T')[0],
             recurrenceType,
             recurrenceInterval,
@@ -176,7 +181,7 @@
     if (!isRecurring || !recurrenceType) return '';
 
     const interval = recurrenceInterval || 1;
-    const d = new Date(date.split('T')[0] + 'T12:00:00');
+    const d = new Date(recurrenceStartDate + 'T12:00:00');
 
     // Daily: no extra detail possible
     if (recurrenceType === 'daily') {
@@ -378,6 +383,8 @@
       {$_('transactions.dateRangeFromTo', {
         values: { startDate: displayDate, endDate: displayRecurrenceEndDate }
       })}
+    {:else if isRecurring}
+      {$_('transactions.startingFrom', { values: { date: displayDate } })}
     {:else if isFutureDate(date)}
       {$_('transactions.startingFrom', { values: { date: displayDate } })}
     {:else}

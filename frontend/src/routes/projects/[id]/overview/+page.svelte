@@ -2651,6 +2651,7 @@
                                                 description={item.description}
                                                 amount={item.amount}
                                                 date={item.occurrence_date}
+                                                originalDate={payment?.payment_date}
                                                 payerName={payment?.payer_name}
                                                 payerId={payment?.payer_id}
                                                 receiverName={receiver?.name}
@@ -2750,6 +2751,7 @@
                                                 description={item.description}
                                                 amount={item.amount}
                                                 date={item.occurrence_date}
+                                                originalDate={payment?.payment_date}
                                                 payerName={payment?.payer_name}
                                                 payerId={payment?.payer_id}
                                                 receiverName={receiver?.name}
@@ -2934,6 +2936,7 @@
                                                         description={item.description}
                                                         amount={item.amount}
                                                         date={item.occurrence_date}
+                                                        originalDate={payment?.payment_date}
                                                         payerName={payment?.payer_name}
                                                         payerId={payment?.payer_id}
                                                         receiverName={receiver?.name}
@@ -3044,6 +3047,7 @@
                                                         description={item.description}
                                                         amount={item.amount}
                                                         date={item.occurrence_date}
+                                                        originalDate={payment?.payment_date}
                                                         payerName={payment?.payer_name}
                                                         payerId={payment?.payer_id}
                                                         receiverName={receiver?.name}
@@ -3281,6 +3285,7 @@
                                 description={occ.description}
                                 amount={occ.amount}
                                 date={occ.occurrence_date}
+                                originalDate={payment?.payment_date}
                                 payerName={payment?.payer_name}
                                 payerId={occ.payer_id}
                                 receiverName={receiver?.name}

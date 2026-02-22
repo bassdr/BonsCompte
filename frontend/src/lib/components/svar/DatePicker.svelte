@@ -116,9 +116,14 @@
   });
 
   let popup = $state(false);
+  // Input starts readonly; becomes editable only when user clicks while calendar is already open
+  let inputEditable = $state(false);
 
   function oncancel(): void {
     popup = false;
+    // Don't reset inputEditable here — Dropdown's outside-click fires on the same
+    // click that sets inputEditable=true, which would immediately undo it.
+    // inputEditable is reset by: opening the calendar, text change, or focusout.
   }
 
   function doChange(v: Date | null): void {
@@ -156,6 +161,15 @@
     // in any case fallback to null, to prevent undefined as value
     date = date && isNaN(date.getTime()) ? value || null : date || null;
     doChange(date);
+    inputEditable = false;
+  }
+
+  function handleFocusOut(e: FocusEvent): void {
+    // Reset edit mode when focus leaves the datepicker entirely
+    const target = e.relatedTarget as Node | null;
+    if (!target || !(e.currentTarget as HTMLElement).contains(target)) {
+      inputEditable = false;
+    }
   }
 </script>
 
@@ -163,13 +177,31 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="wx-datepicker" onclick={() => (popup = true)}>
+<div
+  class="wx-datepicker"
+  onclick={() => {
+    if (inputEditable) {
+      // Already in edit mode, don't interfere with typing/cursor positioning
+      return;
+    }
+    if (popup && editable) {
+      // Calendar already open: second click enables text editing
+      // Calendar will close via Dropdown's outside-click → oncancel
+      inputEditable = true;
+    } else {
+      // Open calendar, reset edit mode
+      inputEditable = false;
+      popup = true;
+    }
+  }}
+  onfocusout={handleFocusOut}
+>
   <Text
     {css}
     {title}
     value={formattedValue}
     {id}
-    readonly={!editable}
+    readonly={!inputEditable}
     {disabled}
     {error}
     {placeholder}

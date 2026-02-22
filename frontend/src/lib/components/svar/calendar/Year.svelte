@@ -11,7 +11,6 @@
     part?: string;
     oncancel?: () => void;
     onchange?: (date: Date) => void;
-    onshift?: (ev: { diff?: number; type?: string }) => void;
   }
 
   let {
@@ -19,8 +18,7 @@
     current = $bindable(new Date()),
     part = 'normal',
     oncancel,
-    onchange,
-    onshift
+    onchange
   }: Props = $props();
 
   const locale = getContext<{ getRaw: () => { calendar: { monthShort: string[]; done: string } } }>(
@@ -39,8 +37,6 @@
       e.stopPropagation();
       current.setMonth(month);
       current = new SvelteDate(current);
-
-      if (onshift) onshift({});
     }
 
     if (part === 'normal') value = new SvelteDate(current);

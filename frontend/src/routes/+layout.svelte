@@ -98,10 +98,14 @@
   });
 
   // Get SVAR locale based on current language
+  // Fix upstream bug: @svar-ui/core-locales has "Aôu" instead of "Août" for French August
+  const frFixed = structuredClone(fr);
+  frFixed.calendar.monthShort[7] = 'Août';
+
   let svarLocale = $derived.by(() => {
     const currentLang = $locale;
     if (currentLang === 'fr') {
-      return fr;
+      return frFixed;
     }
     return en; // Default to English for other languages
   });

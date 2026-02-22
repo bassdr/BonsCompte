@@ -38,7 +38,8 @@ export const configs: Record<CalendarType, CalendarConfig> = {
     prev: prevMonth
   },
   year: {
-    component: Year,
+    // Type assertion: Panel passes onshift to all views dynamically, but Year doesn't use it
+    component: Year as unknown as Component<CalendarPanelProps>,
     next: nextYear,
     prev: prevYear
   },

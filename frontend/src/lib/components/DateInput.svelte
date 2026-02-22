@@ -4,6 +4,7 @@
   import { preferences } from '$lib/stores/preferences';
   import { getSVARDateFormat, parseLocalDate, getLocalDateString } from '$lib/format/date';
   import type { DateFormatType } from '$lib/format/date';
+  import { _ } from '$lib/i18n';
 
   interface Props {
     value?: string | null; // ISO format: YYYY-MM-DD
@@ -62,14 +63,14 @@
     if (min) {
       const minDate = parseLocalDate(min);
       if (current < minDate) {
-        return 'Date is before minimum allowed date';
+        return $_('datePicker.beforeMin');
       }
     }
 
     if (max) {
       const maxDate = parseLocalDate(max);
       if (current > maxDate) {
-        return 'Date is after maximum allowed date';
+        return $_('datePicker.afterMax');
       }
     }
 

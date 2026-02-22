@@ -26,6 +26,8 @@
   "datePicker.fromDateInFuture": "La date de début est aujourd'hui ou plus tard",
   "datePicker.startDateInFuture": "La date de début est aujourd'hui ou plus tard",
   "datePicker.todayOutOfRange": "Aujourd'hui est en dehors de la plage de dates valide",
+  "datePicker.beforeMin": "La date est antérieure à la date minimum autorisée",
+  "datePicker.afterMax": "La date est postérieure à la date maximum autorisée",
 
   "nav.projects": "Projets",
   "nav.transactions": "Transactions",

@@ -142,6 +142,43 @@
     return {};
   });
 
+  // Whether the split date is before the first occurrence (invalid)
+  let splitDateBeforeFirstOccurrence = $derived.by(() => {
+    if (!useSplitDate || !splitFromDate || !editingPaymentOriginal?.is_recurring) return false;
+    const origStart = editingPaymentOriginal.payment_date.split('T')[0];
+    let origWeekdays: number[][] | undefined;
+    let origMonthdays: number[] | undefined;
+    let origMonths: number[] | undefined;
+    try {
+      if (editingPaymentOriginal.recurrence_weekdays)
+        origWeekdays = JSON.parse(editingPaymentOriginal.recurrence_weekdays);
+    } catch {
+      /* invalid JSON, use default */
+    }
+    try {
+      if (editingPaymentOriginal.recurrence_monthdays)
+        origMonthdays = JSON.parse(editingPaymentOriginal.recurrence_monthdays);
+    } catch {
+      /* invalid JSON, use default */
+    }
+    try {
+      if (editingPaymentOriginal.recurrence_months)
+        origMonths = JSON.parse(editingPaymentOriginal.recurrence_months);
+    } catch {
+      /* invalid JSON, use default */
+    }
+    const lastBefore = getLastPatternOccurrenceBefore(
+      parseDate(origStart),
+      parseDate(splitFromDate),
+      editingPaymentOriginal.recurrence_type || 'monthly',
+      editingPaymentOriginal.recurrence_interval || 1,
+      origWeekdays,
+      origMonthdays,
+      origMonths
+    );
+    return !lastBefore;
+  });
+
   // Payment finalization status: true = final (default), false = draft
   let isFinal = $state(true);
 
@@ -1692,7 +1729,6 @@
                   <DateInput
                     id="split-from-date"
                     bind:value={splitFromDate}
-                    min={editingPaymentOriginal.payment_date.split('T')[0]}
                     max={editingPaymentOriginal.recurrence_end_date?.split('T')[0] || ''}
                     buttons={['today']}
                     disabledButtons={splitFromDateDisabledButtons}
@@ -1752,8 +1788,7 @@
                           }
                         })}
                       {:else}
-                        <span class="warning">{$_('transactions.split.beforeFirstOccurrence')}</span
-                        >
+                        <span class="error">{$_('transactions.split.beforeFirstOccurrence')}</span>
                       {/if}
                     {:else}
                       {$_('transactions.split.chooseDateHint')}
@@ -1765,7 +1800,10 @@
           {/if}
 
           <div class="form-actions">
-            <button type="submit" disabled={submitting || $participants.length === 0}>
+            <button
+              type="submit"
+              disabled={submitting || $participants.length === 0 || splitDateBeforeFirstOccurrence}
+            >
               {submitting
                 ? $_('common.saving')
                 : editingPaymentId !== null
@@ -2224,7 +2262,7 @@
     font-style: italic;
   }
 
-  .split-hint .warning {
+  .split-hint .error {
     display: inline;
     padding: 0.15rem 0.4rem;
     margin: 0;

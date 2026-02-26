@@ -31,6 +31,8 @@
 
   "nav.projects": "Projects",
   "nav.transactions": "Transactions",
+  "nav.cashflow": "Cashflow",
+  "nav.reconciliation": "Reconciliation",
   "nav.settings": "Settings",
   "nav.logout": "Logout",
 
@@ -203,6 +205,8 @@
   "roles.reader": "Reader",
 
   "overview.title": "Overview",
+  "cashflow.title": "Cashflow",
+  "reconciliation.title": "Reconciliation",
   "overview.today": "Today",
   "overview.tomorrow": "Tomorrow",
   "overview.yesterday": "Yesterday",
@@ -455,6 +459,7 @@
   "participants.weight": "Weight",
   "participants.weightZero": "Weight: 0 (will not participate)",
   "participants.linkedToAccount": "Linked to account",
+  "participants.unlinkAccount": "Unlink from account",
   "participants.claimAsMe": "Claim as me",
   "participants.inviteLink": "Invite link",
   "participants.copied": "Copied!",

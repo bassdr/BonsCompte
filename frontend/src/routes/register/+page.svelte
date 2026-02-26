@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import CircleCheck from '@lucide/svelte/icons/circle-check';
   import CircleAlert from '@lucide/svelte/icons/circle-alert';
   import { register, addTrustedUser, type TrustedUser } from '$lib/api';
@@ -11,7 +11,7 @@
   import { getErrorKey } from '$lib/errors';
 
   // Get return URL from query params
-  const returnUrl = $derived($page.url.searchParams.get('returnUrl') || '/');
+  const returnUrl = $derived(page.url.searchParams.get('returnUrl') || '/');
 
   // Step tracking: 'register' or 'trusted-users'
   let step = $state<'register' | 'trusted-users'>('register');

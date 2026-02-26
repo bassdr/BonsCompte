@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
   import {
@@ -18,7 +18,7 @@
   import { getErrorMessage as translateError, isNetworkError } from '$lib/errors';
 
   // Get return URL from query params
-  const returnUrl = $derived($page.url.searchParams.get('returnUrl') || '/');
+  const returnUrl = $derived(page.url.searchParams.get('returnUrl') || '/');
 
   let username = $state('');
   let password = $state('');

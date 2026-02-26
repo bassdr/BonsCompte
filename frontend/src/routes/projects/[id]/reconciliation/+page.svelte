@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { _ } from '$lib/i18n';
   import { participants } from '$lib/stores/project';
@@ -31,7 +31,7 @@
   let balanceChart: LineChart | null = null;
   let balanceChartCanvas: HTMLCanvasElement | null = $state(null);
 
-  let projectId = $derived(parseInt($page.params.id ?? ''));
+  let projectId = $derived(parseInt(page.params.id ?? ''));
 
   // Create shared projection state
   const projection = createOverviewState();

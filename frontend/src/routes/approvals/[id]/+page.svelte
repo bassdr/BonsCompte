@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import Check from '@lucide/svelte/icons/check';
@@ -9,7 +9,7 @@
   import { _ } from 'svelte-i18n';
   import { getErrorKey } from '$lib/errors';
 
-  const approvalId = Number($page.params.id);
+  const approvalId = Number(page.params.id);
 
   let approval = $state<ProjectApproval | null>(null);
   let loading = $state(true);

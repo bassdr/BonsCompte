@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import {
     getProjectHistory,
     undoHistoryEntry,
@@ -38,7 +38,7 @@
   // Expanded entries for viewing payload details
   let expandedEntries = new SvelteSet<number>();
 
-  let projectId = $derived(parseInt($page.params.id ?? ''));
+  let projectId = $derived(parseInt(page.params.id ?? ''));
 
   // Entity type options
   let entityTypes = $derived([

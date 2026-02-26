@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
   import { getProject, leaveProject } from '$lib/api';
   import { _ } from 'svelte-i18n';
 
-  let projectId = $derived(Number($page.params.id));
+  let projectId = $derived(Number(page.params.id));
   let loading = $state(true);
   let leaving = $state(false);
   let errorKey = $state('');

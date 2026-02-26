@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
@@ -32,7 +32,7 @@
   let errorKey = $state('');
 
   // Check if we're on the pending page - don't load project data in that case
-  let isPendingPage = $derived($page.url.pathname.endsWith('/pending'));
+  let isPendingPage = $derived(page.url.pathname.endsWith('/pending'));
 
   $effect(() => {
     // Skip loading project data on the pending page
@@ -41,7 +41,7 @@
       return;
     }
 
-    const projectId = parseInt($page.params.id ?? '');
+    const projectId = parseInt(page.params.id ?? '');
     if (!isNaN(projectId)) {
       if (browser) {
         localStorage.setItem('bonscompte_last_project', String(projectId));
@@ -372,7 +372,7 @@
     return result;
   });
 
-  let projectId = $derived(parseInt($page.params.id ?? ''));
+  let projectId = $derived(parseInt(page.params.id ?? ''));
 
   // Load warning debts separately (from today to warning horizon)
   async function loadWarningDebts() {
@@ -523,34 +523,34 @@
       <nav class="project-nav">
         {#if hasPools}
           <a
-            href={resolve(`/projects/${$page.params.id}/cashflow`)}
-            class:active={$page.url.pathname.includes('/cashflow')}
+            href={resolve(`/projects/${page.params.id}/cashflow`)}
+            class:active={page.url.pathname.includes('/cashflow')}
           >
             {$_('nav.cashflow')}
           </a>
         {/if}
         <a
-          href={resolve(`/projects/${$page.params.id}/reconciliation`)}
-          class:active={$page.url.pathname.includes('/reconciliation')}
+          href={resolve(`/projects/${page.params.id}/reconciliation`)}
+          class:active={page.url.pathname.includes('/reconciliation')}
         >
           {$_('nav.reconciliation')}
         </a>
         <a
-          href={resolve(`/projects/${$page.params.id}/transactions`)}
-          class:active={$page.url.pathname.includes('/transactions')}
+          href={resolve(`/projects/${page.params.id}/transactions`)}
+          class:active={page.url.pathname.includes('/transactions')}
         >
           {$_('nav.transactions')}
         </a>
         <a
-          href={resolve(`/projects/${$page.params.id}/history`)}
-          class:active={$page.url.pathname.includes('/history')}
+          href={resolve(`/projects/${page.params.id}/history`)}
+          class:active={page.url.pathname.includes('/history')}
         >
           {$_('history.title')}
         </a>
         {#if $isAdmin}
           <a
-            href={resolve(`/projects/${$page.params.id}/settings`)}
-            class:active={$page.url.pathname.includes('/settings')}
+            href={resolve(`/projects/${page.params.id}/settings`)}
+            class:active={page.url.pathname.includes('/settings')}
           >
             {$_('nav.settings')}
           </a>

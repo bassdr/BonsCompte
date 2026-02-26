@@ -83,7 +83,6 @@ async fn create_participant(
     }
 
     // Note: name length is bounded at deserialization via BoundedString type
-    let default_weight = input.default_weight.unwrap_or(1.0);
     let account_type = input.account_type.as_deref().unwrap_or("user");
 
     // Validate account_type
@@ -92,6 +91,13 @@ async fn create_participant(
             "account_type must be 'user' or 'pool'".to_string(),
         ));
     }
+
+    // Pool accounts always have weight 0
+    let default_weight = if account_type == "pool" {
+        0.0
+    } else {
+        input.default_weight.unwrap_or(1.0)
+    };
 
     let result = sqlx::query(
         "INSERT INTO participants (project_id, name, default_weight, account_type) VALUES (?, ?, ?, ?)"
@@ -155,16 +161,31 @@ async fn update_participant(
             ));
         }
 
-        // If changing to pool, check that user is not linked
-        if account_type.as_str() == "pool" && existing.account_type != "pool" {
-            // Prevent linked users from becoming pools
-            if existing.user_id.is_some() {
-                return Err(AppError::BadRequest(
-                    "Linked users cannot become pool accounts".to_string(),
-                ));
-            }
+        // If changing to pool and participant is linked to a user, unlink them
+        if account_type.as_str() == "pool"
+            && existing.account_type != "pool"
+            && existing.user_id.is_some()
+        {
+            sqlx::query(
+                    "UPDATE project_members SET participant_id = NULL WHERE project_id = ? AND participant_id = ?",
+                )
+                .bind(member.project_id)
+                .bind(path.participant_id)
+                .execute(&pool)
+                .await?;
+
+            sqlx::query("UPDATE participants SET user_id = NULL WHERE id = ?")
+                .bind(path.participant_id)
+                .execute(&pool)
+                .await?;
         }
     }
+
+    // Determine the effective account type after this update
+    let effective_account_type = input
+        .account_type
+        .as_deref()
+        .unwrap_or(&existing.account_type);
 
     // Build dynamic update
     let mut updates = Vec::new();
@@ -183,7 +204,18 @@ async fn update_participant(
     if let Some(weight) = input.default_weight {
         updates.push("default_weight = ?");
         has_weight = true;
-        weight_val = weight;
+        // Pool accounts always have weight 0
+        weight_val = if effective_account_type == "pool" {
+            0.0
+        } else {
+            weight
+        };
+    }
+    // If changing to pool and no explicit weight was provided, force weight to 0
+    if effective_account_type == "pool" && !has_weight && existing.default_weight != 0.0 {
+        updates.push("default_weight = ?");
+        has_weight = true;
+        weight_val = 0.0;
     }
     if let Some(ref account_type) = input.account_type {
         updates.push("account_type = ?");
@@ -252,6 +284,15 @@ async fn delete_participant(
             .await?;
 
     let existing = existing.ok_or_else(|| AppError::not_found(ErrorCode::ParticipantNotFound))?;
+
+    // Unlink member from this participant before deleting (FK has no ON DELETE clause)
+    sqlx::query(
+        "UPDATE project_members SET participant_id = NULL WHERE project_id = ? AND participant_id = ?",
+    )
+    .bind(member.project_id)
+    .bind(path.participant_id)
+    .execute(&pool)
+    .await?;
 
     let result = sqlx::query("DELETE FROM participants WHERE id = ? AND project_id = ?")
         .bind(path.participant_id)

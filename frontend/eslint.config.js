@@ -48,5 +48,15 @@ export default defineConfig(
         svelteConfig
       }
     }
+  },
+
+  {
+    files: ['**/*.svelte.ts'],
+    languageOptions: {
+      parser: ts.parser,
+      parserOptions: {
+        projectService: true
+      }
+    }
   }
 );

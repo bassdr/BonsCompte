@@ -26,6 +26,8 @@
 
   let { children }: { children: Snippet } = $props();
 
+  const hasPools = $derived($participants.some((p) => p.account_type === 'pool'));
+
   let loading = $state(true);
   let errorKey = $state('');
 
@@ -519,11 +521,19 @@
         </div>
       {/if}
       <nav class="project-nav">
+        {#if hasPools}
+          <a
+            href={resolve(`/projects/${$page.params.id}/cashflow`)}
+            class:active={$page.url.pathname.includes('/cashflow')}
+          >
+            {$_('nav.cashflow')}
+          </a>
+        {/if}
         <a
-          href={resolve(`/projects/${$page.params.id}/overview`)}
-          class:active={$page.url.pathname.includes('/overview')}
+          href={resolve(`/projects/${$page.params.id}/reconciliation`)}
+          class:active={$page.url.pathname.includes('/reconciliation')}
         >
-          {$_('overview.title')}
+          {$_('nav.reconciliation')}
         </a>
         <a
           href={resolve(`/projects/${$page.params.id}/transactions`)}

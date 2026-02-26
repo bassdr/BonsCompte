@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import {
     getPayment,
@@ -27,17 +27,17 @@
   } from '$lib/recurrence-utils';
 
   // Mode from URL params
-  let mode = $derived($page.params.mode as 'outgoing' | 'incoming' | 'internal' | 'rule');
+  let mode = $derived(page.params.mode as 'outgoing' | 'incoming' | 'internal' | 'rule');
   let isValidMode = $derived(['outgoing', 'incoming', 'internal', 'rule'].includes(mode));
 
   // Edit ID from URL params
   let editId = $derived.by(() => {
-    const id = $page.url.searchParams.get('edit');
+    const id = page.url.searchParams.get('edit');
     return id ? parseInt(id) : null;
   });
 
   // Get project ID from URL
-  let projectId = $derived(parseInt($page.params.id ?? ''));
+  let projectId = $derived(parseInt(page.params.id ?? ''));
 
   let loading = $state(true);
   let errorKey = $state('');
@@ -514,7 +514,7 @@
 
   // Pre-fill form from URL parameters
   $effect(() => {
-    const params = $page.url.searchParams;
+    const params = page.url.searchParams;
 
     // Check for receiver parameter (from quick action buttons)
     const receiverParam = params.get('receiver');

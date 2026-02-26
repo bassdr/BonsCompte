@@ -1,6 +1,6 @@
 <script lang="ts">
   import { auth, isAuthenticated, isLoading } from '$lib/auth';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
   import { browser } from '$app/environment';
@@ -157,15 +157,15 @@
   $effect(() => {
     if (browser && !$isLoading) {
       const publicPaths = ['/login', '/register', '/help/password-recovery'];
-      const isPublicPath = publicPaths.some((p) => $page.url.pathname.startsWith(p));
+      const isPublicPath = publicPaths.some((p) => page.url.pathname.startsWith(p));
 
       if (!$isAuthenticated && !isPublicPath) {
         // Save current URL as return destination after login
-        const returnUrl = $page.url.pathname + $page.url.search;
+        const returnUrl = page.url.pathname + page.url.search;
         void goto(`/login?returnUrl=${encodeURIComponent(returnUrl)}`);
-      } else if ($isAuthenticated && isPublicPath && !$page.url.pathname.startsWith('/help')) {
+      } else if ($isAuthenticated && isPublicPath && !page.url.pathname.startsWith('/help')) {
         // Check for returnUrl parameter when redirecting authenticated users away from auth pages
-        const returnUrl = $page.url.searchParams.get('returnUrl');
+        const returnUrl = page.url.searchParams.get('returnUrl');
         void goto(returnUrl || '/');
       }
     }
@@ -193,11 +193,11 @@
     <nav class="navbar">
       <div class="nav-brand">BonsCompte</div>
       <div class="nav-links">
-        <a href={resolve('/')} class:active={$page.url.pathname === '/'}>{$_('nav.projects')}</a>
+        <a href={resolve('/')} class:active={page.url.pathname === '/'}>{$_('nav.projects')}</a>
         <a
           href={resolve('/approvals')}
           class="approvals-link"
-          class:active={$page.url.pathname.startsWith('/approvals')}
+          class:active={page.url.pathname.startsWith('/approvals')}
         >
           {$_('nav.approvals', { default: 'Approvals' })}
           {#if totalPendingCount > 0}
@@ -215,7 +215,7 @@
         <a
           href={resolve('/settings')}
           class="settings-link"
-          class:active={$page.url.pathname === '/settings'}>{$_('nav.settings')}</a
+          class:active={page.url.pathname === '/settings'}>{$_('nav.settings')}</a
         >
         <button onclick={handleLogout}>{$_('nav.logout')}</button>
       </div>

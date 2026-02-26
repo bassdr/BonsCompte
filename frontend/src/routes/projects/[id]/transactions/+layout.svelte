@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { resolve } from '$app/paths';
   import type { Snippet } from 'svelte';
   import { _ } from '$lib/i18n';
@@ -14,27 +14,27 @@
 <div class="transactions-layout">
   <nav class="transactions-nav">
     <a
-      href={resolve(`/projects/${$page.params.id}/transactions/outgoing`)}
-      class:active={$page.url.pathname.includes('/outgoing')}
+      href={resolve(`/projects/${page.params.id}/transactions/outgoing`)}
+      class:active={page.url.pathname.includes('/outgoing')}
     >
       {$_('transactions.outgoing')}
     </a>
     <a
-      href={resolve(`/projects/${$page.params.id}/transactions/internal`)}
-      class:active={$page.url.pathname.includes('/internal')}
+      href={resolve(`/projects/${page.params.id}/transactions/internal`)}
+      class:active={page.url.pathname.includes('/internal')}
     >
       {$_('transactions.internal')}
     </a>
     <a
-      href={resolve(`/projects/${$page.params.id}/transactions/incoming`)}
-      class:active={$page.url.pathname.includes('/incoming')}
+      href={resolve(`/projects/${page.params.id}/transactions/incoming`)}
+      class:active={page.url.pathname.includes('/incoming')}
     >
       {$_('transactions.incoming')}
     </a>
     {#if hasPool}
       <a
-        href={resolve(`/projects/${$page.params.id}/transactions/rule`)}
-        class:active={$page.url.pathname.includes('/rule')}
+        href={resolve(`/projects/${page.params.id}/transactions/rule`)}
+        class:active={page.url.pathname.includes('/rule')}
       >
         {$_('transactions.rule')}
       </a>

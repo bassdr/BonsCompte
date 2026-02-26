@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
@@ -37,13 +37,13 @@
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   let poolChartCanvases = new Map<number, HTMLCanvasElement>();
 
-  let projectId = $derived(parseInt($page.params.id ?? ''));
+  let projectId = $derived(parseInt(page.params.id ?? ''));
 
   // Redirect to reconciliation if no pool accounts exist
   const hasPools = $derived($participants.some((p) => p.account_type === 'pool'));
   $effect(() => {
     if ($participants.length > 0 && !hasPools) {
-      goto(`/projects/${$page.params.id}/reconciliation`, { replaceState: true });
+      goto(`/projects/${page.params.id}/reconciliation`, { replaceState: true });
     }
   });
 

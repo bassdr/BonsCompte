@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
   import { joinProject } from '$lib/api';
@@ -11,8 +11,8 @@
   let success = $state('');
 
   // Get parameters from URL
-  let code = $derived($page.url.searchParams.get('code') || '');
-  let participantToken = $derived($page.url.searchParams.get('p') || undefined);
+  let code = $derived(page.url.searchParams.get('code') || '');
+  let participantToken = $derived(page.url.searchParams.get('p') || undefined);
 
   // Manual input for code if not in URL
   let manualCode = $state('');

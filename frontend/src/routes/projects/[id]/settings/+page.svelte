@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import {
     updateProject,
@@ -43,7 +43,7 @@
   let errorKey = $state('');
   let success = $state('');
 
-  let projectId = $derived(parseInt($page.params.id ?? ''));
+  let projectId = $derived(parseInt(page.params.id ?? ''));
 
   // Project Details
   let name = $state('');

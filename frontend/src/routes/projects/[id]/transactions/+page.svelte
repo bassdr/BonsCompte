@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { getPayments, deletePayment, type PaymentWithContributions } from '$lib/api';
   import { participants, canEdit } from '$lib/stores/project';
@@ -76,7 +76,7 @@
 
   // Load transactions
   $effect(() => {
-    const projectId = parseInt($page.params.id ?? '');
+    const projectId = parseInt(page.params.id ?? '');
     if (!isNaN(projectId)) {
       loadTransactions(projectId);
     }
@@ -213,13 +213,13 @@
 
   function editTransaction(transaction: PaymentWithContributions) {
     const mode = getTransactionMode(transaction);
-    goto(`/projects/${$page.params.id}/transactions/${mode}?edit=${transaction.id}`);
+    goto(`/projects/${page.params.id}/transactions/${mode}?edit=${transaction.id}`);
   }
 
   async function handleDelete(transactionId: number) {
     if (!confirm($_('transactions.deleteTransaction') + '?')) return;
 
-    const projectId = parseInt($page.params.id ?? '');
+    const projectId = parseInt(page.params.id ?? '');
     try {
       await deletePayment(projectId, transactionId);
       transactions = transactions.filter((p) => p.id !== transactionId);

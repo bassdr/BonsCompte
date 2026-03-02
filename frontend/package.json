@@ -58,7 +58,7 @@
     "vitest": "^4.0.16"
   },
   "dependencies": {
-    "@lucide/svelte": "^0.575.0",
+    "@lucide/svelte": "^0.576.0",
     "@svar-ui/svelte-core": "^2.4.0",
     "chart.js": "^4.4.1",
     "chartjs-adapter-date-fns": "^3.0.0",

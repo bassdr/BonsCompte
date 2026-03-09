@@ -10,6 +10,7 @@
   import type { PaymentOccurrence } from '$lib/api';
   import TransactionCard from '$lib/components/TransactionCard.svelte';
   import DateSelectorCard from '$lib/components/DateSelectorCard.svelte';
+  import FocusCard from '$lib/components/FocusCard.svelte';
   import OccurrencesList from '$lib/components/OccurrencesList.svelte';
   import { SvelteSet, SvelteMap } from 'svelte/reactivity';
   import { Chart, registerables } from 'chart.js';
@@ -876,6 +877,7 @@
 <h2>{$_('cashflow.title')}</h2>
 
 <DateSelectorCard {projection} />
+<FocusCard {projection} />
 
 {#if projection.errorKey}
   <div class="error">{$_(projection.errorKey)}</div>

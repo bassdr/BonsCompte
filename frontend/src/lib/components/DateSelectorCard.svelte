@@ -8,7 +8,6 @@
   import DateInput from '$lib/components/DateInput.svelte';
   import type { OverviewState } from '$lib/date-projection.svelte';
   import { getLocalDateString } from '$lib/date-projection';
-
   let { projection }: { projection: OverviewState } = $props();
 
   let expanded = $state(false);
@@ -34,14 +33,6 @@
         return '';
     }
   });
-
-  const focusName = $derived.by(() => {
-    if (projection.focusParticipantId === null) return '';
-    const balance = projection.nonPoolBalances.find(
-      (b) => b.participant_id === projection.focusParticipantId
-    );
-    return balance?.participant_name ?? '';
-  });
 </script>
 
 <div class="date-selector card" class:range-mode={projection.isRangeMode}>
@@ -60,12 +51,6 @@
         <span class="summary-badge horizon-badge">
           {$_('overview.horizon')}: {horizonLabel}
         </span>
-      {/if}
-      {#if projection.includeDrafts}
-        <span class="summary-badge drafts-badge">{$_('overview.includeDrafts')}</span>
-      {/if}
-      {#if focusName}
-        <span class="summary-badge focus-badge">{focusName}</span>
       {/if}
     </div>
     <span class="summary-toggle">
@@ -209,32 +194,6 @@
           </div>
         </div>
       {/if}
-
-      <!-- Include drafts toggle -->
-      <div class="include-drafts-toggle">
-        <label class="checkbox-label">
-          <input type="checkbox" bind:checked={projection.includeDrafts} />
-          {$_('overview.includeDrafts')}
-        </label>
-      </div>
-
-      <!-- Focus mode selector -->
-      {#if projection.debts}
-        <div class="focus-selector">
-          <label for="focus-participant">{$_('overview.focusOn')}</label>
-          <select id="focus-participant" bind:value={projection.focusParticipantId}>
-            <option value={null}>{$_('overview.allParticipants')}</option>
-            {#each projection.nonPoolBalances as b (b.participant_id)}
-              <option value={b.participant_id}>{b.participant_name}</option>
-            {/each}
-          </select>
-          {#if projection.focusParticipantId !== null}
-            <button class="clear-focus" onclick={() => (projection.focusParticipantId = null)}
-              >{$_('common.clear')}</button
-            >
-          {/if}
-        </div>
-      {/if}
     </div>
   {/if}
 </div>
@@ -310,16 +269,6 @@
   .horizon-badge {
     background: rgba(123, 97, 255, 0.1);
     color: var(--accent, #7b61ff);
-  }
-
-  .drafts-badge {
-    background: rgba(244, 162, 97, 0.15);
-    color: #c77b3a;
-  }
-
-  .focus-badge {
-    background: rgba(42, 157, 143, 0.12);
-    color: #2a9d8f;
   }
 
   .summary-toggle {
@@ -459,70 +408,6 @@
     color: white;
   }
 
-  .include-drafts-toggle {
-    display: flex;
-    align-items: center;
-  }
-
-  .include-drafts-toggle .checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.9rem;
-    color: #666;
-    cursor: pointer;
-  }
-
-  .include-drafts-toggle input[type='checkbox'] {
-    width: 16px;
-    height: 16px;
-    cursor: pointer;
-  }
-
-  .focus-selector {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
-    background: rgba(255, 255, 255, 0.8);
-    backdrop-filter: blur(10px);
-    border-radius: 12px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-  }
-
-  .focus-selector label {
-    font-weight: 600;
-    color: #666;
-  }
-
-  .focus-selector select {
-    padding: 0.5rem 1rem;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    font-size: 0.95rem;
-    background: white;
-    min-width: 180px;
-  }
-
-  .focus-selector select:focus {
-    outline: none;
-    border-color: var(--accent, #7b61ff);
-  }
-
-  .clear-focus {
-    padding: 0.5rem 1rem;
-    background: #f5f5f5;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    font-size: 0.85rem;
-    cursor: pointer;
-    color: #666;
-  }
-
-  .clear-focus:hover {
-    background: #eee;
-  }
-
   @media (max-width: 600px) {
     .date-selector {
       overflow-x: hidden;
@@ -585,20 +470,6 @@
     .horizon-btn {
       font-size: 0.75rem;
       padding: 0.3rem 0.6rem;
-    }
-
-    .focus-selector {
-      flex-direction: column;
-      align-items: stretch;
-      gap: 0.5rem;
-    }
-
-    .focus-selector label {
-      text-align: center;
-    }
-
-    .focus-selector select {
-      width: 100%;
     }
 
     .summary-content {

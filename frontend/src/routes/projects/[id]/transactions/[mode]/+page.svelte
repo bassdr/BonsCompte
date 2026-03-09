@@ -434,9 +434,10 @@
       }
     } else if (mode === 'internal') {
       isExternalInflow = false;
-      // Set default receiver if not set
+      // Set default receiver to pool if available, else first participant
       if (!receiverAccountId && $participants.length > 0) {
-        receiverAccountId = $participants[0].id;
+        const pool = $participants.find((p) => p.account_type === 'pool');
+        receiverAccountId = pool ? pool.id : $participants[0].id;
       }
     } else if (mode === 'rule') {
       isExternalInflow = true; // No payer for rules

@@ -1339,7 +1339,7 @@
                 </tr>
               </thead>
               <tbody>
-                {#each $participants as p (p.id)}
+                {#each $participants.filter((p) => p.account_type !== 'pool') as p (p.id)}
                   <tr>
                     <td>{p.name}</td>
                     <td>

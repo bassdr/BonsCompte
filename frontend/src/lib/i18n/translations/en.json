@@ -470,6 +470,7 @@
   "participants.generateInviteLink": "Generate Invite Link",
 
   "members.title": "Members",
+  "members.role": "Role",
   "members.description": "Users with access to the project, whether they are participants or not",
   "members.inviteLink": "Invite Link",
   "members.shareCodeHint": "Share this code with others to let them join the project:",

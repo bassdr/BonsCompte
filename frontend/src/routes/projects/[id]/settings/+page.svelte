@@ -39,6 +39,7 @@
   import Pencil from '@lucide/svelte/icons/pencil';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import UserMinus from '@lucide/svelte/icons/user-minus';
+  import Unlink from '@lucide/svelte/icons/unlink';
 
   let errorKey = $state('');
   let success = $state('');
@@ -79,6 +80,7 @@
   let editingParticipantId = $state<number | null>(null);
   let editParticipantName = $state('');
   let editParticipantWeight = $state('');
+  let editParticipantPreviousWeight = $state('1');
   let editParticipantAccountType = $state<'user' | 'pool'>('user');
   let updatingParticipant = $state(false);
 
@@ -293,6 +295,7 @@
     editingParticipantId = p.id;
     editParticipantName = p.name;
     editParticipantWeight = p.default_weight.toString();
+    editParticipantPreviousWeight = p.account_type === 'pool' ? '1' : p.default_weight.toString();
     editParticipantAccountType = p.account_type;
   }
 
@@ -300,6 +303,7 @@
     editingParticipantId = null;
     editParticipantName = '';
     editParticipantWeight = '';
+    editParticipantPreviousWeight = '1';
     editParticipantAccountType = 'user';
   }
 
@@ -322,7 +326,7 @@
       cancelEditParticipant();
       success = $_('projectSettings.handleUpdateParticipant.success');
 
-      await refreshParticipants(projectId);
+      await Promise.all([refreshParticipants(projectId), refreshMembers(projectId)]);
     } catch (e) {
       errorKey = getErrorKey(e, 'projectSettings.handleUpdateParticipant.fail');
     } finally {
@@ -339,7 +343,7 @@
     try {
       await deleteParticipant(projectId, participantId);
       success = $_('projectSettings.handleDeleteParticipant.success');
-      await refreshParticipants(projectId);
+      await Promise.all([refreshParticipants(projectId), refreshMembers(projectId)]);
     } catch (e) {
       errorKey = getErrorKey(e, 'projectSettings.handleDeleteParticipant.fail');
     }
@@ -352,9 +356,24 @@
     try {
       await claimParticipant(projectId, participantId);
       success = $_('projectSettings.handleClaimParticipant.success');
-      await refreshParticipants(projectId);
+      await Promise.all([refreshParticipants(projectId), refreshMembers(projectId)]);
     } catch (e) {
       errorKey = getErrorKey(e, 'projectSettings.handleClaimParticipant.fail');
+    }
+  }
+
+  async function handleUnlinkParticipant(p: (typeof $participants)[0]) {
+    if (!p.user_id) return;
+
+    errorKey = '';
+    success = '';
+
+    try {
+      await setMemberParticipant(projectId, p.user_id, null);
+      success = $_('projectSettings.handleSetMemberParticipant.success');
+      await Promise.all([refreshParticipants(projectId), refreshMembers(projectId)]);
+    } catch (e) {
+      errorKey = getErrorKey(e, 'projectSettings.handleSetMemberParticipant.fail');
     }
   }
 
@@ -444,7 +463,7 @@
     editMemberParticipantId = null;
   }
 
-  async function handleUpdateMemberRole(e: Event) {
+  async function handleUpdateMember(e: Event) {
     e.preventDefault();
     if (!editingMemberId) return;
 
@@ -453,27 +472,20 @@
     success = '';
 
     try {
-      await updateMemberRole(projectId, editingMemberId, editMemberRole);
+      const saves: Promise<unknown>[] = [
+        setMemberParticipant(projectId, editingMemberId, editMemberParticipantId)
+      ];
+      if (!isCurrentUser(editingMemberId)) {
+        saves.push(updateMemberRole(projectId, editingMemberId, editMemberRole));
+      }
+      await Promise.all(saves);
       success = $_('projectSettings.handleUpdateMemberRole.success');
       cancelEditMember();
-      await refreshMembers(projectId);
+      await Promise.all([refreshMembers(projectId), refreshParticipants(projectId)]);
     } catch (e) {
       errorKey = getErrorKey(e, 'projectSettings.handleUpdateMemberRole.fail');
     } finally {
       updatingMember = false;
-    }
-  }
-
-  async function handleSetMemberParticipant(userId: number, participantId: number | null) {
-    errorKey = '';
-    success = '';
-
-    try {
-      await setMemberParticipant(projectId, userId, participantId);
-      success = $_('projectSettings.handleSetMemberParticipant.success');
-      await refreshMembers(projectId);
-    } catch (e) {
-      errorKey = getErrorKey(e, 'projectSettings.handleSetMemberParticipant.fail');
     }
   }
 
@@ -687,7 +699,13 @@
             </div>
             <div class="field small">
               <label for="participant-type">{$_('participants.type')}</label>
-              <select id="participant-type" bind:value={newParticipantAccountType}>
+              <select
+                id="participant-type"
+                bind:value={newParticipantAccountType}
+                onchange={() => {
+                  if (newParticipantAccountType === 'pool') newParticipantWeight = '0';
+                }}
+              >
                 <option value="user">{$_('participants.user')}</option>
                 <option value="pool">{$_('participants.pool')}</option>
               </select>
@@ -707,21 +725,61 @@
         {#each $participants as p (p.id)}
           <li>
             {#if editingParticipantId === p.id}
-              <form class="edit-form" onsubmit={handleUpdateParticipant}>
-                <input type="text" bind:value={editParticipantName} required />
-                <input
-                  type="number"
-                  bind:value={editParticipantWeight}
-                  min="0"
-                  step="0.5"
-                  class="small-input"
-                />
-                <select bind:value={editParticipantAccountType} class="small-select">
-                  <option value="user">{$_('participants.user')}</option>
-                  <option value="pool">{$_('participants.pool')}</option>
-                </select>
-                <button type="submit" disabled={updatingParticipant}>{$_('common.save')}</button>
-                <button type="button" onclick={cancelEditParticipant}>{$_('common.cancel')}</button>
+              <form class="edit-form edit-form--stacked" onsubmit={handleUpdateParticipant}>
+                <div class="edit-form-fields">
+                  <div class="labeled-input">
+                    <label class="inline-label" for="edit-name-{p.id}"
+                      >{$_('participants.name')}</label
+                    >
+                    <input
+                      id="edit-name-{p.id}"
+                      type="text"
+                      bind:value={editParticipantName}
+                      required
+                    />
+                  </div>
+                  <div class="labeled-input">
+                    <label class="inline-label" for="edit-weight-{p.id}"
+                      >{$_('participants.weight')}</label
+                    >
+                    <input
+                      id="edit-weight-{p.id}"
+                      type="number"
+                      bind:value={editParticipantWeight}
+                      min="0"
+                      step="0.5"
+                      class="small-input"
+                      disabled={editParticipantAccountType === 'pool'}
+                    />
+                  </div>
+                  <div class="labeled-input">
+                    <label class="inline-label" for="edit-type-{p.id}"
+                      >{$_('participants.type')}</label
+                    >
+                    <select
+                      id="edit-type-{p.id}"
+                      bind:value={editParticipantAccountType}
+                      class="type-select"
+                      onchange={() => {
+                        if (editParticipantAccountType === 'pool') {
+                          editParticipantPreviousWeight = editParticipantWeight;
+                          editParticipantWeight = '0';
+                        } else {
+                          editParticipantWeight = editParticipantPreviousWeight || '1';
+                        }
+                      }}
+                    >
+                      <option value="user">{$_('participants.user')}</option>
+                      <option value="pool">{$_('participants.pool')}</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="edit-form-actions">
+                  <button type="submit" disabled={updatingParticipant}>{$_('common.save')}</button>
+                  <button type="button" onclick={cancelEditParticipant}
+                    >{$_('common.cancel')}</button
+                  >
+                </div>
               </form>
             {:else}
               <div class="item-row">
@@ -738,10 +796,24 @@
                     {/if}
                   </span>
                   {#if p.user_id}
-                    <span class="linked">{$_('participants.linkedToAccount')}</span>
+                    <span class="linked">
+                      {$_('participants.linkedToAccount')}
+                      {#if p.user_id === $auth.user?.id}
+                        <span class="you">{$_('members.you')}</span>
+                      {/if}
+                    </span>
                   {/if}
                 </div>
                 <div class="item-actions">
+                  {#if p.user_id && $isAdmin}
+                    <button
+                      class="icon-btn edit-btn"
+                      onclick={() => handleUnlinkParticipant(p)}
+                      title={$_('participants.unlinkAccount')}
+                    >
+                      <Unlink size={18} />
+                    </button>
+                  {/if}
                   {#if canClaimParticipant(p)}
                     <button class="btn-claim" onclick={() => handleClaimParticipant(p.id)}>
                       {$_('participants.claimAsMe')}
@@ -826,29 +898,49 @@
         {#each $members as m (m.user_id)}
           <li>
             {#if editingMemberId === m.user_id}
-              <form class="edit-form" onsubmit={handleUpdateMemberRole}>
+              <form class="edit-form edit-form--stacked" onsubmit={handleUpdateMember}>
                 <div class="member-info">
                   <span class="name">{m.display_name || m.username}</span>
                   <span class="username">@{m.username}</span>
                 </div>
-                <div class="edit-controls">
-                  <select bind:value={editMemberRole}>
-                    <option value="reader">{$_('roles.reader')}</option>
-                    <option value="editor">{$_('roles.editor')}</option>
-                    <option value="admin">{$_('roles.admin')}</option>
-                  </select>
-                  <select
-                    bind:value={editMemberParticipantId}
-                    onchange={() => handleSetMemberParticipant(m.user_id, editMemberParticipantId)}
-                  >
-                    <option value={null}>{$_('members.noParticipant')}</option>
-                    {#if m.participant_id}
-                      <option value={m.participant_id}>{m.participant_name}</option>
-                    {/if}
-                    {#each unlinkedParticipants as p (p.id)}
-                      <option value={p.id}>{p.name}</option>
-                    {/each}
-                  </select>
+                <div class="edit-form-fields">
+                  <div class="labeled-input">
+                    <label class="inline-label" for="edit-role-{m.user_id}"
+                      >{$_('members.role')}</label
+                    >
+                    <select
+                      id="edit-role-{m.user_id}"
+                      bind:value={editMemberRole}
+                      disabled={isCurrentUser(m.user_id)}
+                    >
+                      <option value="reader">{$_('roles.reader')}</option>
+                      <option value="editor">{$_('roles.editor')}</option>
+                      <option value="admin">{$_('roles.admin')}</option>
+                    </select>
+                  </div>
+                  <div class="labeled-input">
+                    <label class="inline-label" for="edit-member-participant-{m.user_id}"
+                      >{$_('participants.title')}</label
+                    >
+                    <select
+                      id="edit-member-participant-{m.user_id}"
+                      value={editMemberParticipantId ?? ''}
+                      onchange={(e) => {
+                        const val = e.currentTarget.value;
+                        editMemberParticipantId = val === '' ? null : parseInt(val);
+                      }}
+                    >
+                      <option value="">{$_('members.noParticipant')}</option>
+                      {#if m.participant_id}
+                        <option value={m.participant_id}>{m.participant_name}</option>
+                      {/if}
+                      {#each unlinkedParticipants as p (p.id)}
+                        <option value={p.id}>{p.name}</option>
+                      {/each}
+                    </select>
+                  </div>
+                </div>
+                <div class="edit-form-actions">
                   <button type="submit" disabled={updatingMember}>{$_('common.save')}</button>
                   <button type="button" onclick={cancelEditMember}>{$_('common.cancel')}</button>
                 </div>
@@ -872,7 +964,7 @@
                   {#if m.status === 'recovered'}
                     <span class="status-badge status-recovered">{$_('members.recovered')}</span>
                   {/if}
-                  {#if !isCurrentUser(m.user_id)}
+                  {#if $isAdmin}
                     <button
                       class="icon-btn edit-btn"
                       onclick={() => startEditMember(m)}
@@ -880,6 +972,8 @@
                     >
                       <Pencil size={18} />
                     </button>
+                  {/if}
+                  {#if !isCurrentUser(m.user_id)}
                     <button
                       class="icon-btn delete-btn"
                       onclick={() => handleRemoveMember(m.user_id)}
@@ -1407,6 +1501,23 @@
     width: 100%;
   }
 
+  .edit-form--stacked {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .edit-form-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: flex-end;
+  }
+
+  .edit-form-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
   .edit-form input {
     padding: 0.5rem;
   }
@@ -1415,9 +1526,32 @@
     width: 80px;
   }
 
-  .edit-form .small-select {
-    width: 80px;
+  .edit-form .labeled-input {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .edit-form .inline-label {
+    font-size: 0.7rem;
+    color: #888;
+    margin: 0;
+    font-weight: 500;
+  }
+
+  .edit-form .type-select {
+    width: auto;
+    min-width: 100px;
     padding: 0.5rem;
+  }
+
+  .member-participant-select {
+    width: auto;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: #f8f9fa;
   }
 
   .edit-form button {
@@ -1434,36 +1568,6 @@
   }
 
   .edit-form button[type='button'] {
-    background: transparent;
-    border: 1px solid #ddd;
-  }
-
-  .edit-controls {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-  }
-
-  .edit-controls select {
-    padding: 0.5rem;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-  }
-
-  .edit-controls button {
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
-    font-size: 0.85rem;
-    cursor: pointer;
-  }
-
-  .edit-controls button[type='submit'] {
-    background: var(--accent, #7b61ff);
-    color: white;
-    border: none;
-  }
-
-  .edit-controls button[type='button'] {
     background: transparent;
     border: 1px solid #ddd;
   }

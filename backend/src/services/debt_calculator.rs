@@ -685,31 +685,27 @@ fn generate_payment_occurrences(
                 );
             }
         }
-        "monthly" => {
+        "monthly" if interval == 1 => {
             // Check for monthday selection pattern (only valid when interval = 1)
-            if interval == 1 {
-                if let Some(monthdays_json) = &payment.recurrence_monthdays {
-                    return generate_monthly_with_monthdays(
-                        payment,
-                        start_date,
-                        effective_end,
-                        monthdays_json,
-                    );
-                }
+            if let Some(monthdays_json) = &payment.recurrence_monthdays {
+                return generate_monthly_with_monthdays(
+                    payment,
+                    start_date,
+                    effective_end,
+                    monthdays_json,
+                );
             }
         }
-        "yearly" => {
+        "yearly" if interval == 1 => {
             // Check for month selection pattern (only valid when interval = 1)
-            if interval == 1 {
-                if let Some(months_json) = &payment.recurrence_months {
-                    return generate_yearly_with_months(
-                        payment,
-                        start_date,
-                        effective_end,
-                        months_json,
-                        payment.recurrence_monthdays.as_deref(),
-                    );
-                }
+            if let Some(months_json) = &payment.recurrence_months {
+                return generate_yearly_with_months(
+                    payment,
+                    start_date,
+                    effective_end,
+                    months_json,
+                    payment.recurrence_monthdays.as_deref(),
+                );
             }
         }
         _ => {}

@@ -16,6 +16,10 @@ env:
 
 jobs:
   build:
+    # Stable check name so branch-protection required checks don't depend on
+    # the matrix's dockerfile path / build-args (which GitHub would otherwise
+    # bake into the auto-generated context string).
+    name: Docker image (${{ matrix.service }})
     runs-on: ubuntu-latest
     permissions:
       contents: read

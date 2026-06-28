@@ -78,3 +78,39 @@ jobs:
       - name: Run frontend linter
         working-directory: ./frontend
         run: npm run format:check
+
+      # Guards against adapter-node regressions where the production server
+      # fails to serve static assets (e.g. adapter-node 5.5.5+ bundled the
+      # request handler into a nested chunk, breaking import.meta.url-based
+      # asset path resolution). This is invisible to `npm run build` and
+      # `npm run check` because the build succeeds; only running the server
+      # and requesting an asset catches it. Symptom in prod: HTML 200 but
+      # every /_app/*.js 404s, so the app hangs on the loading spinner.
+      - name: Smoke test - production server serves static assets
+        working-directory: ./frontend
+        run: |
+          npm run build
+          PORT=3000 HOST=127.0.0.1 node build &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
+
+          # Wait (up to 30s) for the server to accept connections
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null http://127.0.0.1:3000/; then break; fi
+            sleep 1
+          done
+
+          # Pick a real content-hashed entry asset from the build output
+          asset_file=$(ls build/client/_app/immutable/entry/*.js | head -1)
+          asset_path=${asset_file#build/client}
+          echo "Checking immutable asset: $asset_path"
+
+          code_asset=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:3000${asset_path}")
+          code_robots=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:3000/robots.txt")
+          echo "asset=$code_asset robots.txt=$code_robots"
+
+          if [ "$code_asset" != "200" ] || [ "$code_robots" != "200" ]; then
+            echo "::error::Production server is not serving static assets (likely an adapter-node regression). immutable asset=$code_asset, robots.txt=$code_robots — expected 200 for both."
+            exit 1
+          fi
+          echo "Static asset serving OK."

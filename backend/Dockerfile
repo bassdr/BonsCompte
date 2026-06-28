@@ -9,6 +9,12 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
+# Resilient crates.io downloads: HTTP/1.1 avoids the "HTTP2 framing layer
+# (Connection reset by peer)" errors seen intermittently on CI runners, and
+# retry transient network failures instead of failing the whole build.
+ENV CARGO_NET_RETRY=10
+ENV CARGO_HTTP_MULTIPLEXING=false
+
 # Copy manifests first for layer caching
 COPY Cargo.toml Cargo.lock ./
 

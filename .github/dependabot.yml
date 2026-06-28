@@ -15,18 +15,20 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
     groups:
-      # Group all minor and patch updates together
+      # Low-risk updates: batched into one PR and auto-merged once CI
+      # (incl. the production smoke test) passes. See dependabot-auto-merge.yml.
       frontend-minor-patch:
         patterns:
           - "*"
         update-types:
           - "minor"
           - "patch"
-      # Group dev dependencies separately
-      frontend-dev:
+      # Breaking updates: batched into one PR but left for manual review.
+      frontend-major:
         patterns:
           - "*"
-        dependency-type: "development"
+        update-types:
+          - "major"
 
   - package-ecosystem: "cargo"
     directory: "/backend/"
@@ -34,18 +36,17 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
     groups:
-      # Group all minor and patch updates together
       backend-minor-patch:
         patterns:
           - "*"
         update-types:
           - "minor"
           - "patch"
-      # Group dev dependencies separately
-      backend-dev:
+      backend-major:
         patterns:
           - "*"
-        dependency-type: "development"
+        update-types:
+          - "major"
 
   - package-ecosystem: "npm"
     directory: "/"
@@ -53,6 +54,14 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 3
     groups:
-      root-all:
+      root-minor-patch:
         patterns:
           - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      root-major:
+        patterns:
+          - "*"
+        update-types:
+          - "major"

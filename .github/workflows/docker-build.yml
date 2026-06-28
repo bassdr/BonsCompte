@@ -46,7 +46,7 @@ jobs:
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # ghcr.io requires a lowercase image path; github.repository is mixed-case.
       - name: Set image name
@@ -131,7 +131,7 @@ jobs:
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set image name
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}-frontend" >> "$GITHUB_ENV"

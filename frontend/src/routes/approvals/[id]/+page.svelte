@@ -178,8 +178,7 @@
               placeholder={$_('approvals.reason_placeholder', {
                 default: 'Explain your decision...'
               })}
-              rows="3"
-            ></textarea>
+              rows="3"></textarea>
           </div>
 
           <div class="action-buttons">

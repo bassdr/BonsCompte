@@ -555,8 +555,7 @@
           id="description"
           bind:value={description}
           rows="3"
-          placeholder={$_('projectSettings.descriptionPlaceholder')}
-        ></textarea>
+          placeholder={$_('projectSettings.descriptionPlaceholder')}></textarea>
       </div>
       <button type="submit" disabled={saving}>
         {saving ? $_('common.saving') : $_('projectSettings.saveChanges')}

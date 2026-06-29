@@ -1114,10 +1114,7 @@
 
         if (originalShouldRecur) {
           originalPayload.recurrence_type = editingPaymentOriginal.recurrence_type as
-            | 'daily'
-            | 'weekly'
-            | 'monthly'
-            | 'yearly';
+            'daily' | 'weekly' | 'monthly' | 'yearly';
           originalPayload.recurrence_interval =
             editingPaymentOriginal.recurrence_interval ?? undefined;
           originalPayload.recurrence_end_date = endDateForOriginal;

@@ -276,7 +276,7 @@ async fn update_project(
     }
 
     let sql = format!("UPDATE projects SET {} WHERE id = ?", updates.join(", "));
-    let mut query = sqlx::query(&sql);
+    let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
     for bind in &binds {
         query = query.bind(bind);
     }
@@ -397,7 +397,7 @@ async fn update_project_settings(
     );
 
     // Build the query with binds in correct order
-    let mut query = sqlx::query(&sql);
+    let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
     let mut bool_idx = 0;
     let mut string_idx = 0;
     for (_, bind_type) in &updates {

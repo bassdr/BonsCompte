@@ -28,13 +28,7 @@ export const CHART_COLORS = [
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type HorizonOption =
-  | 'none'
-  | 'thisMonth'
-  | 'nextMonth'
-  | '3months'
-  | '6months'
-  | '12months'
-  | 'custom';
+  'none' | 'thisMonth' | 'nextMonth' | '3months' | '6months' | '12months' | 'custom';
 
 export interface BreakdownMonthData {
   monthKey: string;

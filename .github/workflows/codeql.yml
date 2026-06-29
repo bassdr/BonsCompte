@@ -20,7 +20,7 @@ jobs:
         language: [ "typescript", "rust" ]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - if: matrix.language == 'rust'
         uses: dtolnay/rust-toolchain@stable
@@ -30,9 +30,13 @@ jobs:
           languages: ${{ matrix.language }}
           config-file: ./.github/codeql/codeql-config.yml
 
+      # CodeQL analyzes Rust with build-mode "none" (it resolves the crate
+      # graph itself), so a full `cargo build` does not feed the database.
+      # Pre-fetching dependencies makes the registry + crate sources available
+      # during extraction, which improves call-target resolution quality.
       - if: matrix.language == 'rust'
         working-directory: backend
-        run: cargo build --release
+        run: cargo fetch
 
       # For TypeScript: analyze and upload directly (no filtering needed)
       - if: matrix.language == 'typescript'

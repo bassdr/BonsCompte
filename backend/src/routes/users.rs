@@ -394,7 +394,7 @@ async fn update_preferences(
 
     if !updates.is_empty() {
         let query = format!("UPDATE users SET {} WHERE id = ?", updates.join(", "));
-        let mut q = sqlx::query(&query);
+        let mut q = sqlx::query(sqlx::AssertSqlSafe(query));
         for binding in bindings {
             q = q.bind(binding);
         }

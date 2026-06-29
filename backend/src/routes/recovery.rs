@@ -468,7 +468,8 @@ async fn reset_password(
             placeholders
         );
 
-        let mut query = sqlx::query_scalar::<_, i64>(&auto_approve_sql).bind(intent.user_id);
+        let mut query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(auto_approve_sql))
+            .bind(intent.user_id);
         for voter_id in &approving_trusted_users {
             query = query.bind(voter_id);
         }
@@ -485,7 +486,8 @@ async fn reset_password(
                 "UPDATE project_members SET status = 'active' WHERE user_id = ? AND project_id IN ({})",
                 project_placeholders
             );
-            let mut update_query = sqlx::query(&update_sql).bind(intent.user_id);
+            let mut update_query =
+                sqlx::query(sqlx::AssertSqlSafe(update_sql)).bind(intent.user_id);
             for pid in &auto_approve_projects {
                 update_query = update_query.bind(pid);
             }

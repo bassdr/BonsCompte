@@ -331,7 +331,7 @@ impl HistoryService {
             placeholders
         );
 
-        let mut query_builder = sqlx::query_as::<_, (i64,)>(&query);
+        let mut query_builder = sqlx::query_as::<_, (i64,)>(sqlx::AssertSqlSafe(query));
         for id in history_ids {
             query_builder = query_builder.bind(*id);
         }
@@ -375,7 +375,7 @@ impl HistoryService {
                 placeholders
             );
 
-            let mut query_builder = sqlx::query_as::<_, (i64, String)>(&query);
+            let mut query_builder = sqlx::query_as::<_, (i64, String)>(sqlx::AssertSqlSafe(query));
             for id in &actor_ids {
                 query_builder = query_builder.bind(*id);
             }

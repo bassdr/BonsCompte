@@ -231,7 +231,7 @@ async fn update_participant(
         "UPDATE participants SET {} WHERE id = ?",
         updates.join(", ")
     );
-    let mut query = sqlx::query(&sql);
+    let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
     if has_name {
         query = query.bind(&name_val);
     }
@@ -607,7 +607,7 @@ async fn update_pool_warning_settings(
         "UPDATE participants SET {} WHERE id = ?",
         updates.join(", ")
     );
-    let mut query = sqlx::query(&sql);
+    let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
     for bind in binds {
         query = query.bind(bind);
     }

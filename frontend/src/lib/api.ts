@@ -144,7 +144,7 @@ async function authFetch(path: string, opts: AuthFetchOptions = {}) {
       throw new ApiRequestError(data.code || 'FORBIDDEN', data.error, res.status);
     } catch (e) {
       if (e instanceof ApiRequestError) throw e;
-      throw new Error(`${res.status}: ${text}`);
+      throw new Error(`${res.status}: ${text}`, { cause: e });
     }
   }
 
@@ -157,7 +157,7 @@ async function authFetch(path: string, opts: AuthFetchOptions = {}) {
     } catch (e) {
       if (e instanceof ApiRequestError) throw e;
       // If not valid JSON, throw with the raw text
-      throw new Error(`${res.status}: ${text}`);
+      throw new Error(`${res.status}: ${text}`, { cause: e });
     }
   }
 

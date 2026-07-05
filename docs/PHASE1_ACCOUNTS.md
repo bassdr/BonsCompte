@@ -106,17 +106,39 @@ computed values (extracted to a CSV fixture) at monthly checkpoints 2026→2032.
 actual/365 and weekday-stepping differences make cent-exact unrealistic; 0.1% on
 a 400 k$ mortgage is ~400 $ over six years — reviewable, and tightenable later).
 
-## 5. Open questions for David before implementation
+## 5. Design decisions (answered by David, 2026-07-05)
 
-1. **Tolerance**: is 0.1% at monthly checkpoints acceptable for the "trust it over
-   Excel" milestone, or do you want the engine to replicate DAYS360/weekday
-   conventions exactly?
-2. **Clamp-at-zero for loans** in v1 or defer? (Affects the mortgage end-game
-   ~2040s, not the 2026–2032 window, since it doesn't pay off in range.)
-3. **Where accounts live**: these personal accounts are `pool`-type participants in
-   a single-member project (gets ownership tracking + charts for free) — confirm,
-   or should a new `account_type = 'asset'` be introduced to keep them out of
-   pool-specific UI (warnings, expected minimum)?
-4. **Interest occurrence granularity in the UI**: shown as regular transactions in
-   the lists (auditable, noisy) or only folded into the chart (clean, less
-   auditable)? Proposal: shown, with an "Interest" badge, filterable.
+1. **Precision**: replicate DAYS360 exactly and use 4-decimal fixed-point math
+   throughout (the project's existing contribution convention). No approximation
+   tolerances — "why is it off by 0.02$" questions must not exist. One accepted
+   divergence from the workbook: the engine ticks on calendar boundaries
+   (1st of month / Jun 1 / Dec 1 / Jan 1) while the sheet ticks on its weekly row
+   grid anchored to `today()`; the model is the engine's, and the acceptance
+   fixture is regenerated with engine conventions rather than diffed against the
+   sheet's grid artifacts.
+2. **Accounts are pools**: conceptually the same thing — we track not only debts
+   between accounts but also the total. No new account_type.
+3. **Interest visibility**: interest occurrences do NOT appear in transaction
+   lists, but it must stay clear where and when they applied whenever they affect
+   a displayed total — i.e. they show up in ownership/balance breakdowns and the
+   chart, flagged via `is_interest`.
+4. **Clamp-at-zero for loans**: deferred, with explanation. The workbook caps loan
+   balances at 0 (`IF(...<0, ..., 0)`) so that once the mortgage is paid off the
+   recurring payments stop affecting it. The engine doesn't do this in v1: if you
+   project past a loan's payoff date, the balance crosses zero and keeps climbing
+   as if payments continued. Workaround until it matters: set the recurring
+   payment's `recurrence_end_date` to the known payoff date. Irrelevant for the
+   2026–2032 window (the mortgage doesn't pay off in range). A proper fix
+   ("recurrence ends when target account reaches zero") is a new engine concept,
+   deliberately postponed.
+
+## 6. Implementation status
+
+- Increment 1 (backend engine + API): **implemented** — see PR #310. Schema
+  (Migration 025), CRUD routes under `participants/{id}/interest-rules`,
+  synthetic occurrence generation, proportional ownership attribution, 12 unit
+  tests including Excel-verified DAYS360 values.
+- Next: frontend rules editor on pool settings; `is_interest` handling in charts
+  and breakdowns (frontend charts currently ignore occurrences whose payment_id
+  has no payment row — synthetic IDs are negative, so interest is invisible in
+  the UI until this lands); Avoirs acceptance fixture.

@@ -11,6 +11,7 @@ pub enum EntityType {
     ProjectMember,
     Project,
     ParticipantInvite,
+    InterestRule,
 }
 
 impl EntityType {
@@ -22,6 +23,7 @@ impl EntityType {
             EntityType::ProjectMember => "project_member",
             EntityType::Project => "project",
             EntityType::ParticipantInvite => "participant_invite",
+            EntityType::InterestRule => "interest_rule",
         }
     }
 }

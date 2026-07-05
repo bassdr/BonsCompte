@@ -837,6 +837,37 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         }
     }
 
+    // =====================
+    // Migration 025: Account interest rules (Phase 1: accounts with interest)
+    // =====================
+    // Date-windowed interest rules for pool accounts. A rate renewal is two
+    // rows: the old rule closed with end_date, a new rule starting that day.
+    // See docs/PHASE1_ACCOUNTS.md.
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS account_interest_rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            participant_id INTEGER NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+            start_date TEXT NOT NULL,
+            end_date TEXT,
+            annual_rate REAL NOT NULL,
+            period TEXT NOT NULL DEFAULT 'monthly'
+                CHECK (period IN ('monthly','semiannual','annual')),
+            only_when_negative INTEGER NOT NULL DEFAULT 0,
+            monthly_fee REAL,
+            fee_threshold REAL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_interest_rules_participant
+         ON account_interest_rules(participant_id)",
+    )
+    .execute(pool)
+    .await?;
+
     tracing::info!("Database migrations completed");
     Ok(())
 }

@@ -15,7 +15,7 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "lint-staged": "^17.0.8"
+    "lint-staged": "^17.1.0"
   },
   "repository": {
     "type": "git",

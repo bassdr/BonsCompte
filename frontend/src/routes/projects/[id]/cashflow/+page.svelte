@@ -154,8 +154,10 @@
 
     for (const pool of projection.debts.pool_ownerships) {
       const poolId = pool.pool_id;
+      // Interest occurrences stay out of transaction lists (they remain
+      // visible in ownership breakdowns and the chart)
       const filtered = projection.debts.occurrences.filter(
-        (occ) => occ.payer_id === poolId || occ.receiver_account_id === poolId
+        (occ) => !occ.is_interest && (occ.payer_id === poolId || occ.receiver_account_id === poolId)
       );
       if (filtered.length > 0) {
         result.set(poolId, filtered);
@@ -199,6 +201,26 @@
         ) {
           const occ = sortedOccurrences[occIdx];
           const payment = projection.paymentMap.get(occ.payment_id);
+
+          // Synthetic interest (no payment row): attribute proportionally to
+          // current ownership shares, mirroring the backend's attribution
+          if (occ.is_interest) {
+            const involvesPool =
+              occ.receiver_account_id === pool.pool_id || occ.payer_id === pool.pool_id;
+            if (involvesPool && runningOwnership.size > 0) {
+              const sign = occ.receiver_account_id === pool.pool_id ? 1 : -1;
+              const total = [...runningOwnership.values()].reduce((sum, v) => sum + v, 0);
+              for (const [pid, value] of runningOwnership) {
+                const share =
+                  Math.abs(total) > 1e-9
+                    ? occ.amount * (value / total)
+                    : occ.amount / runningOwnership.size;
+                runningOwnership.set(pid, value + sign * share);
+              }
+            }
+            occIdx++;
+            continue;
+          }
 
           if (payment && occ.affects_balance) {
             if (occ.receiver_account_id === pool.pool_id && occ.payer_id !== null) {

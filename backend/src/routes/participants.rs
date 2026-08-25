@@ -11,7 +11,8 @@ use crate::{
     auth::{AdminMember, ProjectMember},
     error::{AppError, AppResult, ErrorCode},
     models::{
-        CreateParticipant, EntityType, Participant, UpdateParticipant, UpdatePoolWarningSettings,
+        AccountInterestRule, CreateInterestRule, CreateParticipant, EntityType, Participant,
+        UpdateInterestRule, UpdateParticipant, UpdatePoolWarningSettings, INTEREST_PERIODS,
     },
     services::HistoryService,
     AppState,
@@ -40,6 +41,20 @@ pub fn router() -> Router<AppState> {
             "/{participant_id}/warning-settings",
             axum::routing::patch(update_pool_warning_settings),
         )
+        .route(
+            "/{participant_id}/interest-rules",
+            get(list_interest_rules).post(create_interest_rule),
+        )
+        .route(
+            "/{participant_id}/interest-rules/{rule_id}",
+            axum::routing::put(update_interest_rule).delete(delete_interest_rule),
+        )
+}
+
+#[derive(Deserialize)]
+struct InterestRulePath {
+    participant_id: i64,
+    rule_id: i64,
 }
 
 async fn list_participants(
@@ -621,4 +636,273 @@ async fn update_pool_warning_settings(
         .await?;
 
     Ok(Json(updated))
+}
+
+// ─── Interest rules (Phase 1: accounts with interest, docs/PHASE1_ACCOUNTS.md) ──
+
+/// Fetch the participant, ensuring it belongs to the project and is a pool.
+async fn require_pool_participant(
+    pool: &SqlitePool,
+    project_id: i64,
+    participant_id: i64,
+) -> AppResult<Participant> {
+    let participant: Option<Participant> =
+        sqlx::query_as("SELECT * FROM participants WHERE id = ? AND project_id = ?")
+            .bind(participant_id)
+            .bind(project_id)
+            .fetch_optional(pool)
+            .await?;
+    let participant =
+        participant.ok_or_else(|| AppError::not_found(ErrorCode::ParticipantNotFound))?;
+    if participant.account_type != "pool" {
+        return Err(AppError::BadRequest(
+            "Interest rules can only be configured on pool accounts".to_string(),
+        ));
+    }
+    Ok(participant)
+}
+
+fn validate_interest_rule(
+    start_date: &str,
+    end_date: Option<&str>,
+    annual_rate: f64,
+    period: &str,
+    monthly_fee: Option<f64>,
+) -> AppResult<()> {
+    if chrono::NaiveDate::parse_from_str(start_date, "%Y-%m-%d").is_err() {
+        return Err(AppError::BadRequest(
+            "start_date must be YYYY-MM-DD".to_string(),
+        ));
+    }
+    if let Some(end) = end_date {
+        if chrono::NaiveDate::parse_from_str(end, "%Y-%m-%d").is_err() {
+            return Err(AppError::BadRequest(
+                "end_date must be YYYY-MM-DD".to_string(),
+            ));
+        }
+        if end < start_date {
+            return Err(AppError::BadRequest(
+                "end_date must not be before start_date".to_string(),
+            ));
+        }
+    }
+    if !INTEREST_PERIODS.contains(&period) {
+        return Err(AppError::BadRequest(
+            "period must be 'monthly', 'semiannual' or 'annual'".to_string(),
+        ));
+    }
+    if !annual_rate.is_finite() || annual_rate.abs() > 1.0 {
+        return Err(AppError::BadRequest(
+            "annual_rate must be between -1.0 and 1.0 (e.g. 0.05 for 5%)".to_string(),
+        ));
+    }
+    if let Some(fee) = monthly_fee {
+        if !fee.is_finite() || fee < 0.0 {
+            return Err(AppError::BadRequest(
+                "monthly_fee must be a non-negative number".to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+async fn list_interest_rules(
+    Path(path): Path<ParticipantPath>,
+    member: ProjectMember,
+    State(pool): State<SqlitePool>,
+) -> AppResult<Json<Vec<AccountInterestRule>>> {
+    require_pool_participant(&pool, member.project_id, path.participant_id).await?;
+
+    let rules: Vec<AccountInterestRule> = sqlx::query_as(
+        "SELECT * FROM account_interest_rules WHERE participant_id = ? ORDER BY start_date",
+    )
+    .bind(path.participant_id)
+    .fetch_all(&pool)
+    .await?;
+
+    Ok(Json(rules))
+}
+
+async fn create_interest_rule(
+    Path(path): Path<ParticipantPath>,
+    member: ProjectMember,
+    State(pool): State<SqlitePool>,
+    Json(input): Json<CreateInterestRule>,
+) -> AppResult<Json<AccountInterestRule>> {
+    if !member.can_edit() {
+        return Err(AppError::forbidden(ErrorCode::EditorRequired));
+    }
+    require_pool_participant(&pool, member.project_id, path.participant_id).await?;
+    validate_interest_rule(
+        &input.start_date,
+        input.end_date.as_deref(),
+        input.annual_rate,
+        &input.period,
+        input.monthly_fee,
+    )?;
+
+    let result = sqlx::query(
+        "INSERT INTO account_interest_rules
+         (participant_id, start_date, end_date, annual_rate, period,
+          only_when_negative, monthly_fee, fee_threshold)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(path.participant_id)
+    .bind(&input.start_date)
+    .bind(&input.end_date)
+    .bind(input.annual_rate)
+    .bind(&input.period)
+    .bind(input.only_when_negative)
+    .bind(input.monthly_fee)
+    .bind(input.fee_threshold)
+    .execute(&pool)
+    .await?;
+
+    let rule: AccountInterestRule =
+        sqlx::query_as("SELECT * FROM account_interest_rules WHERE id = ?")
+            .bind(result.last_insert_rowid())
+            .fetch_one(&pool)
+            .await?;
+
+    let correlation_id = HistoryService::new_correlation_id();
+    let _ = HistoryService::log_create(
+        &pool,
+        &correlation_id,
+        member.user_id,
+        member.project_id,
+        EntityType::InterestRule,
+        rule.id,
+        &rule,
+    )
+    .await;
+
+    Ok(Json(rule))
+}
+
+async fn update_interest_rule(
+    Path(path): Path<InterestRulePath>,
+    member: ProjectMember,
+    State(pool): State<SqlitePool>,
+    Json(input): Json<UpdateInterestRule>,
+) -> AppResult<Json<AccountInterestRule>> {
+    if !member.can_edit() {
+        return Err(AppError::forbidden(ErrorCode::EditorRequired));
+    }
+    require_pool_participant(&pool, member.project_id, path.participant_id).await?;
+
+    let existing: Option<AccountInterestRule> =
+        sqlx::query_as("SELECT * FROM account_interest_rules WHERE id = ? AND participant_id = ?")
+            .bind(path.rule_id)
+            .bind(path.participant_id)
+            .fetch_optional(&pool)
+            .await?;
+    let existing = existing.ok_or_else(|| AppError::not_found(ErrorCode::ParticipantNotFound))?;
+
+    // Merge input over existing values, then validate the result as a whole
+    let start_date = input
+        .start_date
+        .unwrap_or_else(|| existing.start_date.clone());
+    let end_date = match input.end_date {
+        Some(value) => value, // Some(None) clears, Some(Some(d)) sets
+        None => existing.end_date.clone(),
+    };
+    let annual_rate = input.annual_rate.unwrap_or(existing.annual_rate);
+    let period = input.period.unwrap_or_else(|| existing.period.clone());
+    let only_when_negative = input
+        .only_when_negative
+        .unwrap_or(existing.only_when_negative);
+    let monthly_fee = match input.monthly_fee {
+        Some(value) => value,
+        None => existing.monthly_fee,
+    };
+    let fee_threshold = match input.fee_threshold {
+        Some(value) => value,
+        None => existing.fee_threshold,
+    };
+
+    validate_interest_rule(
+        &start_date,
+        end_date.as_deref(),
+        annual_rate,
+        &period,
+        monthly_fee,
+    )?;
+
+    sqlx::query(
+        "UPDATE account_interest_rules
+         SET start_date = ?, end_date = ?, annual_rate = ?, period = ?,
+             only_when_negative = ?, monthly_fee = ?, fee_threshold = ?
+         WHERE id = ?",
+    )
+    .bind(&start_date)
+    .bind(&end_date)
+    .bind(annual_rate)
+    .bind(&period)
+    .bind(only_when_negative)
+    .bind(monthly_fee)
+    .bind(fee_threshold)
+    .bind(path.rule_id)
+    .execute(&pool)
+    .await?;
+
+    let updated: AccountInterestRule =
+        sqlx::query_as("SELECT * FROM account_interest_rules WHERE id = ?")
+            .bind(path.rule_id)
+            .fetch_one(&pool)
+            .await?;
+
+    let correlation_id = HistoryService::new_correlation_id();
+    let _ = HistoryService::log_update(
+        &pool,
+        crate::services::history::LogUpdateParams {
+            correlation_id: &correlation_id,
+            actor_user_id: member.user_id,
+            project_id: member.project_id,
+            entity_type: EntityType::InterestRule,
+            entity_id: updated.id,
+            before: &existing,
+            after: &updated,
+        },
+    )
+    .await;
+
+    Ok(Json(updated))
+}
+
+async fn delete_interest_rule(
+    Path(path): Path<InterestRulePath>,
+    member: ProjectMember,
+    State(pool): State<SqlitePool>,
+) -> AppResult<Json<serde_json::Value>> {
+    if !member.can_edit() {
+        return Err(AppError::forbidden(ErrorCode::EditorRequired));
+    }
+    require_pool_participant(&pool, member.project_id, path.participant_id).await?;
+
+    let existing: Option<AccountInterestRule> =
+        sqlx::query_as("SELECT * FROM account_interest_rules WHERE id = ? AND participant_id = ?")
+            .bind(path.rule_id)
+            .bind(path.participant_id)
+            .fetch_optional(&pool)
+            .await?;
+    let existing = existing.ok_or_else(|| AppError::not_found(ErrorCode::ParticipantNotFound))?;
+
+    sqlx::query("DELETE FROM account_interest_rules WHERE id = ?")
+        .bind(path.rule_id)
+        .execute(&pool)
+        .await?;
+
+    let correlation_id = HistoryService::new_correlation_id();
+    let _ = HistoryService::log_delete(
+        &pool,
+        &correlation_id,
+        member.user_id,
+        member.project_id,
+        EntityType::InterestRule,
+        existing.id,
+        &existing,
+    )
+    .await;
+
+    Ok(Json(serde_json::json!({ "deleted": true })))
 }

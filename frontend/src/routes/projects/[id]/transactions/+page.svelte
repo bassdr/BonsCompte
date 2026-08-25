@@ -8,6 +8,8 @@
   import { getErrorKey } from '$lib/errors';
   import DateInput from '$lib/components/DateInput.svelte';
   import TransactionCard from '$lib/components/TransactionCard.svelte';
+  import ExportCsvButton from '$lib/components/ExportCsvButton.svelte';
+  import { downloadCsv, csvFilename } from '$lib/export/csv';
 
   let transactions: PaymentWithContributions[] = $state([]);
   let loading = $state(true);
@@ -228,6 +230,37 @@
     }
   }
 
+  function exportTransactionsCsv() {
+    const headers = [
+      $_('export.date'),
+      $_('export.description'),
+      $_('export.amount'),
+      $_('export.type'),
+      $_('export.payer'),
+      $_('export.receiver'),
+      $_('export.status'),
+      $_('export.recurring'),
+      $_('export.contributors')
+    ];
+    const rows = filteredTransactions.map((p) => {
+      const receiver = p.receiver_account_id
+        ? $participants.find((pr) => pr.id === p.receiver_account_id)
+        : null;
+      return [
+        p.payment_date.split('T')[0],
+        p.description,
+        p.amount,
+        getTransactionMode(p),
+        p.payer_name ?? '',
+        receiver?.name ?? '',
+        p.is_final ? 'final' : 'draft',
+        p.is_recurring ? 'yes' : 'no',
+        p.contributions.map((c) => `${c.participant_name}: ${c.amount}`).join('; ')
+      ];
+    });
+    downloadCsv(csvFilename('transactions'), headers, rows);
+  }
+
   function openImageModal(image: string) {
     modalImage = image;
     showImageModal = true;
@@ -357,7 +390,13 @@
 
 <!-- Transactions List -->
 <section class="card">
-  <h3>{$_('transactions.recentTransactions')}</h3>
+  <div class="list-header">
+    <h3>{$_('transactions.recentTransactions')}</h3>
+    <ExportCsvButton
+      onexport={exportTransactionsCsv}
+      disabled={filteredTransactions.length === 0}
+    />
+  </div>
 
   {#if loading}
     <p>{$_('common.loading')}</p>
@@ -541,6 +580,17 @@
   }
 
   /* Transactions List */
+  .list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+
+  .list-header h3 {
+    margin: 0;
+  }
+
   .empty {
     color: #666;
     font-style: italic;

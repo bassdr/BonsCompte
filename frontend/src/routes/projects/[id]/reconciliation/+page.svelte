@@ -10,6 +10,8 @@
   import DateSelectorCard from '$lib/components/DateSelectorCard.svelte';
   import FocusCard from '$lib/components/FocusCard.svelte';
   import OccurrencesList from '$lib/components/OccurrencesList.svelte';
+  import ExportCsvButton from '$lib/components/ExportCsvButton.svelte';
+  import { downloadCsv, csvFilename } from '$lib/export/csv';
   import { SvelteSet, SvelteMap } from 'svelte/reactivity';
   import { Chart, registerables } from 'chart.js';
   import 'chartjs-adapter-date-fns';
@@ -183,6 +185,34 @@
       settlementInvolvesFocus(s, projection.focusParticipantId)
     );
   });
+
+  // ─── CSV exports ────────────────────────────────────────────────────────
+
+  function exportBalancesCsv() {
+    const headers = [
+      $_('export.participant'),
+      $_('export.totalPaid'),
+      $_('export.totalOwed'),
+      $_('export.netBalance')
+    ];
+    const rows = filteredBalances.map((b) => [
+      b.participant_name,
+      b.total_paid,
+      b.total_owed,
+      b.net_balance
+    ]);
+    downloadCsv(csvFilename('balances', projection.targetDate), headers, rows);
+  }
+
+  function exportSettlementsCsv() {
+    const headers = [$_('export.from'), $_('export.to'), $_('export.amount')];
+    const rows = filteredSettlements.map((s) => [
+      s.from_participant_name,
+      s.to_participant_name,
+      s.amount
+    ]);
+    downloadCsv(csvFilename('settlements', projection.targetDate), headers, rows);
+  }
 
   // ─── Balance time series ────────────────────────────────────────────────
 
@@ -563,7 +593,12 @@
 {:else if projection.debts}
   <!-- Balances -->
   <section class="card">
-    <h3>{$_('overview.balances')}</h3>
+    <div class="settlements-header">
+      <h3>{$_('overview.balances')}</h3>
+      {#if !projection.isRangeMode}
+        <ExportCsvButton onexport={exportBalancesCsv} disabled={filteredBalances.length === 0} />
+      {/if}
+    </div>
     {#if projection.isRangeMode && chartReady}
       <div class="chart-container">
         <canvas bind:this={balanceChartCanvas}></canvas>
@@ -870,6 +905,10 @@
         <input type="checkbox" bind:checked={useDirectSettlements} />
         {$_('overview.directOnlyMode')}
       </label>
+      <ExportCsvButton
+        onexport={exportSettlementsCsv}
+        disabled={filteredSettlements.length === 0}
+      />
     </div>
 
     {#if projection.isRangeMode}

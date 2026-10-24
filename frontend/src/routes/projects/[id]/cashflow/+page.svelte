@@ -12,6 +12,8 @@
   import DateSelectorCard from '$lib/components/DateSelectorCard.svelte';
   import FocusCard from '$lib/components/FocusCard.svelte';
   import OccurrencesList from '$lib/components/OccurrencesList.svelte';
+  import ExportCsvButton from '$lib/components/ExportCsvButton.svelte';
+  import { downloadCsv, csvFilename, type CsvValue } from '$lib/export/csv';
   import { SvelteSet, SvelteMap } from 'svelte/reactivity';
   import { Chart, registerables } from 'chart.js';
   import 'chartjs-adapter-date-fns';
@@ -145,6 +147,26 @@
       })
       .filter((pool) => pool.entries.length > 0);
   });
+
+  // ─── CSV export ─────────────────────────────────────────────────────────
+
+  function exportPoolCsv(pool: (typeof filteredPoolOwnerships)[number]) {
+    const headers = [
+      $_('export.participant'),
+      $_('export.contributed'),
+      $_('export.consumed'),
+      $_('export.ownership')
+    ];
+    const rows: CsvValue[][] = pool.entries.map((e) => [
+      e.participant_name,
+      e.contributed,
+      e.consumed,
+      e.ownership
+    ]);
+    rows.push([$_('common.total'), '', '', pool.total_balance]);
+    const slug = pool.pool_name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    downloadCsv(csvFilename(`pool-${slug}`, projection.targetDate), headers, rows);
+  }
 
   // ─── Per-pool occurrences (only transactions involving each pool) ──────
 
@@ -890,7 +912,13 @@
   {#each filteredPoolOwnerships as poolOwnership (poolOwnership.pool_id)}
     {@const stats = poolTotalStats.get(poolOwnership.pool_id)}
     <section class="card">
-      <h3>{poolOwnership.pool_name}</h3>
+      <div class="pool-header">
+        <h3>{poolOwnership.pool_name}</h3>
+        <ExportCsvButton
+          onexport={() => exportPoolCsv(poolOwnership)}
+          disabled={poolOwnership.entries.length === 0}
+        />
+      </div>
 
       <!-- Pool Total Summary Banner -->
       {#if stats && poolOwnership.entries.length > 0}
@@ -1435,6 +1463,17 @@
     margin-top: 0;
     margin-bottom: 1rem;
     color: var(--accent, #7b61ff);
+  }
+
+  .pool-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+
+  .pool-header h3 {
+    margin: 0;
   }
 
   .error {

@@ -40,6 +40,7 @@
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import UserMinus from '@lucide/svelte/icons/user-minus';
   import Unlink from '@lucide/svelte/icons/unlink';
+  import InterestRulesEditor from '$lib/components/InterestRulesEditor.svelte';
 
   let errorKey = $state('');
   let success = $state('');
@@ -1036,6 +1037,8 @@
       {#if savingPoolWarning === pool.id}
         <p class="muted">{$_('common.saving')}</p>
       {/if}
+
+      <InterestRulesEditor {projectId} poolId={pool.id} canEdit={$canEdit} />
     </section>
   {/each}
 
